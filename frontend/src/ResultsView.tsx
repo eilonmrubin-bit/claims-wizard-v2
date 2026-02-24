@@ -17,6 +17,7 @@ import {
   Typography,
   Space,
   Alert,
+  Button,
 } from 'antd';
 import {
   ClockCircleOutlined,
@@ -30,6 +31,7 @@ import {
   CloseCircleOutlined,
   DollarOutlined,
   PercentageOutlined,
+  DownloadOutlined,
 } from '@ant-design/icons';
 
 const { Title, Text } = Typography;
@@ -663,22 +665,20 @@ const SalaryBreakdown: React.FC<{
       title: <span style={{ color: '#88D8E0' }}>קלט</span>,
       key: 'input',
       render: (_: unknown, record: SalaryPeriodRow) => (
-        <span className="ltr-number" style={{ color: '#E8F4F8' }}>
-          {formatCurrency(record.salaryInputAmount)} {translateSalaryType(record.salaryInputType)}
-        </span>
+        <Space style={{ color: record.minimumApplied ? '#FF6B6B' : '#E8F4F8' }}>
+          <span className="ltr-number">{formatCurrency(record.salaryInputAmount)}</span>
+          <span>{translateSalaryType(record.salaryInputType)}</span>
+          {record.minimumApplied && <WarningOutlined style={{ color: '#FF6B6B' }} />}
+        </Space>
       ),
     },
     {
       title: <span style={{ color: '#88D8E0' }}>מינימום</span>,
       key: 'minimum',
       render: (_: unknown, record: SalaryPeriodRow) => (
-        <span
-          className="ltr-number"
-          style={{ color: record.minimumApplied ? '#FF6B6B' : '#E8F4F8' }}
-        >
-          {formatCurrency(record.minimumWageValue)}
-          {record.minimumApplied && <WarningOutlined style={{ marginRight: 4 }} />}
-        </span>
+        record.minimumApplied
+          ? <span className="ltr-number" style={{ color: '#FF6B6B' }}>{formatCurrency(record.minimumWageValue)}</span>
+          : <Text type="secondary">—</Text>
       ),
     },
     {
@@ -992,77 +992,282 @@ const aggregateByTier = (shifts: ShiftData[]): TierSummary[] => {
     }));
 };
 
-// OvertimeSummaryTab - סיכום כללי
-const OvertimeSummaryTab: React.FC<{ shifts: ShiftData[]; totalClaim: number }> = ({
+// Period summary for overtime
+interface PeriodOvertimeSummary {
+  periodId: string;
+  firstMonth: string;
+  lastMonth: string;
+  hourlyWage: number;
+  salaryInputAmount: number;
+  minimumApplied: boolean;
+  tierSummary: TierSummary[];
+  totalHours: number;
+  regularHours: number;
+  otHours: number;
+  totalClaim: number;
+  completionAmount: number; // (hourly_wage - salary_input) * regular_hours if minimum_applied
+}
+
+// OvertimeSummaryTab - סיכום כללי לפי תקופות
+const OvertimeSummaryTab: React.FC<{
+  shifts: ShiftData[];
+  totalClaim: number;
+  effectivePeriods?: EffectivePeriodData[];
+  periodMonthRecords?: PeriodMonthRecord[];
+}> = ({
   shifts,
   totalClaim,
+  effectivePeriods = [],
+  periodMonthRecords = [],
 }) => {
-  const tierSummary = aggregateByTier(shifts);
-  const totalHours = shifts.reduce((sum, s) => sum + s.net_hours, 0);
-  const totalRegular = shifts.reduce((sum, s) => sum + s.regular_hours, 0);
-  const totalOT = shifts.reduce((sum, s) => sum + s.ot_tier1_hours + s.ot_tier2_hours, 0);
+  // Group shifts by effective_period_id
+  const shiftsByPeriod: Record<string, ShiftData[]> = {};
+  shifts.forEach((shift) => {
+    const epId = shift.effective_period_id;
+    if (!shiftsByPeriod[epId]) shiftsByPeriod[epId] = [];
+    shiftsByPeriod[epId].push(shift);
+  });
 
+  const periodIds = Object.keys(shiftsByPeriod).sort();
+  const hasMutiplePeriods = periodIds.length > 1;
+
+  // Build period summaries
+  const periodSummaries: PeriodOvertimeSummary[] = periodIds.map((periodId, idx) => {
+    const periodShifts = shiftsByPeriod[periodId];
+    const ep = effectivePeriods.find((p) => p.id === periodId);
+    const pmrs = periodMonthRecords.filter((pmr) => pmr.effective_period_id === periodId);
+
+    // Get hourly wage from first shift's pricing_breakdown
+    let hourlyWage = 0;
+    if (periodShifts[0]?.pricing_breakdown?.[0]?.hourly_wage) {
+      hourlyWage = periodShifts[0].pricing_breakdown[0].hourly_wage;
+    }
+
+    // Get salary input amount from effective period
+    const salaryInputAmount = ep?.salary_amount || 0;
+
+    // Check if minimum was applied for any month in this period
+    const minimumApplied = pmrs.some((pmr) => pmr.minimum_applied);
+
+    // Calculate tier summary
+    const tierSummary = aggregateByTier(periodShifts);
+    const totalHours = periodShifts.reduce((sum, s) => sum + s.net_hours, 0);
+    const regularHours = periodShifts.reduce((sum, s) => sum + s.regular_hours, 0);
+    const otHours = periodShifts.reduce((sum, s) => sum + s.ot_tier1_hours + s.ot_tier2_hours, 0);
+    const periodClaim = periodShifts.reduce((sum, s) => sum + (s.claim_amount || 0), 0);
+
+    // Calculate completion amount if minimum was applied
+    let completionAmount = 0;
+    if (minimumApplied && hourlyWage > salaryInputAmount) {
+      const gap = hourlyWage - salaryInputAmount;
+      completionAmount = gap * regularHours;
+    }
+
+    // Get first and last months
+    const months = pmrs.map((pmr) => pmr.month).sort((a, b) => a[0] * 100 + a[1] - (b[0] * 100 + b[1]));
+    const firstMonth = months.length > 0 ? formatMonth(months[0]) : '';
+    const lastMonth = months.length > 0 ? formatMonth(months[months.length - 1]) : '';
+
+    return {
+      periodId,
+      firstMonth,
+      lastMonth,
+      hourlyWage,
+      salaryInputAmount,
+      minimumApplied,
+      tierSummary,
+      totalHours,
+      regularHours,
+      otHours,
+      totalClaim: periodClaim,
+      completionAmount,
+    };
+  });
+
+  // Single period - simple display (like before)
+  if (!hasMutiplePeriods) {
+    const summary = periodSummaries[0] || {
+      tierSummary: aggregateByTier(shifts),
+      totalHours: shifts.reduce((sum, s) => sum + s.net_hours, 0),
+      regularHours: shifts.reduce((sum, s) => sum + s.regular_hours, 0),
+      otHours: shifts.reduce((sum, s) => sum + s.ot_tier1_hours + s.ot_tier2_hours, 0),
+      totalClaim,
+      minimumApplied: false,
+      completionAmount: 0,
+      hourlyWage: 0,
+      salaryInputAmount: 0,
+    };
+
+    return (
+      <div>
+        {/* Overall stats */}
+        <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+          <Col span={6}>
+            <Statistic title="סה״כ משמרות" value={shifts.length} />
+          </Col>
+          <Col span={6}>
+            <Statistic title="סה״כ שעות עבודה" value={summary.totalHours.toFixed(1)} />
+          </Col>
+          <Col span={6}>
+            <Statistic title="שעות רגילות" value={summary.regularHours.toFixed(1)} valueStyle={{ color: '#88D8E0' }} />
+          </Col>
+          <Col span={6}>
+            <Statistic title="שעות נוספות" value={summary.otHours.toFixed(1)} valueStyle={{ color: '#FFD93D' }} />
+          </Col>
+        </Row>
+
+        {/* Tier breakdown */}
+        <Title level={5} style={{ color: '#88D8E0', marginBottom: 16 }}>פירוט לפי דרגה</Title>
+        <Table
+          dataSource={summary.tierSummary}
+          columns={[
+            {
+              title: 'דרגה',
+              dataIndex: 'tier',
+              key: 'tier',
+              render: (tier: string, record: TierSummary) => (
+                <Tag color={record.color} style={{ fontSize: '1em' }}>{tier}</Tag>
+              ),
+            },
+            {
+              title: 'שעות',
+              dataIndex: 'hours',
+              key: 'hours',
+              render: (v: number) => <span className="ltr-number">{v.toFixed(1)}</span>,
+            },
+            {
+              title: 'סכום לתביעה',
+              dataIndex: 'amount',
+              key: 'amount',
+              render: (v: number, record: TierSummary) => {
+                if (record.tier === '100%') {
+                  return <span className="ltr-number">{formatCurrency(v)} (לא נתבע)</span>;
+                }
+                return <span className="ltr-number" style={{ fontWeight: 'bold' }}>{formatCurrency(v)}</span>;
+              },
+            },
+          ]}
+          rowKey="tier"
+          pagination={false}
+          size="small"
+          summary={() => (
+            <Table.Summary fixed>
+              <Table.Summary.Row style={{ background: 'rgba(78, 205, 196, 0.1)' }}>
+                <Table.Summary.Cell index={0}><strong>סה״כ</strong></Table.Summary.Cell>
+                <Table.Summary.Cell index={1}>
+                  <strong className="ltr-number">{summary.tierSummary.reduce((sum, t) => sum + t.hours, 0).toFixed(1)}</strong>
+                </Table.Summary.Cell>
+                <Table.Summary.Cell index={2}>
+                  <strong className="ltr-number" style={{ color: '#4ECDC4' }}>{formatCurrency(totalClaim)}</strong>
+                </Table.Summary.Cell>
+              </Table.Summary.Row>
+            </Table.Summary>
+          )}
+        />
+      </div>
+    );
+  }
+
+  // Multiple periods - show per-period breakdown
   return (
     <div>
-      {/* Overall stats */}
-      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-        <Col span={6}>
-          <Statistic title="סה״כ משמרות" value={shifts.length} />
-        </Col>
-        <Col span={6}>
-          <Statistic title="סה״כ שעות עבודה" value={totalHours.toFixed(1)} />
-        </Col>
-        <Col span={6}>
-          <Statistic title="שעות רגילות" value={totalRegular.toFixed(1)} valueStyle={{ color: '#88D8E0' }} />
-        </Col>
-        <Col span={6}>
-          <Statistic title="שעות נוספות" value={totalOT.toFixed(1)} valueStyle={{ color: '#FFD93D' }} />
-        </Col>
-      </Row>
+      {periodSummaries.map((summary, idx) => (
+        <div key={summary.periodId} style={{ marginBottom: 32, paddingBottom: 24, borderBottom: idx < periodSummaries.length - 1 ? '1px solid rgba(78, 205, 196, 0.2)' : 'none' }}>
+          {/* Period header */}
+          <Title level={5} style={{ color: '#88D8E0', marginBottom: 16 }}>
+            תקופה {idx + 1}: {summary.firstMonth} — {summary.lastMonth}
+            <span style={{ marginRight: 16, color: '#E8F4F8', fontWeight: 'normal', fontSize: '0.9em' }}>
+              | שכר שעתי: {formatCurrency(summary.hourlyWage)}
+              {summary.minimumApplied && (
+                <span style={{ color: '#FF6B6B' }}> (מינימום, קלט {formatCurrency(summary.salaryInputAmount)})</span>
+              )}
+            </span>
+          </Title>
 
-      {/* Tier breakdown */}
-      <Title level={5} style={{ color: '#88D8E0', marginBottom: 16 }}>פירוט לפי דרגה</Title>
-      <Table
-        dataSource={tierSummary}
-        columns={[
-          {
-            title: 'דרגה',
-            dataIndex: 'tier',
-            key: 'tier',
-            render: (tier: string, record: TierSummary) => (
-              <Tag color={record.color} style={{ fontSize: '1em' }}>{tier}</Tag>
-            ),
-          },
-          {
-            title: 'שעות',
-            dataIndex: 'hours',
-            key: 'hours',
-            render: (v: number) => <span className="ltr-number">{v.toFixed(1)}</span>,
-          },
-          {
-            title: 'סכום לתביעה',
-            dataIndex: 'amount',
-            key: 'amount',
-            render: (v: number) => <span className="ltr-number" style={{ fontWeight: 'bold' }}>{formatCurrency(v)}</span>,
-          },
-        ]}
-        rowKey="tier"
-        pagination={false}
-        size="small"
-        summary={() => (
-          <Table.Summary fixed>
-            <Table.Summary.Row style={{ background: 'rgba(78, 205, 196, 0.1)' }}>
-              <Table.Summary.Cell index={0}><strong>סה״כ</strong></Table.Summary.Cell>
-              <Table.Summary.Cell index={1}>
-                <strong className="ltr-number">{tierSummary.reduce((sum, t) => sum + t.hours, 0).toFixed(1)}</strong>
-              </Table.Summary.Cell>
-              <Table.Summary.Cell index={2}>
-                <strong className="ltr-number" style={{ color: '#4ECDC4' }}>{formatCurrency(totalClaim)}</strong>
-              </Table.Summary.Cell>
-            </Table.Summary.Row>
-          </Table.Summary>
-        )}
-      />
+          {/* Period stats */}
+          <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+            <Col span={6}>
+              <Statistic title="משמרות" value={shiftsByPeriod[summary.periodId].length} />
+            </Col>
+            <Col span={6}>
+              <Statistic title="שעות עבודה" value={summary.totalHours.toFixed(1)} />
+            </Col>
+            <Col span={6}>
+              <Statistic title="שעות רגילות" value={summary.regularHours.toFixed(1)} valueStyle={{ color: '#88D8E0' }} />
+            </Col>
+            <Col span={6}>
+              <Statistic title="שעות נוספות" value={summary.otHours.toFixed(1)} valueStyle={{ color: '#FFD93D' }} />
+            </Col>
+          </Row>
+
+          {/* Period tier breakdown */}
+          <Table
+            dataSource={summary.tierSummary}
+            columns={[
+              {
+                title: 'דרגה',
+                dataIndex: 'tier',
+                key: 'tier',
+                render: (tier: string, record: TierSummary) => (
+                  <Tag color={record.color} style={{ fontSize: '1em' }}>{tier}</Tag>
+                ),
+              },
+              {
+                title: 'שעות',
+                dataIndex: 'hours',
+                key: 'hours',
+                render: (v: number) => <span className="ltr-number">{v.toFixed(1)}</span>,
+              },
+              {
+                title: 'תעריף שעתי',
+                key: 'rate',
+                render: (_: unknown, record: TierSummary) => {
+                  const rateMap: Record<string, number> = {
+                    '100%': 1.0, '125%': 1.25, '150%': 1.5, '175%': 1.75, '200%': 2.0,
+                  };
+                  const rate = (rateMap[record.tier] || 1.0) * summary.hourlyWage;
+                  return <span className="ltr-number">{formatCurrency(rate)}</span>;
+                },
+              },
+              {
+                title: 'סכום לתביעה',
+                dataIndex: 'amount',
+                key: 'amount',
+                render: (v: number, record: TierSummary) => {
+                  if (record.tier === '100%') {
+                    return <span className="ltr-number">{formatCurrency(v)} (לא נתבע)</span>;
+                  }
+                  return <span className="ltr-number" style={{ fontWeight: 'bold' }}>{formatCurrency(v)}</span>;
+                },
+              },
+            ]}
+            rowKey="tier"
+            pagination={false}
+            size="small"
+            summary={() => (
+              <Table.Summary fixed>
+                <Table.Summary.Row style={{ background: 'rgba(78, 205, 196, 0.1)' }}>
+                  <Table.Summary.Cell index={0}><strong>סה״כ תקופה</strong></Table.Summary.Cell>
+                  <Table.Summary.Cell index={1}>
+                    <strong className="ltr-number">{summary.tierSummary.reduce((sum, t) => sum + t.hours, 0).toFixed(1)}</strong>
+                  </Table.Summary.Cell>
+                  <Table.Summary.Cell index={2}></Table.Summary.Cell>
+                  <Table.Summary.Cell index={3}>
+                    <strong className="ltr-number" style={{ color: '#4ECDC4' }}>{formatCurrency(summary.totalClaim)}</strong>
+                  </Table.Summary.Cell>
+                </Table.Summary.Row>
+              </Table.Summary>
+            )}
+          />
+        </div>
+      ))}
+
+      {/* Grand total */}
+      <div style={{ padding: '16px', background: 'rgba(78, 205, 196, 0.1)', borderRadius: 8, textAlign: 'center' }}>
+        <Title level={4} style={{ color: '#4ECDC4', margin: 0 }}>
+          סה״כ כל התקופות: {formatCurrency(totalClaim)}
+        </Title>
+      </div>
     </div>
   );
 };
@@ -1352,7 +1557,9 @@ const OvertimeBreakdown: React.FC<{
   overtime: OvertimeResult;
   shifts?: ShiftData[];
   weeks?: WeekData[];
-}> = ({ overtime, shifts = [], weeks = [] }) => {
+  effectivePeriods?: EffectivePeriodData[];
+  periodMonthRecords?: PeriodMonthRecord[];
+}> = ({ overtime, shifts = [], weeks = [], effectivePeriods = [], periodMonthRecords = [] }) => {
   const tabItems = [
     {
       key: 'summary',
@@ -1362,7 +1569,14 @@ const OvertimeBreakdown: React.FC<{
           <span>סיכום כללי</span>
         </Space>
       ),
-      children: <OvertimeSummaryTab shifts={shifts} totalClaim={overtime.total_claim} />,
+      children: (
+        <OvertimeSummaryTab
+          shifts={shifts}
+          totalClaim={overtime.total_claim}
+          effectivePeriods={effectivePeriods}
+          periodMonthRecords={periodMonthRecords}
+        />
+      ),
     },
     {
       key: 'detailed',
@@ -1788,7 +2002,15 @@ const ResultsView: React.FC<ResultsViewProps> = ({ ssot }) => {
 
       {/* ד. Overtime Breakdown */}
       {rights_results?.overtime && (
-        <div style={{ marginBottom: 24 }}><OvertimeBreakdown overtime={rights_results.overtime} shifts={shifts} weeks={weeks} /></div>
+        <div style={{ marginBottom: 24 }}>
+          <OvertimeBreakdown
+            overtime={rights_results.overtime}
+            shifts={shifts}
+            weeks={weeks}
+            effectivePeriods={effective_periods}
+            periodMonthRecords={period_month_records}
+          />
+        </div>
       )}
 
       {/* ה. Holidays Breakdown */}
@@ -1822,6 +2044,49 @@ const ResultsView: React.FC<ResultsViewProps> = ({ ssot }) => {
         defaultActiveKey={[]}
         style={{ marginTop: 24 }}
       />
+
+      {/* Export buttons */}
+      <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
+        <Button
+          size="small"
+          icon={<DownloadOutlined />}
+          onClick={() => {
+            const summary = {
+              claim_summary: ssot.claim_summary,
+              rights_results: ssot.rights_results,
+              limitation_results: ssot.limitation_results,
+              deduction_results: ssot.deduction_results,
+              total_employment: ssot.total_employment,
+              seniority_totals: ssot.seniority_totals,
+              effective_periods: ssot.effective_periods,
+            };
+            const blob = new Blob([JSON.stringify(summary, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'claims-wizard-results.json';
+            a.click();
+            URL.revokeObjectURL(url);
+          }}
+        >
+          ייצוא תוצאות
+        </Button>
+        <Button
+          size="small"
+          icon={<DownloadOutlined />}
+          onClick={() => {
+            const blob = new Blob([JSON.stringify(ssot, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'claims-wizard-ssot-full.json';
+            a.click();
+            URL.revokeObjectURL(url);
+          }}
+        >
+          ייצוא SSOT מלא
+        </Button>
+      </div>
     </div>
   );
 };

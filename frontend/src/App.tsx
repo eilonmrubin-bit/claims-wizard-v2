@@ -515,6 +515,17 @@ function App() {
     setJsonError(null);
   };
 
+  const saveJsonToFile = () => {
+    if (!jsonInput) return;
+    const blob = new Blob([jsonInput], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'claims-wizard-input.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   // Helper: convert Dayjs to ISO string
   const dayjsToIso = (d: Dayjs | null): string => {
     return d ? d.format('YYYY-MM-DD') : '';
@@ -1261,6 +1272,9 @@ function App() {
                     </Button>
                     <Button onClick={loadExample}>
                       טען דוגמה
+                    </Button>
+                    <Button onClick={saveJsonToFile} disabled={!jsonInput}>
+                      שמור input לקובץ
                     </Button>
                   </div>
                 </div>
