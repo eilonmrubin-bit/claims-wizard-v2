@@ -490,6 +490,26 @@ const translateThresholdReason = (reason: string): string => {
   return map[reason] || reason;
 };
 
+/** Calculate hours summary from array of shifts */
+const calcHoursSummary = (shifts: ShiftData[]) => {
+  const regular = shifts.reduce((s, sh) => s + sh.regular_hours, 0);
+  const ot1 = shifts.reduce((s, sh) => s + sh.ot_tier1_hours, 0);
+  const ot2 = shifts.reduce((s, sh) => s + sh.ot_tier2_hours, 0);
+  const total = shifts.reduce((s, sh) => s + sh.net_hours, 0);
+  const claim = shifts.reduce((s, sh) => s + (sh.claim_amount || 0), 0);
+  return { regular, ot1, ot2, total, claim };
+};
+
+/** Display Tags for hours summary */
+const HoursSummaryTags: React.FC<{ summary: ReturnType<typeof calcHoursSummary>; compact?: boolean }> = ({ summary, compact }) => (
+  <>
+    <Tag>{summary.regular.toFixed(1)} רגיל</Tag>
+    {summary.ot1 > 0 && <Tag color="gold">{summary.ot1.toFixed(1)} ב-125%</Tag>}
+    {summary.ot2 > 0 && <Tag color="orange">{summary.ot2.toFixed(1)} ב-150%</Tag>}
+    {!compact && <Tag color="cyan">{formatCurrency(summary.claim)}</Tag>}
+  </>
+);
+
 // Aggregate hours by tier across all shifts
 interface TierSummary {
   tier: string;
@@ -697,8 +717,7 @@ const WeekCollapseContent: React.FC<{ week: WeekData; shifts: ShiftData[] }> = (
           <span style={{ fontWeight: 500 }}>{dayOfWeek}</span>
           <span className="ltr-number">{formatDate(date)}</span>
           <Tag>{dayShifts.length} משמרות</Tag>
-          <Tag color="blue">{dayHours.toFixed(1)}h</Tag>
-          {dayTotal > 0 && <Tag color="cyan">{formatCurrency(dayTotal)}</Tag>}
+          <HoursSummaryTags summary={calcHoursSummary(dayShifts)} />
         </Space>
       ),
       children: <DayCollapseItem date={date} shifts={dayShifts} />,
@@ -843,8 +862,7 @@ const OvertimeDetailedTab: React.FC<{ shifts: ShiftData[]; weeks: WeekData[] }> 
                       </>
                     )}
                     <Tag>{weekShifts.length} משמרות</Tag>
-                    <Tag color="blue">{weekHours.toFixed(1)}h</Tag>
-                    <Tag color="cyan">{formatCurrency(weekTotal)}</Tag>
+                    <HoursSummaryTags summary={calcHoursSummary(weekShifts)} />
                   </Space>
                 ),
                 children: week ? (
@@ -861,8 +879,7 @@ const OvertimeDetailedTab: React.FC<{ shifts: ShiftData[]; weeks: WeekData[] }> 
               <Space>
                 <span>{monthName}</span>
                 <Tag>{monthShifts.length} משמרות</Tag>
-                <Tag color="blue">{monthHours.toFixed(1)}h</Tag>
-                <Tag color="cyan">{formatCurrency(monthTotal)}</Tag>
+                <HoursSummaryTags summary={calcHoursSummary(monthShifts)} />
               </Space>
             ),
             children: <Collapse items={weekItems} />,
@@ -875,8 +892,7 @@ const OvertimeDetailedTab: React.FC<{ shifts: ShiftData[]; weeks: WeekData[] }> 
           <Space>
             <span style={{ fontWeight: 'bold', fontSize: '1.1em' }}>{year}</span>
             <Tag>{yearShifts.length} משמרות</Tag>
-            <Tag color="blue">{yearHours.toFixed(1)}h</Tag>
-            <Tag color="cyan" style={{ fontWeight: 'bold' }}>{formatCurrency(yearTotal)}</Tag>
+            <HoursSummaryTags summary={calcHoursSummary(yearShifts)} />
           </Space>
         ),
         children: <Collapse items={monthItems} />,
@@ -1035,18 +1051,33 @@ const HolidaysBreakdown: React.FC<{ holidays: HolidaysResult }> = ({ holidays })
         {year.met_threshold && (
           <>
             <Table
-              dataSource={year.holidays}
+              dataSource={[
+                ...year.holidays,
+                // Add election day as the last row
+                {
+                  name: 'יום בחירה',
+                  hebrew_date: '',
+                  gregorian_date: '',
+                  employed_on_date: true,
+                  day_of_week: '',
+                  week_type: 0,
+                  is_rest_day: false,
+                  is_eve_of_rest: false,
+                  excluded: false,
+                  exclude_reason: undefined,
+                  entitled: year.election_day_entitled,
+                  day_value: undefined,
+                  claim_amount: undefined,
+                },
+              ]}
               columns={holidayColumns}
               rowKey="name"
               pagination={false}
               size="small"
+              rowClassName={(record) =>
+                record.name === 'יום בחירה' ? 'election-day-row' : ''
+              }
             />
-            {year.election_day_entitled && (
-              <div style={{ marginTop: 12, padding: '8px 12px', background: 'rgba(78, 205, 196, 0.1)', borderRadius: 4 }}>
-                <CheckCircleOutlined style={{ color: '#4ECDC4', marginLeft: 8 }} />
-                <Text>זכאי לדמי יום בחירות</Text>
-              </div>
-            )}
           </>
         )}
       </div>

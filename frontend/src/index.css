@@ -549,3 +549,10 @@ body {
 .results-view .ant-table-summary td {
   border-top: 2px solid rgba(78, 205, 196, 0.3) !important;
 }
+
+/* Election day row styling */
+.results-view .election-day-row td {
+  background: rgba(78, 205, 196, 0.06) !important;
+  border-top: 1px dashed rgba(78, 205, 196, 0.3) !important;
+  font-style: italic;
+}
