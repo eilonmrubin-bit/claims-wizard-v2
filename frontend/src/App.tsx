@@ -31,7 +31,6 @@ import {
   AimOutlined,
   CodeOutlined,
 } from '@ant-design/icons';
-import SmartErrorDisplay from './SmartErrorDisplay';
 import heIL from 'antd/locale/he_IL';
 
 // Agartha theme colors
@@ -1266,28 +1265,7 @@ function App() {
         {error && (
           <div className="error-container" style={{ marginTop: 24 }}>
             <div className="error-title">שגיאה בחישוב</div>
-            <SmartErrorDisplay
-              errorMessage={error}
-              employmentPeriods={formData.employment_periods.map((p) => ({
-                id: p.id,
-                start: p.start,
-                end: p.end,
-              }))}
-              workPatterns={formData.work_patterns.map((p) => ({
-                id: p.id,
-                start: p.start,
-                end: p.end,
-              }))}
-              salaryTiers={formData.salary_tiers.map((t) => ({
-                id: t.id,
-                start: t.start,
-                end: t.end,
-              }))}
-              onExtendWorkPattern={extendWorkPattern}
-              onExtendSalaryTier={extendSalaryTier}
-              onAddWorkPattern={addWorkPatternForRange}
-              onAddSalaryTier={addSalaryTierForRange}
-            />
+            <div className="error-message" style={{ whiteSpace: 'pre-wrap' }}>{error}</div>
           </div>
         )}
 
