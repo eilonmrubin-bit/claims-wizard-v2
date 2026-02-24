@@ -74,6 +74,11 @@ const DAY_NAMES: Record<number, string> = {
   6: 'שבת',
 };
 
+// Get end of current month as default filing date
+const getEndOfCurrentMonth = (): string => {
+  return dayjs().endOf('month').format('YYYY-MM-DD');
+};
+
 // Initial empty data
 const createEmptyInput = (): SSOTInput => ({
   case_metadata: { case_name: '', notes: '' },
@@ -85,7 +90,7 @@ const createEmptyInput = (): SSOTInput => ({
   rest_day: 'saturday',
   district: 'tel_aviv',
   industry: 'general',
-  filing_date: undefined,
+  filing_date: getEndOfCurrentMonth(),
   seniority_input: { method: 'prior_plus_pattern', prior_months: 0 },
   right_toggles: {},
   deductions_input: {},
