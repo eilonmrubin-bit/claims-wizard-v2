@@ -79,22 +79,41 @@ class CountPeriod(str, Enum):
     MONTHLY = "monthly"
 
 
+class LevelCMode(str, Enum):
+    STATISTICAL = "statistical"
+    DETAILED = "detailed"
+
+
 @dataclass
 class DayTypeInput:
-    """Input for a day type in Level C."""
+    """Input for a day type in Level C.
+
+    Statistical mode: hours + break_minutes
+    Detailed mode: shifts + breaks (like Level A)
+    """
     type_id: DayType
     count: Decimal
     count_period: CountPeriod
-    hours: Decimal
+
+    # Statistical mode fields
+    hours: Decimal | None = None        # Gross hours (including break)
+    break_minutes: int = 0              # Break duration in minutes (0 = no break)
+    # Paid hours = hours - (break_minutes / 60)
+
+    # Detailed mode fields
+    shifts: list[TimeRange] | None = None
+    breaks: list[TimeRange] | None = None
+    # Paid hours = total shifts - total breaks
 
 
 @dataclass
 class PatternLevelC:
-    """Statistical pattern input (Level C)."""
+    """Level C pattern input (averages-based)."""
     id: str
     start: date
     end: date
     day_types: list[DayTypeInput]
+    mode: LevelCMode = LevelCMode.STATISTICAL
     night_placement: NightPlacement = NightPlacement.AVERAGE
 
 
@@ -164,30 +183,43 @@ def time_to_decimal_hours(t: time) -> Decimal:
     return Decimal(t.hour) + Decimal(t.minute) / Decimal(60)
 
 
-def derive_shift_template(type_id: DayType, hours: Decimal) -> DayShifts:
-    """Derive shift and break times from day type and hours."""
+def derive_shift_template(type_id: DayType, hours: Decimal, break_minutes: int = 0) -> DayShifts:
+    """Derive shift and break times from day type, hours, and break duration.
+
+    Args:
+        type_id: Type of day (regular, eve_of_rest, rest_day, night)
+        hours: Gross shift duration (including break time)
+        break_minutes: Break duration in minutes (0 = no break)
+
+    Returns:
+        DayShifts with shift and break templates.
+        Paid hours = hours - (break_minutes / 60)
+    """
     if type_id == DayType.NIGHT:
         start = DEFAULT_NIGHT_START
-        end = add_time(start, hours)
-        return DayShifts(
-            shifts=[TimeRange(start_time=start, end_time=end)],
-            breaks=[],
-        )
+    else:
+        start = DEFAULT_DAY_START
 
-    # Day shifts
-    start = DEFAULT_DAY_START
+    # hours is gross (already includes break time)
+    end = add_time(start, hours)
 
-    if hours > MIN_HOURS_FOR_BREAK:
-        # Add 30-minute break
-        break_start = DEFAULT_BREAK_START
-        break_end = add_time(break_start, Decimal("0.5"))
-        end = add_time(start, hours + Decimal("0.5"))  # Add break time
+    if break_minutes > 0:
+        # Place break in the middle of the shift
+        break_duration_hours = Decimal(break_minutes) / Decimal(60)
+        half_shift = hours / 2
+        midpoint = add_time(start, half_shift)
+
+        # Calculate break start (midpoint - half of break)
+        half_break_minutes = break_minutes // 2
+        break_start_minutes = (midpoint.hour * 60 + midpoint.minute - half_break_minutes) % (24 * 60)
+        break_start = time(break_start_minutes // 60, break_start_minutes % 60)
+        break_end = add_time(break_start, break_duration_hours)
+
         return DayShifts(
             shifts=[TimeRange(start_time=start, end_time=end)],
             breaks=[TimeRange(start_time=break_start, end_time=break_end)],
         )
     else:
-        end = add_time(start, hours)
         return DayShifts(
             shifts=[TimeRange(start_time=start, end_time=end)],
             breaks=[],
@@ -376,28 +408,87 @@ def validate_level_c(pattern: PatternLevelC, rest_day: RestDay) -> list[Validati
             details={"count": float(rest_count)},
         ))
 
-    # Hours validation
+    # Mode-specific validation
+    is_statistical = pattern.mode == LevelCMode.STATISTICAL
+
     for dt in pattern.day_types:
-        if dt.count > 0 and dt.hours <= 0:
-            errors.append(ValidationError(
-                type="invalid_hours",
-                message=f"שעות חייבות להיות > 0 עבור {dt.type_id.value}",
-                details={"type": dt.type_id.value, "hours": float(dt.hours)},
-            ))
+        if dt.count <= 0:
+            continue
 
-        if dt.type_id == DayType.NIGHT and dt.hours > 24:
-            errors.append(ValidationError(
-                type="hours_too_high",
-                message="משמרת לילה לא יכולה להיות יותר מ-24 שעות",
-                details={"hours": float(dt.hours)},
-            ))
+        if is_statistical:
+            # Statistical mode: validate hours and break_minutes
+            if dt.hours is None or dt.hours <= 0:
+                errors.append(ValidationError(
+                    type="invalid_hours",
+                    message=f"שעות חייבות להיות > 0 עבור {dt.type_id.value}",
+                    details={"type": dt.type_id.value, "hours": float(dt.hours) if dt.hours else 0},
+                ))
 
-        if dt.type_id != DayType.NIGHT and dt.hours > 17:
-            errors.append(ValidationError(
-                type="hours_too_high",
-                message="משמרת יום לא יכולה להיות יותר מ-17 שעות",
-                details={"hours": float(dt.hours)},
-            ))
+            if dt.break_minutes < 0:
+                errors.append(ValidationError(
+                    type="invalid_break",
+                    message=f"אורך הפסקה לא יכול להיות שלילי עבור {dt.type_id.value}",
+                    details={"type": dt.type_id.value, "break_minutes": dt.break_minutes},
+                ))
+
+            if dt.hours is not None:
+                # Hours limit (gross hours)
+                if dt.type_id == DayType.NIGHT and dt.hours > 24:
+                    errors.append(ValidationError(
+                        type="hours_too_high",
+                        message="משמרת לילה לא יכולה להיות יותר מ-24 שעות",
+                        details={"hours": float(dt.hours)},
+                    ))
+
+                if dt.type_id != DayType.NIGHT and dt.hours > 17:
+                    errors.append(ValidationError(
+                        type="hours_too_high",
+                        message="משמרת יום לא יכולה להיות יותר מ-17 שעות",
+                        details={"hours": float(dt.hours)},
+                    ))
+
+                # Break cannot exceed shift duration
+                break_hours = Decimal(dt.break_minutes) / Decimal(60)
+                if break_hours >= dt.hours:
+                    errors.append(ValidationError(
+                        type="break_too_long",
+                        message=f"הפסקה ({dt.break_minutes} דקות) לא יכולה להיות ארוכה מהמשמרת ({dt.hours} שעות)",
+                        details={"break_minutes": dt.break_minutes, "hours": float(dt.hours)},
+                    ))
+        else:
+            # Detailed mode: validate shifts and breaks
+            if not dt.shifts or len(dt.shifts) == 0:
+                errors.append(ValidationError(
+                    type="no_shifts",
+                    message=f"חייב להיות לפחות משמרת אחת עבור {dt.type_id.value}",
+                    details={"type": dt.type_id.value},
+                ))
+
+            # Calculate net hours
+            if dt.shifts:
+                total_shift_minutes = sum(
+                    (s.end_time.hour * 60 + s.end_time.minute) - (s.start_time.hour * 60 + s.start_time.minute)
+                    for s in dt.shifts
+                )
+                total_break_minutes = sum(
+                    (b.end_time.hour * 60 + b.end_time.minute) - (b.start_time.hour * 60 + b.start_time.minute)
+                    for b in (dt.breaks or [])
+                )
+                net_hours = Decimal(total_shift_minutes - total_break_minutes) / Decimal(60)
+
+                if dt.type_id == DayType.NIGHT and net_hours > 24:
+                    errors.append(ValidationError(
+                        type="hours_too_high",
+                        message="משמרת לילה לא יכולה להיות יותר מ-24 שעות נטו",
+                        details={"net_hours": float(net_hours)},
+                    ))
+
+                if dt.type_id != DayType.NIGHT and net_hours > 17:
+                    errors.append(ValidationError(
+                        type="hours_too_high",
+                        message="משמרת יום לא יכולה להיות יותר מ-17 שעות נטו",
+                        details={"net_hours": float(net_hours)},
+                    ))
 
     # Check cycle length
     cycle_len = compute_cycle_length(weekly_totals)
@@ -504,13 +595,20 @@ def translate_level_b(pattern: PatternLevelB, rest_day: RestDay) -> WorkPattern:
 
 
 def translate_level_c(pattern: PatternLevelC, rest_day: RestDay) -> WorkPattern:
-    """Translate Level C (statistical) pattern to Level A."""
+    """Translate Level C pattern to Level A.
+
+    Supports both statistical and detailed modes.
+    """
     rest_day_int = rest_day_to_int(rest_day)
     eve_day_int = eve_of_rest_day(rest_day_int)
+    is_detailed = pattern.mode == LevelCMode.DETAILED
 
-    # Step 1: Normalize to weekly
+    # Step 1: Normalize to weekly and collect type info
     weekly_counts: dict[DayType, Decimal] = {}
     hours_by_type: dict[DayType, Decimal] = {}
+    break_minutes_by_type: dict[DayType, int] = {}
+    shifts_by_type: dict[DayType, list[TimeRange]] = {}
+    breaks_by_type: dict[DayType, list[TimeRange]] = {}
 
     for dt in pattern.day_types:
         if dt.count_period == CountPeriod.MONTHLY:
@@ -518,7 +616,35 @@ def translate_level_c(pattern: PatternLevelC, rest_day: RestDay) -> WorkPattern:
         else:
             weekly = dt.count
         weekly_counts[dt.type_id] = weekly
-        hours_by_type[dt.type_id] = dt.hours
+
+        if is_detailed:
+            # Detailed mode: store shifts and breaks directly
+            shifts_by_type[dt.type_id] = dt.shifts or []
+            breaks_by_type[dt.type_id] = dt.breaks or []
+        else:
+            # Statistical mode: store hours and break_minutes
+            hours_by_type[dt.type_id] = dt.hours
+            break_minutes_by_type[dt.type_id] = dt.break_minutes
+
+    # Helper to get DayShifts for a type (handles both modes)
+    def get_day_shifts(day_type: DayType) -> DayShifts:
+        if is_detailed:
+            # Detailed mode: use shifts/breaks directly
+            return DayShifts(
+                shifts=shifts_by_type.get(day_type, []),
+                breaks=breaks_by_type.get(day_type, []),
+            )
+        else:
+            # Statistical mode: derive from hours + break_minutes
+            default_hours = {
+                DayType.REGULAR: Decimal(9),
+                DayType.EVE_OF_REST: Decimal(6),
+                DayType.REST_DAY: Decimal(8),
+                DayType.NIGHT: Decimal(7),
+            }
+            hours = hours_by_type.get(day_type, default_hours[day_type])
+            break_mins = break_minutes_by_type.get(day_type, 0)
+            return derive_shift_template(day_type, hours, break_mins)
 
     # Step 2: Compute cycle length
     cycle_length = compute_cycle_length(weekly_counts)
@@ -547,16 +673,12 @@ def translate_level_c(pattern: PatternLevelC, rest_day: RestDay) -> WorkPattern:
         # Step 4a: Rest day shifts
         if rest_count > 0:
             work_days.append(rest_day_int)
-            per_day[rest_day_int] = derive_shift_template(
-                DayType.REST_DAY, hours_by_type.get(DayType.REST_DAY, Decimal(8))
-            )
+            per_day[rest_day_int] = get_day_shifts(DayType.REST_DAY)
 
         # Step 4b: Eve of rest shifts
         if eve_count > 0:
             work_days.append(eve_day_int)
-            per_day[eve_day_int] = derive_shift_template(
-                DayType.EVE_OF_REST, hours_by_type.get(DayType.EVE_OF_REST, Decimal(6))
-            )
+            per_day[eve_day_int] = get_day_shifts(DayType.EVE_OF_REST)
 
         # Step 4c: Regular shifts (Sunday to Thursday, fill from start)
         regular_days = [SUNDAY, MONDAY, TUESDAY, WEDNESDAY, THURSDAY]
@@ -568,15 +690,12 @@ def translate_level_c(pattern: PatternLevelC, rest_day: RestDay) -> WorkPattern:
             if placed_regular >= regular_count:
                 break
             work_days.append(dow)
-            per_day[dow] = derive_shift_template(
-                DayType.REGULAR, hours_by_type.get(DayType.REGULAR, Decimal(9))
-            )
+            per_day[dow] = get_day_shifts(DayType.REGULAR)
             placed_regular += 1
 
         # Step 5: Night shifts
         if night_count > 0:
-            night_hours = hours_by_type.get(DayType.NIGHT, Decimal(7))
-            night_shifts = derive_shift_template(DayType.NIGHT, night_hours)
+            night_shifts = get_day_shifts(DayType.NIGHT)
 
             # Available nights (night before each day)
             # Night shift 22:00-05:00 is assigned to the NEXT day (majority of hours)

@@ -154,12 +154,18 @@ function translateLevelB(pattern, rest_day):
 
 ---
 
-## רמה ג — דפוס סטטיסטי
+## רמה ג — דפוס ממוצעים
 
-### קלט
+רמה ג מיועדת למקרים שבהם אין תיעוד מדויק של שעות, והתביעה מבוססת על ממוצע או הערכה. המשתמש מזין כמויות ממוצעות (שבועי או חודשי) והמערכת מייצרת דפוס סינתטי.
+
+**רמה ג תומכת בשני מצבים:**
+
+### מצב א — סטטיסטי (statistical)
+
+המשתמש מזין כמות ימים + אורך משמרת + הפסקה לכל סוג יום בנפרד:
 
 ```
-PatternLevel_C {
+PatternLevel_C_Statistical {
   type: "statistical"
   start: date
   end: date
@@ -168,10 +174,68 @@ PatternLevel_C {
     type_id: "regular" | "eve_of_rest" | "rest_day" | "night"
     count: decimal                     // מספר ימים (יכול להיות שבר)
     count_period: "weekly" | "monthly" // שבועי או חודשי
-    hours: decimal                     // שעות עבודה ביום
+    hours: decimal                     // אורך משמרת ברוטו (כולל הפסקה)
+    break_minutes: integer             // אורך הפסקה בדקות (0 = ללא הפסקה)
+  }>
+  // שעות משולמות = hours - (break_minutes / 60)
+
+  night_placement: "employer_favor" | "employee_favor" | "average"
+}
+```
+
+### מצב ב — מפורט (detailed)
+
+המשתמש מזין כמות ימים + שעות מפורטות (התחלה/סיום) כמו ברמה א:
+
+```
+PatternLevel_C_Detailed {
+  type: "detailed"
+  start: date
+  end: date
+
+  day_types: List<{
+    type_id: "regular" | "eve_of_rest" | "rest_day" | "night"
+    count: decimal                     // מספר ימים (יכול להיות שבר)
+    count_period: "weekly" | "monthly" // שבועי או חודשי
+    shifts: List<{
+      start_time: time                 // 07:00
+      end_time: time                   // 16:00
+    }>
+    breaks: List<{
+      start_time: time                 // 12:00
+      end_time: time                   // 12:30
+    }>
   }>
 
   night_placement: "employer_favor" | "employee_favor" | "average"
+}
+```
+
+### מבנה מאוחד
+
+```
+PatternLevel_C {
+  type: "statistical" | "detailed"
+  start: date
+  end: date
+  day_types: List<DayTypeInput>
+  night_placement: "employer_favor" | "employee_favor" | "average"
+}
+
+DayTypeInput {
+  type_id: "regular" | "eve_of_rest" | "rest_day" | "night"
+  count: decimal
+  count_period: "weekly" | "monthly"
+
+  // מצב סטטיסטי — שדות אלה בלבד:
+  hours: decimal?                      // אורך משמרת ברוטו (כולל הפסקה)
+  break_minutes: integer?              // אורך הפסקה בדקות (0 = ללא)
+  // שעות משולמות = hours - (break_minutes / 60)
+
+  // מצב מפורט — שדות אלה בלבד:
+  shifts: List<{start_time, end_time}>?
+  breaks: List<{start_time, end_time}>?
+  // שעות משולמות = סה"כ shifts - סה"כ breaks
 }
 ```
 
@@ -179,50 +243,60 @@ PatternLevel_C {
 
 **הערה חשובה:** `type_id` כאן הוא **סוג יום עבודה** (קלט מתרגם הדפוסים) — לא לבלבל עם `day_segments.type` ב-SSOT שהוא **סוג קטע ביממה** (`"regular" | "eve_of_rest" | "rest"`). סוג יום עבודה קובע מיקום ושעות; `day_segments` נכתב על ידי מעבד המשמרות שלב 3.5.
 
-| סוג | מזהה | ימים אפשריים בשבוע | חלק ביממה | שעת התחלה ברירת מחדל |
-|-----|-------|---------------------|-----------|---------------------|
-| רגיל | `regular` | א-ה | יום | 07:00 + שעות |
-| ערב מנוחה | `eve_of_rest` | יום לפני יום המנוחה | יום (קצר) | 07:00 + שעות |
-| יום מנוחה | `rest_day` | יום המנוחה | יום | 07:00 + שעות |
-| לילה | `night` | א-שבת | לילה | 22:00 + שעות |
+| סוג | מזהה | ימים אפשריים בשבוע | חלק ביממה | שעת התחלה ברירת מחדל (מצב סטטיסטי) |
+|-----|-------|---------------------|-----------|-----------------------------------|
+| רגיל | `regular` | א-ה | יום | 07:00 |
+| ערב מנוחה | `eve_of_rest` | יום לפני יום המנוחה | יום (קצר) | 07:00 |
+| יום מנוחה | `rest_day` | יום המנוחה | יום | 07:00 |
+| לילה | `night` | א-שבת | לילה | 22:00 |
 
-### גזירת שעות אוטומטית
+### גזירת תבנית משמרת
 
-המשתמש מזין רק מספר שעות. המערכת גוזרת שעת התחלה, סיום, והפסקות:
+#### מצב סטטיסטי
+
+המשתמש מזין אורך משמרת ברוטו + אורך הפסקה. המערכת גוזרת שעת התחלה, סיום, ומיקום הפסקה:
 
 ```
-function deriveShiftTemplate(type_id, hours):
-  if type_id == "regular":
-    start = 07:00
-    if hours > 6:
-      break_start = 12:00
-      break_end = 12:30
-      end = start + hours + 0:30     // מוסיף זמן הפסקה
-    else:
-      no break
-      end = start + hours
-    return {shifts: [{start, end}], breaks: [{break_start, break_end}]?}
-
-  if type_id == "eve_of_rest":
-    start = 07:00
-    end = start + hours               // בדרך כלל קצר, ללא הפסקה
-    return {shifts: [{start, end}], breaks: []}
-
-  if type_id == "rest_day":
-    start = 07:00
-    if hours > 6:
-      break like regular
-    else:
-      no break
-    return {shifts: [{start, end}], breaks: ...}
+function deriveShiftTemplate(type_id, hours, break_minutes):
+  // hours = אורך משמרת ברוטו (כולל הפסקה)
+  // שעות משולמות = hours - (break_minutes / 60)
 
   if type_id == "night":
     start = 22:00
-    end = 22:00 + hours              // חוצה חצות → למשל 22:00-05:00
-    return {shifts: [{start, end}], breaks: []}
+  else:
+    start = 07:00
+
+  end = start + hours  // hours כבר כולל את ההפסקה
+
+  if break_minutes > 0:
+    // מיקום הפסקה: באמצע המשמרת
+    midpoint = start + (hours / 2)
+    break_start = midpoint - (break_minutes / 2)
+    break_end = midpoint + (break_minutes / 2)
+    breaks = [{break_start, break_end}]
+  else:
+    breaks = []
+
+  return {shifts: [{start, end}], breaks: breaks}
 ```
 
-**הערה:** הפסקה ניתנת רק ביום עבודה של יותר מ-6 שעות (חוק). ברירת המחדל: 30 דקות, 12:00-12:30.
+**עיקרון:**
+- `hours` = אורך המשמרת ברוטו (מהתחלה עד סוף, כולל הפסקה)
+- `break_minutes` = אורך ההפסקה בדקות (0 = ללא הפסקה)
+- שעות משולמות = `hours - (break_minutes / 60)`
+- המערכת ממקמת את ההפסקה באמצע המשמרת
+
+#### מצב מפורט
+
+המשתמש מזין שעות מפורטות. אין גזירה — השדות עוברים כמו שהם:
+
+```
+function useDetailedTemplate(shifts, breaks):
+  // שעות משולמות = סה"כ שעות shifts - סה"כ שעות breaks
+  return {shifts: shifts, breaks: breaks}
+```
+
+**אותו עיקרון:** ההפסקות גורעות מסה"כ שעות המשמרת. אם אין הפסקות — רשימה ריקה.
 
 ---
 
@@ -429,15 +503,25 @@ function levelCToLevelB(statistical_input, rest_day, shabbat_times):
 ### ולידציה ברמה ג
 
 ```
+כללי:
+- type ∈ {"statistical", "detailed"}
 - לפחות סוג יום אחד עם count > 0
 - סה"כ ימים בשבוע <= 7
 - סה"כ ימי ערב מנוחה <= 1 (רק יום אחד לפני מנוחה בשבוע)
 - סה"כ ימי מנוחה <= 1 (רק יום מנוחה אחד בשבוע)
-- hours > 0 לכל סוג עם count > 0
 - אורך מחזור מחושב <= 52 (שבועות)
 - night_placement ∈ {"employer_favor", "employee_favor", "average"}
+
+מצב סטטיסטי:
+- hours > 0 לכל סוג עם count > 0
+- break_minutes >= 0 לכל סוג
 - משמרות לילה: hours <= 24 (מגבלה פיזית)
 - משמרות יום: hours <= 17 (מגבלה פיזית)
+
+מצב מפורט:
+- shifts לא ריק לכל סוג עם count > 0
+- כל shift: start_time < end_time (או חוצה חצות למשמרת לילה)
+- סה"כ שעות נטו (shifts - breaks) <= 24 ללילה, <= 17 ליום
 ```
 
 ---

@@ -31,6 +31,7 @@ from app.modules.pattern_translator import (
     DayType,
     NightPlacement,
     CountPeriod,
+    LevelCMode,
     SUNDAY,
     MONDAY,
     TUESDAY,
@@ -414,14 +415,20 @@ class TestHelperFunctions:
     """Test helper functions."""
 
     def test_derive_shift_template_regular_with_break(self):
-        """Regular shift > 6 hours gets a break."""
-        shifts = derive_shift_template(DayType.REGULAR, Decimal("9"))
+        """Regular shift with explicit break_minutes gets a break."""
+        # 9-hour gross shift with 30-minute break
+        # Paid hours = 9 - 0.5 = 8.5
+        shifts = derive_shift_template(DayType.REGULAR, Decimal("9"), break_minutes=30)
 
         assert len(shifts.shifts) == 1
         assert shifts.shifts[0].start_time == time(7, 0)
+        assert shifts.shifts[0].end_time == time(16, 0)  # 7:00 + 9 hours
         assert shifts.breaks is not None
         assert len(shifts.breaks) == 1
-        assert shifts.breaks[0].start_time == time(12, 0)
+        # Break is placed in the middle of the shift
+        # Midpoint: 7:00 + 4:30 = 11:30, half break = 15 min → 11:15 to 11:45
+        assert shifts.breaks[0].start_time == time(11, 15)
+        assert shifts.breaks[0].end_time == time(11, 45)
 
     def test_derive_shift_template_regular_no_break(self):
         """Regular shift <= 6 hours has no break."""
@@ -502,3 +509,209 @@ class TestIntegration:
         source = result.pattern_sources[0]
         assert source.type == PatternType.WEEKLY_SIMPLE
         assert source.translated_pattern is not None
+
+
+# =============================================================================
+# Level C Mode Tests
+# =============================================================================
+
+class TestLevelCModes:
+    """Test Level C statistical and detailed modes."""
+
+    def test_statistical_mode_with_break_minutes(self):
+        """Statistical mode with explicit break_minutes."""
+        pattern = PatternLevelC(
+            id="LC1",
+            start=date(2024, 1, 1),
+            end=date(2024, 1, 31),
+            mode=LevelCMode.STATISTICAL,
+            day_types=[
+                DayTypeInput(
+                    type_id=DayType.REGULAR,
+                    count=Decimal("5"),
+                    count_period=CountPeriod.WEEKLY,
+                    hours=Decimal("9"),
+                    break_minutes=30,  # 30-minute break
+                ),
+            ],
+        )
+
+        result = translate_level_c(pattern, RestDay.SATURDAY)
+
+        # Should have 5 work days
+        assert len(result.work_days) == 5
+        # After full translation, shifts are in daily_overrides
+        assert result.daily_overrides is not None
+        # Get first work day's shifts
+        first_day = date(2024, 1, 1)  # Monday
+        day_shifts = result.daily_overrides[first_day]
+        assert len(day_shifts.shifts) == 1
+        assert len(day_shifts.breaks) == 1
+        # Break is 30 minutes
+        break_start = day_shifts.breaks[0].start_time
+        break_end = day_shifts.breaks[0].end_time
+        break_duration_mins = (break_end.hour * 60 + break_end.minute) - (break_start.hour * 60 + break_start.minute)
+        assert break_duration_mins == 30
+
+    def test_statistical_mode_no_break(self):
+        """Statistical mode with zero break_minutes."""
+        pattern = PatternLevelC(
+            id="LC2",
+            start=date(2024, 1, 1),
+            end=date(2024, 1, 31),
+            mode=LevelCMode.STATISTICAL,
+            day_types=[
+                DayTypeInput(
+                    type_id=DayType.REGULAR,
+                    count=Decimal("5"),
+                    count_period=CountPeriod.WEEKLY,
+                    hours=Decimal("8"),
+                    break_minutes=0,  # No break
+                ),
+            ],
+        )
+
+        result = translate_level_c(pattern, RestDay.SATURDAY)
+
+        # After full translation, shifts are in daily_overrides
+        assert result.daily_overrides is not None
+        first_day = date(2024, 1, 1)
+        day_shifts = result.daily_overrides[first_day]
+        assert len(day_shifts.shifts) == 1
+        assert len(day_shifts.breaks) == 0
+
+    def test_detailed_mode_with_explicit_shifts(self):
+        """Detailed mode uses shifts/breaks directly."""
+        pattern = PatternLevelC(
+            id="LC3",
+            start=date(2024, 1, 1),
+            end=date(2024, 1, 31),
+            mode=LevelCMode.DETAILED,
+            day_types=[
+                DayTypeInput(
+                    type_id=DayType.REGULAR,
+                    count=Decimal("5"),
+                    count_period=CountPeriod.WEEKLY,
+                    shifts=[
+                        TimeRange(start_time=time(8, 0), end_time=time(12, 0)),
+                        TimeRange(start_time=time(13, 0), end_time=time(17, 0)),
+                    ],
+                    breaks=[
+                        TimeRange(start_time=time(12, 0), end_time=time(13, 0)),
+                    ],
+                ),
+            ],
+        )
+
+        result = translate_level_c(pattern, RestDay.SATURDAY)
+
+        # After full translation, shifts are in daily_overrides
+        assert result.daily_overrides is not None
+        first_day = date(2024, 1, 1)
+        day_shifts = result.daily_overrides[first_day]
+        assert len(day_shifts.shifts) == 2
+        assert day_shifts.shifts[0].start_time == time(8, 0)
+        assert day_shifts.shifts[0].end_time == time(12, 0)
+        assert day_shifts.shifts[1].start_time == time(13, 0)
+        assert day_shifts.shifts[1].end_time == time(17, 0)
+        assert len(day_shifts.breaks) == 1
+        assert day_shifts.breaks[0].start_time == time(12, 0)
+        assert day_shifts.breaks[0].end_time == time(13, 0)
+
+    def test_detailed_mode_night_shift(self):
+        """Detailed mode with night shifts."""
+        pattern = PatternLevelC(
+            id="LC4",
+            start=date(2024, 1, 1),
+            end=date(2024, 1, 31),
+            mode=LevelCMode.DETAILED,
+            day_types=[
+                DayTypeInput(
+                    type_id=DayType.NIGHT,
+                    count=Decimal("2"),
+                    count_period=CountPeriod.WEEKLY,
+                    shifts=[
+                        TimeRange(start_time=time(22, 0), end_time=time(6, 0)),
+                    ],
+                    breaks=[],
+                ),
+            ],
+            night_placement=NightPlacement.EMPLOYER_FAVOR,
+        )
+
+        result = translate_level_c(pattern, RestDay.SATURDAY)
+
+        # After full translation, shifts are in daily_overrides
+        assert result.daily_overrides is not None
+        # Find a day with night shift
+        night_found = False
+        for day_date, shifts in result.daily_overrides.items():
+            if len(shifts.shifts) > 0 and shifts.shifts[0].start_time == time(22, 0):
+                night_found = True
+                assert shifts.shifts[0].end_time == time(6, 0)
+        assert night_found
+
+    def test_validation_statistical_mode_missing_hours(self):
+        """Statistical mode requires hours."""
+        pattern = PatternLevelC(
+            id="LC5",
+            start=date(2024, 1, 1),
+            end=date(2024, 1, 31),
+            mode=LevelCMode.STATISTICAL,
+            day_types=[
+                DayTypeInput(
+                    type_id=DayType.REGULAR,
+                    count=Decimal("5"),
+                    count_period=CountPeriod.WEEKLY,
+                    hours=None,  # Missing hours
+                    break_minutes=0,
+                ),
+            ],
+        )
+
+        errors = validate_level_c(pattern, RestDay.SATURDAY)
+        assert len(errors) > 0
+        assert any(e.type == "invalid_hours" for e in errors)
+
+    def test_validation_detailed_mode_missing_shifts(self):
+        """Detailed mode requires shifts."""
+        pattern = PatternLevelC(
+            id="LC6",
+            start=date(2024, 1, 1),
+            end=date(2024, 1, 31),
+            mode=LevelCMode.DETAILED,
+            day_types=[
+                DayTypeInput(
+                    type_id=DayType.REGULAR,
+                    count=Decimal("5"),
+                    count_period=CountPeriod.WEEKLY,
+                    shifts=None,  # Missing shifts
+                ),
+            ],
+        )
+
+        errors = validate_level_c(pattern, RestDay.SATURDAY)
+        assert len(errors) > 0
+        assert any(e.type == "no_shifts" for e in errors)
+
+    def test_validation_break_too_long(self):
+        """Break cannot be longer than shift."""
+        pattern = PatternLevelC(
+            id="LC7",
+            start=date(2024, 1, 1),
+            end=date(2024, 1, 31),
+            mode=LevelCMode.STATISTICAL,
+            day_types=[
+                DayTypeInput(
+                    type_id=DayType.REGULAR,
+                    count=Decimal("5"),
+                    count_period=CountPeriod.WEEKLY,
+                    hours=Decimal("2"),  # 2 hour shift
+                    break_minutes=180,  # 3 hour break - too long
+                ),
+            ],
+        )
+
+        errors = validate_level_c(pattern, RestDay.SATURDAY)
+        assert len(errors) > 0
+        assert any(e.type == "break_too_long" for e in errors)
