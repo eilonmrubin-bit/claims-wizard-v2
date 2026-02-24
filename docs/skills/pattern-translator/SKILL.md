@@ -436,8 +436,8 @@ function levelCToLevelB(statistical_input, rest_day, shabbat_times):
 - hours > 0 לכל סוג עם count > 0
 - אורך מחזור מחושב <= 52 (שבועות)
 - night_placement ∈ {"employer_favor", "employee_favor", "average"}
-- משמרות לילה: hours <= 12 (מקסימום סביר)
-- משמרות יום: hours <= 14 (מקסימום סביר)
+- משמרות לילה: hours <= 24 (מגבלה פיזית)
+- משמרות יום: hours <= 17 (מגבלה פיזית)
 ```
 
 ---

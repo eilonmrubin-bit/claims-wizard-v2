@@ -390,14 +390,14 @@ class TestValidation:
         assert len(errors) > 0
         assert any(e.type == "too_many_eve_of_rest" for e in errors)
 
-    def test_validate_level_c_night_hours_max_12(self):
-        """Level C: Night shift hours cannot exceed 12."""
+    def test_validate_level_c_night_hours_max_24(self):
+        """Level C: Night shift hours cannot exceed 24."""
         pattern = PatternLevelC(
             id="C1",
             start=date(2024, 1, 1),
             end=date(2024, 1, 31),
             day_types=[
-                DayTypeInput(DayType.NIGHT, Decimal("1"), CountPeriod.WEEKLY, Decimal(15)),
+                DayTypeInput(DayType.NIGHT, Decimal("1"), CountPeriod.WEEKLY, Decimal(25)),
             ],
         )
 

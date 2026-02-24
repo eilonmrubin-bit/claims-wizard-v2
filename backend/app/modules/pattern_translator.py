@@ -385,17 +385,17 @@ def validate_level_c(pattern: PatternLevelC, rest_day: RestDay) -> list[Validati
                 details={"type": dt.type_id.value, "hours": float(dt.hours)},
             ))
 
-        if dt.type_id == DayType.NIGHT and dt.hours > 12:
+        if dt.type_id == DayType.NIGHT and dt.hours > 24:
             errors.append(ValidationError(
                 type="hours_too_high",
-                message="משמרת לילה לא יכולה להיות יותר מ-12 שעות",
+                message="משמרת לילה לא יכולה להיות יותר מ-24 שעות",
                 details={"hours": float(dt.hours)},
             ))
 
-        if dt.type_id != DayType.NIGHT and dt.hours > 14:
+        if dt.type_id != DayType.NIGHT and dt.hours > 17:
             errors.append(ValidationError(
                 type="hours_too_high",
-                message="משמרת יום לא יכולה להיות יותר מ-14 שעות",
+                message="משמרת יום לא יכולה להיות יותר מ-17 שעות",
                 details={"hours": float(dt.hours)},
             ))
 
