@@ -19,6 +19,7 @@ from app.ssot import (
     NetOrGross,
     WeekType,
 )
+from app.modules.job_scope import DEFAULT_FULL_TIME_HOURS_BASE
 
 
 # Net to gross multiplier
@@ -154,6 +155,7 @@ def convert_salary(
     avg_regular_hours_per_shift: Decimal | None,
     target_date: date,
     week_type: WeekType = WeekType.FIVE_DAY,
+    full_time_hours_base: Decimal = DEFAULT_FULL_TIME_HOURS_BASE,
     data_path: Path | None = None,
 ) -> SalaryConversionResult:
     """Convert salary from input type to all types.
@@ -200,10 +202,10 @@ def convert_salary(
         else:
             hourly = effective_amount / avg_regular_hours_per_day
     elif input_type == SalaryType.MONTHLY:
-        if avg_regular_hours_per_month == 0:
+        if full_time_hours_base == 0:
             hourly = Decimal("0")
         else:
-            hourly = effective_amount / avg_regular_hours_per_month
+            hourly = effective_amount / full_time_hours_base
     elif input_type == SalaryType.PER_SHIFT:
         if avg_regular_hours_per_shift is None or avg_regular_hours_per_shift == 0:
             hourly = Decimal("0")
@@ -214,7 +216,7 @@ def convert_salary(
 
     # Convert hourly to other types
     daily = hourly * avg_regular_hours_per_day
-    monthly = hourly * avg_regular_hours_per_month
+    monthly = hourly * full_time_hours_base
 
     return SalaryConversionResult(
         minimum_wage_value=minimum_wage,
@@ -273,6 +275,7 @@ def process_period_month_record(
         avg_regular_hours_per_shift=avg_per_shift,
         target_date=target_date,
         week_type=week_type,
+        full_time_hours_base=DEFAULT_FULL_TIME_HOURS_BASE,
         data_path=data_path,
     )
 

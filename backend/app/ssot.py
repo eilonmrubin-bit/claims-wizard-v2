@@ -489,6 +489,7 @@ class HolidayYearResult:
     employment_days_in_year: int = 0
     holidays: list[HolidayEntry] = field(default_factory=list)
     election_day_entitled: bool = False
+    election_day_value: Decimal | None = None
     total_entitled_days: int = 0
     total_claim: Decimal = Decimal("0")
 

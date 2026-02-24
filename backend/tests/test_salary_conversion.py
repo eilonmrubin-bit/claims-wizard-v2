@@ -299,8 +299,8 @@ class TestConversions:
         assert result.salary_hourly == Decimal("45")
         # 45 * 8 = 360
         assert result.salary_daily == Decimal("360")
-        # 45 * 176 = 7920
-        assert result.salary_monthly == Decimal("7920")
+        # 45 * 182 = 8190 (always uses full_time_hours_base)
+        assert result.salary_monthly == Decimal("8190")
 
 
 class TestEdgeCases:
@@ -397,23 +397,23 @@ class TestEdgeCases:
 class TestAntiPatterns:
     """Test anti-patterns from skill doc."""
 
-    def test_no_hardcoded_hours(self, test_data_path):
-        """DO NOT hardcode 186 hours/month - use actual hours from SSOT."""
-        # With 160 hours/month (less than typical 186)
+    def test_monthly_uses_full_time_base(self, test_data_path):
+        """salary_monthly always uses full_time_hours_base (182), not actual hours."""
+        # Even with 160 actual hours/month, monthly = hourly * 182
         result = convert_salary(
             input_amount=Decimal("45"),
             input_type=SalaryType.HOURLY,
             input_net_or_gross=NetOrGross.GROSS,
             avg_regular_hours_per_day=Decimal("8"),
-            avg_regular_hours_per_month=Decimal("160"),  # Not 186!
+            avg_regular_hours_per_month=Decimal("160"),  # Actual hours
             avg_regular_hours_per_shift=None,
             target_date=date(2024, 6, 1),
             week_type=WeekType.FIVE_DAY,
             data_path=test_data_path,
         )
 
-        # 45 * 160 = 7200, not 45 * 186 = 8370
-        assert result.salary_monthly == Decimal("7200")
+        # 45 * 182 = 8190 (always uses full_time_hours_base, not actual hours)
+        assert result.salary_monthly == Decimal("8190")
 
     def test_conversion_through_hourly_pivot(self, test_data_path):
         """All conversions go through hourly pivot."""
@@ -431,9 +431,9 @@ class TestAntiPatterns:
         )
 
         # 336 / 8 = 42 hourly
-        # 42 * 176 = 7392 monthly
+        # 42 * 182 = 7644 monthly (always uses full_time_hours_base)
         assert result.salary_hourly == Decimal("42")
-        assert result.salary_monthly == Decimal("42") * Decimal("176")
+        assert result.salary_monthly == Decimal("42") * Decimal("182")
 
     def test_minimum_after_gross_not_before(self, test_data_path):
         """Minimum check happens AFTER net→gross, not before."""
@@ -487,4 +487,5 @@ class TestPeriodMonthRecordProcessing:
         assert result.minimum_applied is False
         assert result.salary_hourly == Decimal("45")
         assert result.salary_daily == Decimal("360")
-        assert result.salary_monthly == Decimal("7920")
+        # 45 * 182 = 8190 (always uses full_time_hours_base)
+        assert result.salary_monthly == Decimal("8190")

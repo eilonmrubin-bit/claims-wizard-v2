@@ -28,6 +28,8 @@ import {
   WarningOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
+  DollarOutlined,
+  PercentageOutlined,
 } from '@ant-design/icons';
 
 const { Title, Text } = Typography;
@@ -156,6 +158,7 @@ interface HolidayYearResult {
   employment_days_in_year: number;
   holidays: HolidayEntry[];
   election_day_entitled: boolean;
+  election_day_value?: number;
   total_entitled_days: number;
   total_claim: number;
 }
@@ -217,6 +220,47 @@ interface DeductionResult {
   show_deduction: boolean;
 }
 
+interface EffectivePeriodData {
+  id: string;
+  start: string;
+  end: string;
+  salary_amount: number;
+  salary_type: string;
+  salary_net_or_gross: string;
+}
+
+interface PeriodMonthRecord {
+  effective_period_id: string;
+  month: [number, number];
+  work_days_count: number;
+  shifts_count: number;
+  avg_regular_hours_per_day: number;
+  avg_regular_hours_per_shift: number;
+  salary_input_amount: number;
+  salary_input_type: string;
+  salary_input_net_or_gross: string;
+  salary_gross_amount: number;
+  minimum_wage_value: number;
+  minimum_wage_type: string;
+  minimum_applied: boolean;
+  minimum_gap: number;
+  effective_amount: number;
+  salary_hourly: number;
+  salary_daily: number;
+  salary_monthly: number;
+}
+
+interface MonthAggregate {
+  month: [number, number];
+  total_regular_hours: number;
+  total_ot_hours: number;
+  total_work_days: number;
+  total_shifts: number;
+  full_time_hours_base: number;
+  raw_scope: number;
+  job_scope: number;
+}
+
 interface ResultsViewProps {
   ssot: {
     claim_summary?: ClaimSummary;
@@ -230,6 +274,9 @@ interface ResultsViewProps {
     deduction_results?: Record<string, DeductionResult>;
     shifts?: ShiftData[];
     weeks?: WeekData[];
+    effective_periods?: EffectivePeriodData[];
+    period_month_records?: PeriodMonthRecord[];
+    month_aggregates?: MonthAggregate[];
   };
 }
 
@@ -271,6 +318,20 @@ const formatHours = (hours: number | undefined): string => {
   if (hours === undefined || hours === null) return '0';
   return hours.toFixed(1);
 };
+
+// Helper: translate salary type
+const translateSalaryType = (type: string): string => {
+  const map: Record<string, string> = {
+    hourly: 'שעתי',
+    daily: 'יומי',
+    monthly: 'חודשי',
+    per_shift: 'למשמרת',
+  };
+  return map[type] || type;
+};
+
+// Helper: translate net/gross
+const translateNetGross = (ng: string): string => (ng === 'net' ? 'נטו' : 'ברוטו');
 
 // ============================================================================
 // א. SummaryCard - כרטיס סיכום ראשי
@@ -433,7 +494,391 @@ const RightsTable: React.FC<{
 };
 
 // ============================================================================
-// ג. OvertimeBreakdown - פירוט שעות נוספות (משופר)
+// ג. SalaryBreakdown - פירוט שכר (מאוחד)
+// ============================================================================
+
+// Helper: short month name
+const shortMonthName = (month: number): string => {
+  const names = ['', 'ינו', 'פבר', 'מרץ', 'אפר', 'מאי', 'יוני', 'יולי', 'אוג', 'ספט', 'אוק', 'נוב', 'דצמ'];
+  return names[month] || '';
+};
+
+// Helper: format period range
+const formatPeriodRange = (first: [number, number], last: [number, number], count: number): string => {
+  const f = `${shortMonthName(first[1])} ${first[0]}`;
+  if (first[0] === last[0] && first[1] === last[1]) return f;
+  const l = `${shortMonthName(last[1])} ${last[0]}`;
+  return `${f} — ${l} (${count} ח׳)`;
+};
+
+// Consolidated salary row
+interface SalaryPeriodRow {
+  periodId: string;
+  firstMonth: [number, number];
+  lastMonth: [number, number];
+  monthCount: number;
+  salaryInputAmount: number;
+  salaryInputType: string;
+  salaryNetOrGross: string;
+  salaryGrossAmount: number;
+  minimumWageValue: number;
+  minimumApplied: boolean;
+  minimumGap: number;
+  effectiveAmount: number;
+  salaryHourly: number;
+  salaryDaily: number;
+  salaryMonthly: number;
+}
+
+// Consolidate records - merge months with identical salary data
+const consolidateRecords = (records: PeriodMonthRecord[]): SalaryPeriodRow[] => {
+  if (records.length === 0) return [];
+
+  // Sort records by month
+  const sorted = [...records].sort((a, b) => {
+    if (a.month[0] !== b.month[0]) return a.month[0] - b.month[0];
+    return a.month[1] - b.month[1];
+  });
+
+  const rows: SalaryPeriodRow[] = [];
+  let current: SalaryPeriodRow | null = null;
+
+  for (const rec of sorted) {
+    const shouldSplit = !current
+      || rec.effective_period_id !== current.periodId
+      || rec.salary_input_amount !== current.salaryInputAmount
+      || rec.minimum_applied !== current.minimumApplied
+      || (rec.minimum_applied && rec.minimum_wage_value !== current.minimumWageValue)
+      || rec.effective_amount !== current.effectiveAmount;
+
+    if (shouldSplit) {
+      if (current) rows.push(current);
+      current = {
+        periodId: rec.effective_period_id,
+        firstMonth: rec.month as [number, number],
+        lastMonth: rec.month as [number, number],
+        monthCount: 1,
+        salaryInputAmount: rec.salary_input_amount,
+        salaryInputType: rec.salary_input_type,
+        salaryNetOrGross: rec.salary_input_net_or_gross,
+        salaryGrossAmount: rec.salary_gross_amount,
+        minimumWageValue: rec.minimum_wage_value,
+        minimumApplied: rec.minimum_applied,
+        minimumGap: rec.minimum_gap,
+        effectiveAmount: rec.effective_amount,
+        salaryHourly: rec.salary_hourly,
+        salaryDaily: rec.salary_daily,
+        salaryMonthly: rec.salary_monthly,
+      };
+    } else {
+      current!.lastMonth = rec.month as [number, number];
+      current!.monthCount++;
+    }
+  }
+  if (current) rows.push(current);
+  return rows;
+};
+
+const SalaryBreakdown: React.FC<{
+  effectivePeriods?: EffectivePeriodData[];
+  periodMonthRecords?: PeriodMonthRecord[];
+}> = ({ effectivePeriods = [], periodMonthRecords = [] }) => {
+  if (!periodMonthRecords.length) {
+    return null;
+  }
+
+  // Consolidate all records across all periods
+  const consolidatedRows = consolidateRecords(periodMonthRecords);
+  const hasAnyMinimumApplied = consolidatedRows.some((r) => r.minimumApplied);
+
+  // Single row - simple card display
+  if (consolidatedRows.length === 1) {
+    const row = consolidatedRows[0];
+    return (
+      <Card
+        title={
+          <Space>
+            <DollarOutlined />
+            <span>פירוט שכר</span>
+          </Space>
+        }
+        className="results-card"
+      >
+        <div style={{ padding: '8px 0' }}>
+          <div style={{ marginBottom: 12 }}>
+            <Text strong style={{ fontSize: '1.1em', color: '#E8F4F8' }}>
+              {formatPeriodRange(row.firstMonth, row.lastMonth, row.monthCount)}
+            </Text>
+          </div>
+          <div style={{ marginBottom: 8 }}>
+            <Text type="secondary">קלט: </Text>
+            <span className="ltr-number" style={{ color: '#E8F4F8' }}>
+              {formatCurrency(row.salaryInputAmount)} {translateSalaryType(row.salaryInputType)} {translateNetGross(row.salaryNetOrGross)}
+            </span>
+          </div>
+          {row.minimumApplied && (
+            <Alert
+              message={`השכר הושלם לשכר מינימום (${formatCurrency(row.minimumWageValue)})`}
+              type="warning"
+              showIcon
+              icon={<WarningOutlined />}
+              style={{
+                marginBottom: 12,
+                background: 'rgba(255, 107, 107, 0.08)',
+                borderColor: 'rgba(255, 107, 107, 0.3)',
+              }}
+            />
+          )}
+          <div>
+            <Text type="secondary">שכר: </Text>
+            <span style={{ color: '#4ECDC4' }}>
+              שעתי <span className="ltr-number">{formatCurrency(row.salaryHourly)}</span>
+            </span>
+            <span style={{ margin: '0 8px', color: '#88D8E0' }}>|</span>
+            <span style={{ color: '#E8F4F8' }}>
+              יומי <span className="ltr-number">{formatCurrency(row.salaryDaily)}</span>
+            </span>
+            <span style={{ margin: '0 8px', color: '#88D8E0' }}>|</span>
+            <span style={{ color: '#E8F4F8' }}>
+              חודשי <span className="ltr-number">{formatCurrency(row.salaryMonthly)}</span>
+            </span>
+          </div>
+        </div>
+      </Card>
+    );
+  }
+
+  // Multiple rows - table display
+  const columns = [
+    {
+      title: <span style={{ color: '#88D8E0' }}>תקופה</span>,
+      key: 'period',
+      render: (_: unknown, record: SalaryPeriodRow) => (
+        <span style={{ color: '#E8F4F8' }}>
+          {formatPeriodRange(record.firstMonth, record.lastMonth, record.monthCount)}
+        </span>
+      ),
+    },
+    {
+      title: <span style={{ color: '#88D8E0' }}>קלט</span>,
+      key: 'input',
+      render: (_: unknown, record: SalaryPeriodRow) => (
+        <span className="ltr-number" style={{ color: '#E8F4F8' }}>
+          {formatCurrency(record.salaryInputAmount)} {translateSalaryType(record.salaryInputType)}
+        </span>
+      ),
+    },
+    {
+      title: <span style={{ color: '#88D8E0' }}>מינימום</span>,
+      key: 'minimum',
+      render: (_: unknown, record: SalaryPeriodRow) => (
+        <span
+          className="ltr-number"
+          style={{ color: record.minimumApplied ? '#FF6B6B' : '#E8F4F8' }}
+        >
+          {formatCurrency(record.minimumWageValue)}
+          {record.minimumApplied && <WarningOutlined style={{ marginRight: 4 }} />}
+        </span>
+      ),
+    },
+    {
+      title: <span style={{ color: '#88D8E0' }}>אפקטיבי</span>,
+      key: 'effective',
+      render: (_: unknown, record: SalaryPeriodRow) => (
+        <span className="ltr-number" style={{ color: '#4ECDC4', fontWeight: 'bold' }}>
+          {formatCurrency(record.effectiveAmount)}
+        </span>
+      ),
+    },
+    {
+      title: <span style={{ color: '#88D8E0' }}>שעתי</span>,
+      key: 'hourly',
+      render: (_: unknown, record: SalaryPeriodRow) => (
+        <span className="ltr-number" style={{ color: '#E8F4F8' }}>
+          {formatCurrency(record.salaryHourly)}
+        </span>
+      ),
+    },
+    {
+      title: <span style={{ color: '#88D8E0' }}>יומי</span>,
+      key: 'daily',
+      render: (_: unknown, record: SalaryPeriodRow) => (
+        <span className="ltr-number" style={{ color: '#E8F4F8' }}>
+          {formatCurrency(record.salaryDaily)}
+        </span>
+      ),
+    },
+    {
+      title: <span style={{ color: '#88D8E0' }}>חודשי</span>,
+      key: 'monthly',
+      render: (_: unknown, record: SalaryPeriodRow) => (
+        <span className="ltr-number" style={{ color: '#E8F4F8' }}>
+          {formatCurrency(record.salaryMonthly)}
+        </span>
+      ),
+    },
+  ];
+
+  return (
+    <Card
+      title={
+        <Space>
+          <DollarOutlined />
+          <span>פירוט שכר</span>
+        </Space>
+      }
+      className="results-card"
+    >
+      {hasAnyMinimumApplied && (
+        <Alert
+          message="בחלק מהתקופה השכר היה נמוך משכר מינימום — הושלם אוטומטית"
+          type="warning"
+          showIcon
+          icon={<WarningOutlined />}
+          style={{
+            marginBottom: 16,
+            background: 'rgba(255, 107, 107, 0.08)',
+            borderColor: 'rgba(255, 107, 107, 0.3)',
+          }}
+        />
+      )}
+      <Table
+        dataSource={consolidatedRows}
+        columns={columns}
+        rowKey={(record) => `${record.periodId}-${record.firstMonth[0]}-${record.firstMonth[1]}`}
+        pagination={false}
+        size="small"
+        rowClassName={(record) =>
+          record.minimumApplied ? 'minimum-applied-row' : ''
+        }
+      />
+    </Card>
+  );
+};
+
+// ============================================================================
+// ג2. JobScopeDisplay - היקף משרה — פירוט חודשי
+// ============================================================================
+
+const JobScopeDisplay: React.FC<{ monthAggregates?: MonthAggregate[] }> = ({
+  monthAggregates = [],
+}) => {
+  if (!monthAggregates.length) {
+    return null;
+  }
+
+  // Calculate average job_scope
+  const avgJobScope = monthAggregates.reduce((sum, m) => sum + m.job_scope, 0) / monthAggregates.length;
+  const avgPercent = (avgJobScope * 100).toFixed(1);
+
+  // Sort by month (ascending chronological order)
+  const sorted = [...monthAggregates].sort((a, b) => {
+    if (a.month[0] !== b.month[0]) return a.month[0] - b.month[0];
+    return a.month[1] - b.month[1];
+  });
+
+  const columns = [
+    {
+      title: <span style={{ color: '#88D8E0' }}>חודש</span>,
+      key: 'month',
+      render: (_: unknown, record: MonthAggregate) => (
+        <span style={{ color: '#E8F4F8' }}>{formatMonth(record.month)}</span>
+      ),
+    },
+    {
+      title: <span style={{ color: '#88D8E0' }}>ימי עבודה</span>,
+      dataIndex: 'total_work_days',
+      key: 'work_days',
+      render: (v: number) => <span style={{ color: '#E8F4F8' }}>{v}</span>,
+    },
+    {
+      title: <span style={{ color: '#88D8E0' }}>שעות רגילות</span>,
+      dataIndex: 'total_regular_hours',
+      key: 'regular_hours',
+      render: (v: number) => (
+        <span className="ltr-number" style={{ color: '#E8F4F8' }}>{v.toFixed(1)}</span>
+      ),
+    },
+    {
+      title: <span style={{ color: '#88D8E0' }}>בסיס משרה</span>,
+      dataIndex: 'full_time_hours_base',
+      key: 'base',
+      render: (v: number) => <span style={{ color: '#88D8E0' }}>{v}</span>,
+    },
+    {
+      title: <span style={{ color: '#88D8E0' }}>היקף גולמי</span>,
+      dataIndex: 'raw_scope',
+      key: 'raw_scope',
+      render: (v: number) => {
+        const percent = (v * 100).toFixed(1);
+        const color = v > 1.0 ? '#4ECDC4' : '#E8F4F8'; // Green if over 100%
+        return (
+          <span className="ltr-number" style={{ color }}>
+            {percent}%
+          </span>
+        );
+      },
+    },
+    {
+      title: <span style={{ color: '#88D8E0' }}>היקף אפקטיבי</span>,
+      dataIndex: 'job_scope',
+      key: 'job_scope',
+      render: (v: number) => {
+        const percent = (v * 100).toFixed(1);
+        // Red if under 100%, regular color if 100%
+        const color = v < 1.0 ? '#FF6B6B' : '#E8F4F8';
+        return (
+          <span className="ltr-number" style={{ color, fontWeight: 'bold' }}>
+            {percent}%
+          </span>
+        );
+      },
+    },
+  ];
+
+  const collapseItems = [
+    {
+      key: 'job-scope',
+      label: (
+        <Space>
+          <PercentageOutlined />
+          <span>היקף משרה — ממוצע: {avgPercent}% ({monthAggregates.length} חודשים)</span>
+        </Space>
+      ),
+      children: (
+        <Table
+          dataSource={sorted}
+          columns={columns}
+          rowKey={(record) => `${record.month[0]}-${record.month[1]}`}
+          pagination={false}
+          size="small"
+          rowClassName={(record) => {
+            if (record.raw_scope > 1.0) return 'over-scope-row';
+            if (record.job_scope < 1.0) return 'under-scope-row';
+            return '';
+          }}
+        />
+      ),
+    },
+  ];
+
+  return (
+    <Card
+      title={
+        <Space>
+          <PercentageOutlined />
+          <span>היקף משרה — פירוט חודשי</span>
+        </Space>
+      }
+      className="results-card"
+    >
+      <Collapse items={collapseItems} defaultActiveKey={[]} />
+    </Card>
+  );
+};
+
+// ============================================================================
+// ד. OvertimeBreakdown - פירוט שעות נוספות (משופר)
 // ============================================================================
 
 // Helper: format datetime to time only
@@ -990,19 +1435,31 @@ const HolidaysBreakdown: React.FC<{ holidays: HolidaysResult }> = ({ holidays })
       title: <span style={{ color: '#88D8E0' }}>תאריך לועזי</span>,
       dataIndex: 'gregorian_date',
       key: 'gregorian_date',
-      render: (d: string) => <span className="ltr-number" style={{ color: '#E8F4F8' }}>{formatDate(d)}</span>,
+      render: (d: string) => (
+        <span className="ltr-number" style={{ color: '#E8F4F8' }}>
+          {d ? formatDate(d) : '—'}
+        </span>
+      ),
     },
     {
       title: <span style={{ color: '#88D8E0' }}>יום</span>,
       dataIndex: 'day_of_week',
       key: 'day_of_week',
-      render: (d: string) => <span style={{ color: '#E8F4F8' }}>{translateDayOfWeek(d)}</span>,
+      render: (d: string) => (
+        <span style={{ color: '#E8F4F8' }}>
+          {d === '—' ? '—' : translateDayOfWeek(d)}
+        </span>
+      ),
     },
     {
       title: <span style={{ color: '#88D8E0' }}>שבוע</span>,
       dataIndex: 'week_type',
       key: 'week_type',
-      render: (w: number) => <span style={{ color: '#E8F4F8' }}>{w} ימים</span>,
+      render: (w: number) => (
+        <span style={{ color: '#E8F4F8' }}>
+          {w === -1 ? '—' : `${w} ימים`}
+        </span>
+      ),
     },
     {
       title: <span style={{ color: '#88D8E0' }}>זכאות</span>,
@@ -1056,18 +1513,18 @@ const HolidaysBreakdown: React.FC<{ holidays: HolidaysResult }> = ({ holidays })
                 // Add election day as the last row
                 {
                   name: 'יום בחירה',
-                  hebrew_date: '',
+                  hebrew_date: '—',
                   gregorian_date: '',
                   employed_on_date: true,
-                  day_of_week: '',
-                  week_type: 0,
+                  day_of_week: '—',
+                  week_type: -1,  // Mark as election day, not a regular week_type
                   is_rest_day: false,
                   is_eve_of_rest: false,
                   excluded: false,
                   exclude_reason: undefined,
-                  entitled: year.election_day_entitled,
-                  day_value: undefined,
-                  claim_amount: undefined,
+                  entitled: true,
+                  day_value: year.election_day_value ?? undefined,
+                  claim_amount: year.election_day_value ?? undefined,
                 },
               ]}
               columns={holidayColumns}
@@ -1293,6 +1750,9 @@ const ResultsView: React.FC<ResultsViewProps> = ({ ssot }) => {
     deduction_results,
     shifts,
     weeks,
+    effective_periods,
+    period_month_records,
+    month_aggregates,
   } = ssot;
 
   return (
@@ -1309,22 +1769,39 @@ const ResultsView: React.FC<ResultsViewProps> = ({ ssot }) => {
         <div style={{ marginBottom: 24 }}><RightsTable rights={claim_summary.per_right} deductionResults={deduction_results} /></div>
       )}
 
-      {/* ג. Overtime Breakdown */}
+      {/* ג. Salary Breakdown */}
+      {(effective_periods?.length || period_month_records?.length) && (
+        <div style={{ marginBottom: 24 }}>
+          <SalaryBreakdown
+            effectivePeriods={effective_periods}
+            periodMonthRecords={period_month_records}
+          />
+        </div>
+      )}
+
+      {/* ג2. Job Scope Display */}
+      {month_aggregates && month_aggregates.length > 0 && (
+        <div style={{ marginBottom: 24 }}>
+          <JobScopeDisplay monthAggregates={month_aggregates} />
+        </div>
+      )}
+
+      {/* ד. Overtime Breakdown */}
       {rights_results?.overtime && (
         <div style={{ marginBottom: 24 }}><OvertimeBreakdown overtime={rights_results.overtime} shifts={shifts} weeks={weeks} /></div>
       )}
 
-      {/* ד. Holidays Breakdown */}
+      {/* ה. Holidays Breakdown */}
       {rights_results?.holidays && (
         <div style={{ marginBottom: 24 }}><HolidaysBreakdown holidays={rights_results.holidays} /></div>
       )}
 
-      {/* ה. Limitation Timeline */}
+      {/* ו. Limitation Timeline */}
       {limitation_results && limitation_results.windows?.length > 0 && (
         <div style={{ marginBottom: 24 }}><LimitationTimeline limitation={limitation_results} /></div>
       )}
 
-      {/* ו. Employment Details */}
+      {/* ז. Employment Details */}
       {(total_employment || seniority_totals) && (
         <div style={{ marginBottom: 24 }}><EmploymentDetails employment={total_employment} seniority={seniority_totals} /></div>
       )}

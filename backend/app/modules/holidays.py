@@ -251,6 +251,7 @@ def calculate_year_entitlement(
     # Step 5: Election day - always entitled if threshold met
     result.election_day_entitled = True
     election_day_value = get_max_daily_salary_in_year(year)
+    result.election_day_value = election_day_value
     entitled_count += 1
     total_claim += election_day_value
 
