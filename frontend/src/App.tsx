@@ -19,12 +19,19 @@ import {
   Spin,
   message,
   theme,
+  Tooltip,
+  Dropdown,
+  Tabs,
 } from 'antd';
+import type { MenuProps } from 'antd';
 import {
   PlusOutlined,
   DeleteOutlined,
   CalculatorOutlined,
+  AimOutlined,
+  CodeOutlined,
 } from '@ant-design/icons';
+import SmartErrorDisplay from './SmartErrorDisplay';
 import heIL from 'antd/locale/he_IL';
 
 // Agartha theme colors
@@ -100,6 +107,44 @@ const createEmptyInput = (): SSOTInput => ({
 
 type SeniorityUnit = 'months' | 'years';
 
+// Example JSON input for debug tab
+const EXAMPLE_JSON_INPUT = {
+  case_metadata: { case_name: "תיק בדיקה — 3 שנות עבודה", notes: "עובד בניין, 5 ימים בשבוע, 07:00-17:00" },
+  personal_details: { first_name: "אחמד", last_name: "חסן", id_number: "123456789", birth_year: 1985 },
+  defendant_details: { name: "חברת בנייה בע\"מ", id_number: "514000000", address: "תל אביב" },
+  employment_periods: [
+    { id: "ep1", start: "2020-03-01", end: "2023-06-30" }
+  ],
+  work_patterns: [
+    {
+      id: "wp1",
+      start: "2020-03-01",
+      end: "2023-06-30",
+      work_days: [0, 1, 2, 3, 4],
+      default_shifts: [{ start_time: "07:00:00", end_time: "17:00:00" }],
+      default_breaks: [{ start_time: "12:00:00", end_time: "12:30:00" }]
+    }
+  ],
+  salary_tiers: [
+    {
+      id: "st1",
+      start: "2020-03-01",
+      end: "2023-06-30",
+      amount: "35",
+      type: "hourly",
+      net_or_gross: "gross"
+    }
+  ],
+  rest_day: "saturday",
+  district: "tel_aviv",
+  industry: "general",
+  filing_date: "2025-12-31",
+  seniority_input: { method: "prior_plus_pattern", prior_months: 0 },
+  right_toggles: {},
+  deductions_input: { overtime: "0", holidays: "0" },
+  right_specific_inputs: {}
+};
+
 // Format months as "X שנים ו-Y חודשים"
 const formatMonthsDisplay = (totalMonths: number): string => {
   if (totalMonths === 0) return '0 חודשים';
@@ -128,6 +173,8 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [priorSeniorityUnit, setPriorSeniorityUnit] = useState<SeniorityUnit>('months');
   const [totalSeniorityUnit, setTotalSeniorityUnit] = useState<SeniorityUnit>('months');
+  const [jsonInput, setJsonInput] = useState('');
+  const [jsonError, setJsonError] = useState<string | null>(null);
 
   // Update nested fields
   const updateField = <K extends keyof SSOTInput>(
@@ -236,6 +283,104 @@ function App() {
     updateField('work_patterns', updated);
   };
 
+  // SNAP work pattern dates to employment period
+  const snapWorkPatternToPeriod = (patternIndex: number, periodIndex: number) => {
+    const period = formData.employment_periods[periodIndex];
+    if (!period) return;
+    const updated = [...formData.work_patterns];
+    updated[patternIndex] = {
+      ...updated[patternIndex],
+      start: period.start,
+      end: period.end,
+    };
+    updateField('work_patterns', updated);
+    message.success(`דפוס עבודה ${patternIndex + 1} הותאם לתקופת העסקה ${periodIndex + 1}`);
+  };
+
+  // SNAP salary tier dates to employment period
+  const snapSalaryTierToPeriod = (tierIndex: number, periodIndex: number) => {
+    const period = formData.employment_periods[periodIndex];
+    if (!period) return;
+    const updated = [...formData.salary_tiers];
+    updated[tierIndex] = {
+      ...updated[tierIndex],
+      start: period.start,
+      end: period.end,
+    };
+    updateField('salary_tiers', updated);
+    message.success(`מדרגת שכר ${tierIndex + 1} הותאמה לתקופת העסקה ${periodIndex + 1}`);
+  };
+
+  // Extend work pattern to new end date
+  const extendWorkPattern = (patternIndex: number, start: string, end: string) => {
+    const updated = [...formData.work_patterns];
+    updated[patternIndex] = {
+      ...updated[patternIndex],
+      start: start || updated[patternIndex].start,
+      end: end,
+    };
+    updateField('work_patterns', updated);
+    message.success(`דפוס עבודה ${patternIndex + 1} הורחב עד ${dayjs(end).format('DD.MM.YYYY')}`);
+    setError(null); // Clear error after fix
+  };
+
+  // Extend salary tier to new end date
+  const extendSalaryTier = (tierIndex: number, start: string, end: string) => {
+    const updated = [...formData.salary_tiers];
+    updated[tierIndex] = {
+      ...updated[tierIndex],
+      start: start || updated[tierIndex].start,
+      end: end,
+    };
+    updateField('salary_tiers', updated);
+    message.success(`מדרגת שכר ${tierIndex + 1} הורחבה עד ${dayjs(end).format('DD.MM.YYYY')}`);
+    setError(null); // Clear error after fix
+  };
+
+  // Add work pattern for specific date range
+  const addWorkPatternForRange = (start: string, end: string) => {
+    const newPattern: WorkPattern = {
+      id: generateId(),
+      start,
+      end,
+      work_days: [0, 1, 2, 3, 4], // Default: Sunday-Thursday
+      default_shifts: [{ start_time: '08:00:00', end_time: '17:00:00' }],
+      default_breaks: [{ start_time: '12:00:00', end_time: '12:30:00' }],
+    };
+    updateField('work_patterns', [...formData.work_patterns, newPattern]);
+    message.success(`נוצר דפוס עבודה חדש לתקופה ${dayjs(start).format('DD.MM.YYYY')} - ${dayjs(end).format('DD.MM.YYYY')}`);
+    setError(null); // Clear error after fix
+  };
+
+  // Add salary tier for specific date range
+  const addSalaryTierForRange = (start: string, end: string) => {
+    // Copy last tier's settings if exists
+    const lastTier = formData.salary_tiers[formData.salary_tiers.length - 1];
+    const newTier: SalaryTier = {
+      id: generateId(),
+      start,
+      end,
+      amount: lastTier?.amount || '0',
+      type: lastTier?.type || 'hourly',
+      net_or_gross: lastTier?.net_or_gross || 'gross',
+    };
+    updateField('salary_tiers', [...formData.salary_tiers, newTier]);
+    message.success(`נוצרה מדרגת שכר חדשה לתקופה ${dayjs(start).format('DD.MM.YYYY')} - ${dayjs(end).format('DD.MM.YYYY')}`);
+    setError(null); // Clear error after fix
+  };
+
+  // Generate SNAP menu items for employment periods
+  const getSnapMenuItems = (onSelect: (periodIndex: number) => void): MenuProps['items'] => {
+    if (formData.employment_periods.length === 0) {
+      return [{ key: 'none', label: 'אין תקופות העסקה', disabled: true }];
+    }
+    return formData.employment_periods.map((period, index) => ({
+      key: String(index),
+      label: `תקופה ${index + 1}: ${period.start ? dayjs(period.start).format('DD.MM.YYYY') : '?'} - ${period.end ? dayjs(period.end).format('DD.MM.YYYY') : '?'}`,
+      onClick: () => onSelect(index),
+    }));
+  };
+
   // Salary tiers handlers
   const addSalaryTier = () => {
     const newTier: SalaryTier = {
@@ -319,6 +464,50 @@ function App() {
     }
   };
 
+  // JSON tab handlers
+  const handleJsonCalculate = async () => {
+    setJsonError(null);
+    let parsed;
+    try {
+      parsed = JSON.parse(jsonInput);
+    } catch (e) {
+      setJsonError(`שגיאת פרסור JSON: ${e instanceof Error ? e.message : 'לא ידוע'}`);
+      return;
+    }
+
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    try {
+      const response = await fetch('/calculate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(parsed),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        const errorDetail = data.detail;
+        if (errorDetail?.errors) {
+          setError(errorDetail.errors.map((e: { message: string }) => e.message).join('\n'));
+        } else {
+          setError('שגיאה בחישוב');
+        }
+      } else {
+        setResult(data.ssot);
+        message.success('החישוב הושלם בהצלחה');
+      }
+    } catch (err) {
+      setError(`שגיאת תקשורת: ${err instanceof Error ? err.message : 'לא ידוע'}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadExample = () => {
+    setJsonInput(JSON.stringify(EXAMPLE_JSON_INPUT, null, 2));
+    setJsonError(null);
+  };
+
   // Helper: convert Dayjs to ISO string
   const dayjsToIso = (d: Dayjs | null): string => {
     return d ? d.format('YYYY-MM-DD') : '';
@@ -342,8 +531,15 @@ function App() {
         <h1 className="main-title">אשף התביעות</h1>
         <p className="main-subtitle">מחשבון זכויות עובדים בדיני עבודה ישראליים</p>
 
-        <Form layout="vertical">
-          <Collapse
+        <Tabs
+          defaultActiveKey="form"
+          items={[
+            {
+              key: 'form',
+              label: 'טופס קלט',
+              children: (
+                <Form layout="vertical">
+                  <Collapse
             defaultActiveKey={['case', 'personal', 'defendant', 'employment', 'patterns', 'salary', 'settings', 'seniority', 'toggles', 'deductions']}
             items={[
               {
@@ -524,7 +720,7 @@ function App() {
                         style={{ marginBottom: 16 }}
                       >
                         <Row gutter={16}>
-                          <Col span={12}>
+                          <Col span={11}>
                             <Form.Item label="תאריך התחלה">
                               <DatePicker
                                 value={pattern.start ? dayjs(pattern.start) : null}
@@ -534,7 +730,7 @@ function App() {
                               />
                             </Form.Item>
                           </Col>
-                          <Col span={12}>
+                          <Col span={11}>
                             <Form.Item label="תאריך סיום">
                               <DatePicker
                                 value={pattern.end ? dayjs(pattern.end) : null}
@@ -543,6 +739,22 @@ function App() {
                                 style={{ width: '100%' }}
                               />
                             </Form.Item>
+                          </Col>
+                          <Col span={2} style={{ display: 'flex', alignItems: 'center', paddingTop: 30 }}>
+                            <Dropdown
+                              menu={{ items: getSnapMenuItems((periodIndex) => snapWorkPatternToPeriod(pIndex, periodIndex)) }}
+                              placement="bottomRight"
+                            >
+                              <Tooltip title="התאם תאריכים לתקופת העסקה">
+                                <Button
+                                  type="default"
+                                  size="small"
+                                  icon={<AimOutlined />}
+                                >
+                                  SNAP
+                                </Button>
+                              </Tooltip>
+                            </Dropdown>
                           </Col>
                         </Row>
 
@@ -648,7 +860,7 @@ function App() {
                     {formData.salary_tiers.map((tier, index) => (
                       <div key={tier.id} className="dynamic-list-item">
                         <Row gutter={16} align="middle">
-                          <Col span={4}>
+                          <Col span={3}>
                             <Form.Item label="סכום">
                               <InputNumber
                                 value={parseFloat(tier.amount) || undefined}
@@ -659,7 +871,7 @@ function App() {
                               />
                             </Form.Item>
                           </Col>
-                          <Col span={4}>
+                          <Col span={3}>
                             <Form.Item label="סוג">
                               <Select
                                 value={tier.type}
@@ -673,7 +885,7 @@ function App() {
                               </Select>
                             </Form.Item>
                           </Col>
-                          <Col span={4}>
+                          <Col span={3}>
                             <Form.Item label="נטו/ברוטו">
                               <Select
                                 value={tier.net_or_gross}
@@ -704,6 +916,22 @@ function App() {
                                 style={{ width: '100%' }}
                               />
                             </Form.Item>
+                          </Col>
+                          <Col span={3} style={{ display: 'flex', alignItems: 'center', paddingTop: 30, gap: 4 }}>
+                            <Dropdown
+                              menu={{ items: getSnapMenuItems((periodIndex) => snapSalaryTierToPeriod(index, periodIndex)) }}
+                              placement="bottomRight"
+                            >
+                              <Tooltip title="התאם תאריכים לתקופת העסקה">
+                                <Button
+                                  type="default"
+                                  size="small"
+                                  icon={<AimOutlined />}
+                                >
+                                  SNAP
+                                </Button>
+                              </Tooltip>
+                            </Dropdown>
                           </Col>
                           <Col span={2}>
                             <Button
@@ -983,28 +1211,83 @@ function App() {
             ]}
           />
 
-          {/* Calculate button */}
-          <div style={{ marginTop: 24, textAlign: 'center' }}>
-            <Button
-              type="primary"
-              size="large"
-              icon={<CalculatorOutlined />}
-              onClick={handleCalculate}
-              loading={loading}
-              style={{ minWidth: 200, height: 48, fontSize: 18 }}
-            >
-              חשב
-            </Button>
-          </div>
-        </Form>
+                  {/* Calculate button */}
+                  <div style={{ marginTop: 24, textAlign: 'center' }}>
+                    <Button
+                      type="primary"
+                      size="large"
+                      icon={<CalculatorOutlined />}
+                      onClick={handleCalculate}
+                      loading={loading}
+                      style={{ minWidth: 200, height: 48, fontSize: 18 }}
+                    >
+                      חשב
+                    </Button>
+                  </div>
+                </Form>
+              ),
+            },
+            {
+              key: 'json',
+              label: (
+                <span>
+                  <CodeOutlined /> הזנת JSON (דיבאג)
+                </span>
+              ),
+              children: (
+                <div>
+                  <div style={{ direction: 'ltr', textAlign: 'left' }}>
+                    <Input.TextArea
+                      value={jsonInput}
+                      onChange={(e) => setJsonInput(e.target.value)}
+                      rows={22}
+                      style={{ fontFamily: 'monospace', fontSize: 13 }}
+                      placeholder='הדבק כאן SSOT input בפורמט JSON...'
+                    />
+                  </div>
+                  {jsonError && (
+                    <div style={{ color: '#ff6b6b', marginTop: 8 }}>{jsonError}</div>
+                  )}
+                  <div style={{ marginTop: 16, display: 'flex', gap: 12, justifyContent: 'center' }}>
+                    <Button type="primary" onClick={handleJsonCalculate} loading={loading}>
+                      חשב מ-JSON
+                    </Button>
+                    <Button onClick={loadExample}>
+                      טען דוגמה
+                    </Button>
+                  </div>
+                </div>
+              ),
+            },
+          ]}
+        />
 
         {/* Error display */}
         {error && (
-          <div className="error-container">
+          <div className="error-container" style={{ marginTop: 24 }}>
             <div className="error-title">שגיאה בחישוב</div>
-            <div className="error-message" style={{ whiteSpace: 'pre-wrap' }}>
-              {error}
-            </div>
+            <SmartErrorDisplay
+              errorMessage={error}
+              employmentPeriods={formData.employment_periods.map((p) => ({
+                id: p.id,
+                start: p.start,
+                end: p.end,
+              }))}
+              workPatterns={formData.work_patterns.map((p) => ({
+                id: p.id,
+                start: p.start,
+                end: p.end,
+              }))}
+              salaryTiers={formData.salary_tiers.map((t) => ({
+                id: t.id,
+                start: t.start,
+                end: t.end,
+              }))}
+              onExtendWorkPattern={extendWorkPattern}
+              onExtendSalaryTier={extendSalaryTier}
+              onAddWorkPattern={addWorkPatternForRange}
+              onAddSalaryTier={addSalaryTierForRange}
+            />
           </div>
         )}
 

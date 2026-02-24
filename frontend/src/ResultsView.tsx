@@ -75,6 +75,64 @@ interface OvertimeResult {
   monthly_breakdown: OvertimeMonthlyBreakdown[];
 }
 
+// Shift pricing breakdown item
+interface PricingBreakdownItem {
+  hours: number;
+  tier: 0 | 1 | 2;
+  in_rest: boolean;
+  rate_multiplier: number;
+  claim_multiplier: number;
+  hourly_wage: number;
+  claim_amount: number;
+}
+
+// Full shift data from SSOT
+interface ShiftData {
+  id: string;
+  date: string;
+  shift_index: number;
+  effective_period_id: string;
+  week_id: string;
+  start: string;
+  end: string;
+  net_hours: number;
+  threshold: number;
+  threshold_reason: string;
+  regular_hours: number;
+  ot_tier1_hours: number;
+  ot_tier2_hours: number;
+  daily_ot_hours: number;
+  weekly_ot_hours: number;
+  rest_window_regular_hours: number;
+  rest_window_ot_tier1_hours: number;
+  rest_window_ot_tier2_hours: number;
+  non_rest_regular_hours: number;
+  non_rest_ot_tier1_hours: number;
+  non_rest_ot_tier2_hours: number;
+  claim_amount?: number;
+  pricing_breakdown?: PricingBreakdownItem[];
+}
+
+// Week data from SSOT
+interface WeekData {
+  id: string;
+  year: number;
+  week_number: number;
+  start_date: string;
+  end_date: string;
+  distinct_work_days: number;
+  week_type: 5 | 6;
+  total_regular_hours: number;
+  weekly_ot_hours: number;
+  weekly_threshold: number;
+  rest_window_start?: string;
+  rest_window_end?: string;
+  rest_window_work_hours: number;
+  is_partial: boolean;
+  partial_reason?: string;
+  partial_detail?: string;
+}
+
 interface HolidayEntry {
   name: string;
   hebrew_date: string;
@@ -169,6 +227,8 @@ interface ResultsViewProps {
     total_employment?: TotalEmployment;
     seniority_totals?: SeniorityTotals;
     deduction_results?: Record<string, DeductionResult>;
+    shifts?: ShiftData[];
+    weeks?: WeekData[];
   };
 }
 
@@ -282,7 +342,7 @@ const SummaryCard: React.FC<{ summary: ClaimSummary }> = ({ summary }) => {
             value={summary.total_after_deductions}
             precision={2}
             prefix="₪"
-            valueStyle={{ color: '#4ECDC4', fontSize: '1.5em', fontWeight: 'bold' }}
+            valueStyle={{ color: '#4ECDC4', fontSize: '2em', fontWeight: 'bold' }}
           />
         </Col>
       </Row>
@@ -300,44 +360,45 @@ const RightsTable: React.FC<{
 }> = ({ rights, deductionResults }) => {
   const columns = [
     {
-      title: 'זכות',
+      title: <span style={{ color: '#88D8E0' }}>זכות</span>,
       dataIndex: 'name',
       key: 'name',
+      render: (v: string) => <span style={{ color: '#E8F4F8' }}>{v}</span>,
     },
     {
-      title: 'סכום מלא',
+      title: <span style={{ color: '#88D8E0' }}>סכום מלא</span>,
       dataIndex: 'full_amount',
       key: 'full_amount',
-      render: (v: number) => <span className="ltr-number">{formatCurrency(v)}</span>,
+      render: (v: number) => <span className="ltr-number" style={{ color: '#E8F4F8' }}>{formatCurrency(v)}</span>,
     },
     {
-      title: 'התיישנות',
+      title: <span style={{ color: '#88D8E0' }}>התיישנות</span>,
       dataIndex: 'limitation_excluded',
       key: 'limitation_excluded',
       render: (v: number) => (
-        <span className="ltr-number" style={{ color: v > 0 ? '#FF6B6B' : undefined }}>
+        <span className="ltr-number" style={{ color: v > 0 ? '#ff6b6b' : '#E8F4F8' }}>
           {v > 0 ? `-${formatCurrency(v)}` : '-'}
         </span>
       ),
     },
     {
-      title: 'אחרי התיישנות',
+      title: <span style={{ color: '#88D8E0' }}>אחרי התיישנות</span>,
       dataIndex: 'after_limitation',
       key: 'after_limitation',
-      render: (v: number) => <span className="ltr-number">{formatCurrency(v)}</span>,
+      render: (v: number) => <span className="ltr-number" style={{ color: '#E8F4F8' }}>{formatCurrency(v)}</span>,
     },
     {
-      title: 'ניכוי מעסיק',
+      title: <span style={{ color: '#88D8E0' }}>ניכוי מעסיק</span>,
       dataIndex: 'deduction_amount',
       key: 'deduction_amount',
       render: (v: number, record: ClaimSummaryRight) => {
         const showDeduction = deductionResults?.[record.right_id]?.show_deduction;
-        if (!showDeduction || v === 0) return '-';
-        return <span className="ltr-number" style={{ color: '#FFD93D' }}>-{formatCurrency(v)}</span>;
+        if (!showDeduction || v === 0) return <span style={{ color: '#E8F4F8' }}>-</span>;
+        return <span className="ltr-number" style={{ color: '#ff6b6b' }}>-{formatCurrency(v)}</span>;
       },
     },
     {
-      title: 'לתביעה',
+      title: <span style={{ color: '#88D8E0' }}>לתביעה</span>,
       dataIndex: 'after_deductions',
       key: 'after_deductions',
       render: (v: number) => (
@@ -371,91 +432,482 @@ const RightsTable: React.FC<{
 };
 
 // ============================================================================
-// ג. OvertimeBreakdown - פירוט שעות נוספות
+// ג. OvertimeBreakdown - פירוט שעות נוספות (משופר)
 // ============================================================================
 
-const OvertimeBreakdown: React.FC<{ overtime: OvertimeResult }> = ({ overtime }) => {
-  const columns = [
-    {
-      title: 'חודש',
-      dataIndex: 'month',
-      key: 'month',
-      render: (m: [number, number]) => formatMonth(m),
-    },
-    {
-      title: 'משמרות',
-      dataIndex: 'shifts_count',
-      key: 'shifts_count',
-    },
-    {
-      title: 'שעות רגילות',
-      dataIndex: 'regular_hours',
-      key: 'regular_hours',
-      render: (v: number) => <span className="ltr-number">{formatHours(v)}</span>,
-    },
-    {
-      title: 'שעות נוספות',
-      dataIndex: 'ot_hours',
-      key: 'ot_hours',
-      render: (v: number) => (
-        <span className="ltr-number" style={{ color: v > 0 ? '#FFD93D' : undefined }}>
-          {formatHours(v)}
-        </span>
+// Helper: format datetime to time only
+const formatTime = (datetime: string | undefined): string => {
+  if (!datetime) return '-';
+  const d = new Date(datetime);
+  return `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+};
+
+// Helper: format datetime to date and time
+const formatDateTime = (datetime: string | undefined): string => {
+  if (!datetime) return '-';
+  const d = new Date(datetime);
+  return `${formatDate(datetime)} ${formatTime(datetime)}`;
+};
+
+// Helper: get tier label
+const getTierLabel = (tier: number, inRest: boolean): string => {
+  const baseLabels: Record<number, string> = { 0: '100%', 1: '125%', 2: '150%' };
+  const restLabels: Record<number, string> = { 0: '150%', 1: '175%', 2: '200%' };
+  return inRest ? restLabels[tier] : baseLabels[tier];
+};
+
+// Helper: get tier color
+const getTierColor = (tier: number, inRest: boolean): string => {
+  if (inRest) return '#FF6B6B'; // Red for rest window
+  if (tier === 0) return '#88D8E0'; // Light cyan for regular
+  if (tier === 1) return '#FFD93D'; // Yellow for 125%
+  return '#FF9F43'; // Orange for 150%
+};
+
+// Helper: translate day of week from number
+const dayOfWeekFromDate = (dateStr: string): string => {
+  const d = new Date(dateStr);
+  const days = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+  return days[d.getDay()];
+};
+
+// Aggregate hours by tier across all shifts
+interface TierSummary {
+  tier: string;
+  hours: number;
+  amount: number;
+  color: string;
+}
+
+const aggregateByTier = (shifts: ShiftData[]): TierSummary[] => {
+  const tierMap: Record<string, { hours: number; amount: number; color: string }> = {};
+
+  shifts.forEach((shift) => {
+    if (shift.pricing_breakdown) {
+      shift.pricing_breakdown.forEach((item) => {
+        const label = getTierLabel(item.tier, item.in_rest);
+        const color = getTierColor(item.tier, item.in_rest);
+        if (!tierMap[label]) {
+          tierMap[label] = { hours: 0, amount: 0, color };
+        }
+        tierMap[label].hours += item.hours;
+        tierMap[label].amount += item.claim_amount;
+      });
+    }
+  });
+
+  // Sort by percentage (100%, 125%, 150%, 175%, 200%)
+  const order = ['100%', '125%', '150%', '175%', '200%'];
+  return order
+    .filter((tier) => tierMap[tier])
+    .map((tier) => ({
+      tier,
+      hours: tierMap[tier].hours,
+      amount: tierMap[tier].amount,
+      color: tierMap[tier].color,
+    }));
+};
+
+// OvertimeSummaryTab - סיכום כללי
+const OvertimeSummaryTab: React.FC<{ shifts: ShiftData[]; totalClaim: number }> = ({
+  shifts,
+  totalClaim,
+}) => {
+  const tierSummary = aggregateByTier(shifts);
+  const totalHours = shifts.reduce((sum, s) => sum + s.net_hours, 0);
+  const totalRegular = shifts.reduce((sum, s) => sum + s.regular_hours, 0);
+  const totalOT = shifts.reduce((sum, s) => sum + s.ot_tier1_hours + s.ot_tier2_hours, 0);
+
+  return (
+    <div>
+      {/* Overall stats */}
+      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+        <Col span={6}>
+          <Statistic title="סה״כ משמרות" value={shifts.length} />
+        </Col>
+        <Col span={6}>
+          <Statistic title="סה״כ שעות עבודה" value={totalHours.toFixed(1)} />
+        </Col>
+        <Col span={6}>
+          <Statistic title="שעות רגילות" value={totalRegular.toFixed(1)} valueStyle={{ color: '#88D8E0' }} />
+        </Col>
+        <Col span={6}>
+          <Statistic title="שעות נוספות" value={totalOT.toFixed(1)} valueStyle={{ color: '#FFD93D' }} />
+        </Col>
+      </Row>
+
+      {/* Tier breakdown */}
+      <Title level={5} style={{ color: '#88D8E0', marginBottom: 16 }}>פירוט לפי דרגה</Title>
+      <Table
+        dataSource={tierSummary}
+        columns={[
+          {
+            title: 'דרגה',
+            dataIndex: 'tier',
+            key: 'tier',
+            render: (tier: string, record: TierSummary) => (
+              <Tag color={record.color} style={{ fontSize: '1em' }}>{tier}</Tag>
+            ),
+          },
+          {
+            title: 'שעות',
+            dataIndex: 'hours',
+            key: 'hours',
+            render: (v: number) => <span className="ltr-number">{v.toFixed(1)}</span>,
+          },
+          {
+            title: 'סכום לתביעה',
+            dataIndex: 'amount',
+            key: 'amount',
+            render: (v: number) => <span className="ltr-number" style={{ fontWeight: 'bold' }}>{formatCurrency(v)}</span>,
+          },
+        ]}
+        rowKey="tier"
+        pagination={false}
+        size="small"
+        summary={() => (
+          <Table.Summary fixed>
+            <Table.Summary.Row style={{ background: 'rgba(78, 205, 196, 0.1)' }}>
+              <Table.Summary.Cell index={0}><strong>סה״כ</strong></Table.Summary.Cell>
+              <Table.Summary.Cell index={1}>
+                <strong className="ltr-number">{tierSummary.reduce((sum, t) => sum + t.hours, 0).toFixed(1)}</strong>
+              </Table.Summary.Cell>
+              <Table.Summary.Cell index={2}>
+                <strong className="ltr-number" style={{ color: '#4ECDC4' }}>{formatCurrency(totalClaim)}</strong>
+              </Table.Summary.Cell>
+            </Table.Summary.Row>
+          </Table.Summary>
+        )}
+      />
+    </div>
+  );
+};
+
+// Single shift detail component
+const ShiftDetail: React.FC<{ shift: ShiftData }> = ({ shift }) => {
+  return (
+    <div style={{ padding: '8px 0' }}>
+      <Row gutter={16}>
+        <Col span={6}>
+          <Text type="secondary">זמן:</Text>
+          <div className="ltr-number">{formatTime(shift.start)} - {formatTime(shift.end)}</div>
+        </Col>
+        <Col span={4}>
+          <Text type="secondary">נטו:</Text>
+          <div>{shift.net_hours.toFixed(2)} שעות</div>
+        </Col>
+        <Col span={4}>
+          <Text type="secondary">סף:</Text>
+          <div>{shift.threshold} ({shift.threshold_reason})</div>
+        </Col>
+        <Col span={5}>
+          <Text type="secondary">שעות:</Text>
+          <div>
+            <span style={{ color: '#88D8E0' }}>{shift.regular_hours.toFixed(1)} רגיל</span>
+            {shift.ot_tier1_hours > 0 && <span style={{ color: '#FFD93D' }}> + {shift.ot_tier1_hours.toFixed(1)} (125%)</span>}
+            {shift.ot_tier2_hours > 0 && <span style={{ color: '#FF9F43' }}> + {shift.ot_tier2_hours.toFixed(1)} (150%)</span>}
+          </div>
+        </Col>
+        <Col span={5}>
+          <Text type="secondary">לתביעה:</Text>
+          <div className="ltr-number" style={{ color: '#4ECDC4', fontWeight: 'bold' }}>
+            {formatCurrency(shift.claim_amount || 0)}
+          </div>
+        </Col>
+      </Row>
+
+      {/* Pricing breakdown */}
+      {shift.pricing_breakdown && shift.pricing_breakdown.length > 0 && (
+        <div style={{ marginTop: 8, padding: '8px 12px', background: 'rgba(19, 43, 74, 0.5)', borderRadius: 4 }}>
+          <Text type="secondary" style={{ fontSize: '0.85em' }}>פירוט תמחור:</Text>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
+            {shift.pricing_breakdown.map((item, idx) => (
+              <Tag key={idx} color={getTierColor(item.tier, item.in_rest)} style={{ marginBottom: 4 }}>
+                {item.hours.toFixed(2)}h × {getTierLabel(item.tier, item.in_rest)}
+                {item.in_rest && ' (מנוחה)'}
+                {' = '}
+                {formatCurrency(item.claim_amount)}
+              </Tag>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Day collapse item
+const DayCollapseItem: React.FC<{ date: string; shifts: ShiftData[] }> = ({ date, shifts }) => {
+  const dayTotal = shifts.reduce((sum, s) => sum + (s.claim_amount || 0), 0);
+  const dayHours = shifts.reduce((sum, s) => sum + s.net_hours, 0);
+
+  return (
+    <div>
+      {shifts.map((shift, idx) => (
+        <div key={shift.id} style={{ borderBottom: idx < shifts.length - 1 ? '1px solid rgba(78, 205, 196, 0.1)' : 'none' }}>
+          <Text strong style={{ color: '#88D8E0' }}>משמרת {idx + 1}</Text>
+          <ShiftDetail shift={shift} />
+        </div>
+      ))}
+    </div>
+  );
+};
+
+// Week collapse item with rest window info
+const WeekCollapseContent: React.FC<{ week: WeekData; shifts: ShiftData[] }> = ({ week, shifts }) => {
+  // Group shifts by date
+  const shiftsByDate: Record<string, ShiftData[]> = {};
+  shifts.forEach((shift) => {
+    if (!shiftsByDate[shift.date]) shiftsByDate[shift.date] = [];
+    shiftsByDate[shift.date].push(shift);
+  });
+
+  const sortedDates = Object.keys(shiftsByDate).sort();
+
+  const dayItems = sortedDates.map((date) => {
+    const dayShifts = shiftsByDate[date];
+    const dayTotal = dayShifts.reduce((sum, s) => sum + (s.claim_amount || 0), 0);
+    const dayHours = dayShifts.reduce((sum, s) => sum + s.net_hours, 0);
+
+    return {
+      key: date,
+      label: (
+        <Space>
+          <CalendarOutlined />
+          <span>{dayOfWeekFromDate(date)}</span>
+          <span className="ltr-number">{formatDate(date)}</span>
+          <Tag>{dayShifts.length} משמרות</Tag>
+          <Tag color="blue">{dayHours.toFixed(1)}h</Tag>
+          <Tag color="cyan">{formatCurrency(dayTotal)}</Tag>
+        </Space>
       ),
+      children: <DayCollapseItem date={date} shifts={dayShifts} />,
+    };
+  });
+
+  return (
+    <div>
+      {/* Week info */}
+      <div style={{ marginBottom: 16, padding: '12px 16px', background: 'rgba(78, 205, 196, 0.05)', borderRadius: 8 }}>
+        <Row gutter={16}>
+          <Col span={6}>
+            <Text type="secondary">סוג שבוע:</Text>
+            <div><Tag color={week.week_type === 5 ? 'green' : 'blue'}>{week.week_type} ימים</Tag></div>
+          </Col>
+          <Col span={6}>
+            <Text type="secondary">ימי עבודה:</Text>
+            <div>{week.distinct_work_days}</div>
+          </Col>
+          <Col span={6}>
+            <Text type="secondary">שעות רגילות:</Text>
+            <div>{week.total_regular_hours?.toFixed(1) || 0}</div>
+          </Col>
+          <Col span={6}>
+            <Text type="secondary">OT שבועי:</Text>
+            <div style={{ color: week.weekly_ot_hours > 0 ? '#FFD93D' : undefined }}>
+              {week.weekly_ot_hours?.toFixed(1) || 0}
+            </div>
+          </Col>
+        </Row>
+
+        {/* Rest window info */}
+        {(week.rest_window_start || week.rest_window_end) && (
+          <Row gutter={16} style={{ marginTop: 12 }}>
+            <Col span={24}>
+              <Text type="secondary" strong style={{ color: '#FF6B6B' }}>חלון מנוחה (36 שעות):</Text>
+            </Col>
+            <Col span={8}>
+              <Text type="secondary">כניסת שבת:</Text>
+              <div className="ltr-number">{formatDateTime(week.rest_window_start)}</div>
+            </Col>
+            <Col span={8}>
+              <Text type="secondary">יציאת שבת:</Text>
+              <div className="ltr-number">{formatDateTime(week.rest_window_end)}</div>
+            </Col>
+            <Col span={8}>
+              <Text type="secondary">שעות עבודה בחלון:</Text>
+              <div style={{ color: week.rest_window_work_hours > 0 ? '#FF6B6B' : '#4ECDC4' }}>
+                {week.rest_window_work_hours?.toFixed(1) || 0}
+              </div>
+            </Col>
+          </Row>
+        )}
+
+        {/* Partial week warning */}
+        {week.is_partial && (
+          <Alert
+            message="שבוע חלקי"
+            description={week.partial_detail || week.partial_reason}
+            type="info"
+            showIcon
+            style={{ marginTop: 12 }}
+          />
+        )}
+      </div>
+
+      {/* Days collapse */}
+      <Collapse items={dayItems} />
+    </div>
+  );
+};
+
+// OvertimeDetailedTab - פירוט מלא
+const OvertimeDetailedTab: React.FC<{ shifts: ShiftData[]; weeks: WeekData[] }> = ({
+  shifts,
+  weeks,
+}) => {
+  // Create week lookup
+  const weekMap: Record<string, WeekData> = {};
+  weeks.forEach((w) => { weekMap[w.id] = w; });
+
+  // Group shifts by year → month → week
+  const hierarchy: Record<number, Record<string, Record<string, ShiftData[]>>> = {};
+
+  shifts.forEach((shift) => {
+    const date = new Date(shift.date);
+    const year = date.getFullYear();
+    const month = `${year}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
+    const weekId = shift.week_id;
+
+    if (!hierarchy[year]) hierarchy[year] = {};
+    if (!hierarchy[year][month]) hierarchy[year][month] = {};
+    if (!hierarchy[year][month][weekId]) hierarchy[year][month][weekId] = [];
+    hierarchy[year][month][weekId].push(shift);
+  });
+
+  // Build year items
+  const yearItems = Object.keys(hierarchy)
+    .sort((a, b) => parseInt(b) - parseInt(a))
+    .map((year) => {
+      const yearData = hierarchy[parseInt(year)];
+      const yearShifts = Object.values(yearData).flatMap((m) => Object.values(m).flat());
+      const yearTotal = yearShifts.reduce((sum, s) => sum + (s.claim_amount || 0), 0);
+      const yearHours = yearShifts.reduce((sum, s) => sum + s.net_hours, 0);
+
+      // Build month items
+      const monthItems = Object.keys(yearData)
+        .sort((a, b) => b.localeCompare(a))
+        .map((month) => {
+          const monthData = yearData[month];
+          const monthShifts = Object.values(monthData).flat();
+          const monthTotal = monthShifts.reduce((sum, s) => sum + (s.claim_amount || 0), 0);
+          const monthHours = monthShifts.reduce((sum, s) => sum + s.net_hours, 0);
+          const monthName = formatMonth([parseInt(month.split('-')[0]), parseInt(month.split('-')[1])]);
+
+          // Build week items
+          const weekItems = Object.keys(monthData)
+            .sort((a, b) => {
+              const weekA = weekMap[a];
+              const weekB = weekMap[b];
+              return (weekB?.week_number || 0) - (weekA?.week_number || 0);
+            })
+            .map((weekId) => {
+              const weekShifts = monthData[weekId];
+              const week = weekMap[weekId];
+              const weekTotal = weekShifts.reduce((sum, s) => sum + (s.claim_amount || 0), 0);
+              const weekHours = weekShifts.reduce((sum, s) => sum + s.net_hours, 0);
+
+              return {
+                key: weekId,
+                label: (
+                  <Space>
+                    <span>שבוע {week?.week_number || '?'}</span>
+                    {week && (
+                      <>
+                        <span className="ltr-number" style={{ fontSize: '0.85em', color: '#88D8E0' }}>
+                          ({formatDate(week.start_date)} - {formatDate(week.end_date)})
+                        </span>
+                        <Tag color={week.week_type === 5 ? 'green' : 'blue'}>{week.week_type} ימים</Tag>
+                      </>
+                    )}
+                    <Tag>{weekShifts.length} משמרות</Tag>
+                    <Tag color="blue">{weekHours.toFixed(1)}h</Tag>
+                    <Tag color="cyan">{formatCurrency(weekTotal)}</Tag>
+                  </Space>
+                ),
+                children: week ? (
+                  <WeekCollapseContent week={week} shifts={weekShifts} />
+                ) : (
+                  <div>{weekShifts.map((s) => <ShiftDetail key={s.id} shift={s} />)}</div>
+                ),
+              };
+            });
+
+          return {
+            key: month,
+            label: (
+              <Space>
+                <span>{monthName}</span>
+                <Tag>{monthShifts.length} משמרות</Tag>
+                <Tag color="blue">{monthHours.toFixed(1)}h</Tag>
+                <Tag color="cyan">{formatCurrency(monthTotal)}</Tag>
+              </Space>
+            ),
+            children: <Collapse items={weekItems} />,
+          };
+        });
+
+      return {
+        key: year,
+        label: (
+          <Space>
+            <span style={{ fontWeight: 'bold', fontSize: '1.1em' }}>{year}</span>
+            <Tag>{yearShifts.length} משמרות</Tag>
+            <Tag color="blue">{yearHours.toFixed(1)}h</Tag>
+            <Tag color="cyan" style={{ fontWeight: 'bold' }}>{formatCurrency(yearTotal)}</Tag>
+          </Space>
+        ),
+        children: <Collapse items={monthItems} />,
+      };
+    });
+
+  return <Collapse items={yearItems} />;
+};
+
+// Main OvertimeBreakdown component
+const OvertimeBreakdown: React.FC<{
+  overtime: OvertimeResult;
+  shifts?: ShiftData[];
+  weeks?: WeekData[];
+}> = ({ overtime, shifts = [], weeks = [] }) => {
+  const tabItems = [
+    {
+      key: 'summary',
+      label: (
+        <Space>
+          <ClockCircleOutlined />
+          <span>סיכום כללי</span>
+        </Space>
+      ),
+      children: <OvertimeSummaryTab shifts={shifts} totalClaim={overtime.total_claim} />,
     },
     {
-      title: 'סכום',
-      dataIndex: 'claim_amount',
-      key: 'claim_amount',
-      render: (v: number) => <span className="ltr-number">{formatCurrency(v)}</span>,
+      key: 'detailed',
+      label: (
+        <Space>
+          <CalendarOutlined />
+          <span>פירוט מלא</span>
+        </Space>
+      ),
+      children: <OvertimeDetailedTab shifts={shifts} weeks={weeks} />,
     },
   ];
-
-  // Calculate totals
-  const totals = overtime.monthly_breakdown.reduce(
-    (acc, row) => ({
-      shifts_count: acc.shifts_count + row.shifts_count,
-      regular_hours: acc.regular_hours + row.regular_hours,
-      ot_hours: acc.ot_hours + row.ot_hours,
-      claim_amount: acc.claim_amount + row.claim_amount,
-    }),
-    { shifts_count: 0, regular_hours: 0, ot_hours: 0, claim_amount: 0 }
-  );
 
   return (
     <Card
       title={
         <Space>
           <ClockCircleOutlined />
-          <span>שעות נוספות — פירוט חודשי</span>
-          <Tag color="cyan">{formatCurrency(overtime.total_claim)}</Tag>
+          <span>שעות נוספות</span>
+          <Tag color="cyan" style={{ fontSize: '1em' }}>{formatCurrency(overtime.total_claim)}</Tag>
         </Space>
       }
       className="results-card"
     >
-      <Table
-        dataSource={overtime.monthly_breakdown}
-        columns={columns}
-        rowKey={(r) => `${r.month[0]}-${r.month[1]}`}
-        pagination={overtime.monthly_breakdown.length > 24 ? { pageSize: 24 } : false}
-        size="small"
-        summary={() => (
-          <Table.Summary fixed>
-            <Table.Summary.Row style={{ background: 'rgba(78, 205, 196, 0.1)' }}>
-              <Table.Summary.Cell index={0}><strong>סה״כ</strong></Table.Summary.Cell>
-              <Table.Summary.Cell index={1}><strong>{totals.shifts_count}</strong></Table.Summary.Cell>
-              <Table.Summary.Cell index={2}>
-                <strong className="ltr-number">{formatHours(totals.regular_hours)}</strong>
-              </Table.Summary.Cell>
-              <Table.Summary.Cell index={3}>
-                <strong className="ltr-number" style={{ color: '#FFD93D' }}>{formatHours(totals.ot_hours)}</strong>
-              </Table.Summary.Cell>
-              <Table.Summary.Cell index={4}>
-                <strong className="ltr-number" style={{ color: '#4ECDC4' }}>{formatCurrency(totals.claim_amount)}</strong>
-              </Table.Summary.Cell>
-            </Table.Summary.Row>
-          </Table.Summary>
-        )}
+      <Collapse
+        items={tabItems}
+        defaultActiveKey={['summary']}
+        style={{ background: 'transparent' }}
       />
     </Card>
   );
@@ -484,36 +936,55 @@ const HolidaysBreakdown: React.FC<{ holidays: HolidaysResult }> = ({ holidays })
   };
 
   const holidayColumns = [
-    { title: 'שם', dataIndex: 'name', key: 'name' },
-    { title: 'תאריך עברי', dataIndex: 'hebrew_date', key: 'hebrew_date' },
     {
-      title: 'תאריך לועזי',
+      title: <span style={{ color: '#88D8E0' }}>שם</span>,
+      dataIndex: 'name',
+      key: 'name',
+      render: (v: string) => <span style={{ color: '#E8F4F8' }}>{v}</span>,
+    },
+    {
+      title: <span style={{ color: '#88D8E0' }}>תאריך עברי</span>,
+      dataIndex: 'hebrew_date',
+      key: 'hebrew_date',
+      render: (v: string) => <span style={{ color: '#E8F4F8' }}>{v}</span>,
+    },
+    {
+      title: <span style={{ color: '#88D8E0' }}>תאריך לועזי</span>,
       dataIndex: 'gregorian_date',
       key: 'gregorian_date',
-      render: (d: string) => <span className="ltr-number">{formatDate(d)}</span>,
+      render: (d: string) => <span className="ltr-number" style={{ color: '#E8F4F8' }}>{formatDate(d)}</span>,
     },
     {
-      title: 'יום',
+      title: <span style={{ color: '#88D8E0' }}>יום</span>,
       dataIndex: 'day_of_week',
       key: 'day_of_week',
-      render: (d: string) => translateDayOfWeek(d),
+      render: (d: string) => <span style={{ color: '#E8F4F8' }}>{translateDayOfWeek(d)}</span>,
     },
     {
-      title: 'שבוע',
+      title: <span style={{ color: '#88D8E0' }}>שבוע</span>,
       dataIndex: 'week_type',
       key: 'week_type',
-      render: (w: number) => `${w} ימים`,
+      render: (w: number) => <span style={{ color: '#E8F4F8' }}>{w} ימים</span>,
     },
     {
-      title: 'זכאות',
+      title: <span style={{ color: '#88D8E0' }}>זכאות</span>,
       key: 'entitlement',
-      render: (_: unknown, record: HolidayEntry) => renderEntitlement(record),
+      render: (_: unknown, record: HolidayEntry) => {
+        if (record.exclude_reason) {
+          return (
+            <Tooltip title={record.exclude_reason}>
+              {renderEntitlement(record)}
+            </Tooltip>
+          );
+        }
+        return renderEntitlement(record);
+      },
     },
     {
-      title: 'ערך יום',
+      title: <span style={{ color: '#88D8E0' }}>ערך יום</span>,
       dataIndex: 'day_value',
       key: 'day_value',
-      render: (v: number | undefined) => v ? <span className="ltr-number">{formatCurrency(v)}</span> : '-',
+      render: (v: number | undefined) => v ? <span className="ltr-number" style={{ color: '#E8F4F8' }}>{formatCurrency(v)}</span> : <span style={{ color: '#E8F4F8' }}>-</span>,
     },
   ];
 
@@ -767,6 +1238,8 @@ const ResultsView: React.FC<ResultsViewProps> = ({ ssot }) => {
     total_employment,
     seniority_totals,
     deduction_results,
+    shifts,
+    weeks,
   } = ssot;
 
   return (
@@ -776,31 +1249,31 @@ const ResultsView: React.FC<ResultsViewProps> = ({ ssot }) => {
       </Title>
 
       {/* א. Summary Card */}
-      {claim_summary && <SummaryCard summary={claim_summary} />}
+      {claim_summary && <div style={{ marginBottom: 24 }}><SummaryCard summary={claim_summary} /></div>}
 
       {/* ב. Rights Table */}
       {claim_summary?.per_right && claim_summary.per_right.length > 0 && (
-        <RightsTable rights={claim_summary.per_right} deductionResults={deduction_results} />
+        <div style={{ marginBottom: 24 }}><RightsTable rights={claim_summary.per_right} deductionResults={deduction_results} /></div>
       )}
 
       {/* ג. Overtime Breakdown */}
       {rights_results?.overtime && (
-        <OvertimeBreakdown overtime={rights_results.overtime} />
+        <div style={{ marginBottom: 24 }}><OvertimeBreakdown overtime={rights_results.overtime} shifts={shifts} weeks={weeks} /></div>
       )}
 
       {/* ד. Holidays Breakdown */}
       {rights_results?.holidays && (
-        <HolidaysBreakdown holidays={rights_results.holidays} />
+        <div style={{ marginBottom: 24 }}><HolidaysBreakdown holidays={rights_results.holidays} /></div>
       )}
 
       {/* ה. Limitation Timeline */}
       {limitation_results && limitation_results.windows?.length > 0 && (
-        <LimitationTimeline limitation={limitation_results} />
+        <div style={{ marginBottom: 24 }}><LimitationTimeline limitation={limitation_results} /></div>
       )}
 
       {/* ו. Employment Details */}
       {(total_employment || seniority_totals) && (
-        <EmploymentDetails employment={total_employment} seniority={seniority_totals} />
+        <div style={{ marginBottom: 24 }}><EmploymentDetails employment={total_employment} seniority={seniority_totals} /></div>
       )}
 
       {/* ז. Raw JSON for debugging */}
