@@ -169,8 +169,60 @@ body {
 }
 
 /* Ant Design Overrides for Agartha theme */
+
+/* Force dark backgrounds on all Ant components */
+.ant-collapse,
+.ant-collapse-item,
+.ant-collapse > .ant-collapse-item,
+.ant-card,
+.ant-card-body,
+.ant-form,
+.ant-form-item {
+  background: transparent !important;
+  color: var(--agartha-ice) !important;
+}
+
+.ant-collapse-header {
+  background: var(--agartha-mid) !important;
+}
+
+.ant-collapse-content {
+  background: var(--agartha-dark) !important;
+}
+
+.ant-collapse-content-box {
+  background: var(--agartha-dark) !important;
+}
+
 .ant-form-item-label > label {
   color: var(--agartha-ice) !important;
+}
+
+/* Input fields - dark background */
+.ant-input,
+.ant-input-number,
+.ant-input-number-input,
+.ant-picker,
+.ant-select,
+.ant-select-selector,
+.ant-input-affix-wrapper {
+  background: var(--agartha-dark) !important;
+  background-color: var(--agartha-dark) !important;
+  border-color: var(--agartha-border) !important;
+  color: var(--agartha-ice) !important;
+}
+
+.ant-input-number-input {
+  background: transparent !important;
+}
+
+.ant-select-selection-item,
+.ant-select-selection-placeholder {
+  color: var(--agartha-ice) !important;
+}
+
+.ant-select-arrow {
+  color: var(--agartha-light-cyan) !important;
 }
 
 .ant-input,

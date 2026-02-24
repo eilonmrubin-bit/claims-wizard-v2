@@ -18,6 +18,7 @@ import {
   Col,
   Spin,
   message,
+  theme,
 } from 'antd';
 import {
   PlusOutlined,
@@ -25,6 +26,23 @@ import {
   CalculatorOutlined,
 } from '@ant-design/icons';
 import heIL from 'antd/locale/he_IL';
+
+// Agartha theme colors
+const agarthaTheme = {
+  algorithm: theme.darkAlgorithm,
+  token: {
+    colorPrimary: '#4ECDC4',
+    colorBgContainer: '#0B1929',
+    colorBgElevated: '#132B4A',
+    colorBgLayout: '#060D19',
+    colorText: '#E8F4F8',
+    colorTextSecondary: '#88D8E0',
+    colorBorder: 'rgba(78, 205, 196, 0.3)',
+    colorBorderSecondary: 'rgba(78, 205, 196, 0.2)',
+    borderRadius: 8,
+    fontFamily: "'Heebo', system-ui, sans-serif",
+  },
+};
 import dayjs, { Dayjs } from 'dayjs';
 import 'dayjs/locale/he';
 import type {
@@ -280,7 +298,7 @@ function App() {
   };
 
   return (
-    <ConfigProvider direction="rtl" locale={heIL}>
+    <ConfigProvider direction="rtl" locale={heIL} theme={agarthaTheme}>
       <div className="app-container">
         {/* Loading overlay */}
         {loading && (
