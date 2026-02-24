@@ -431,3 +431,110 @@ body {
   margin: 0 auto;
   padding: 32px 24px;
 }
+
+/* ============================================================================
+   Results View Styles
+   ============================================================================ */
+
+.results-view {
+  margin-top: 32px;
+}
+
+.results-view .results-card {
+  margin-bottom: 20px;
+  border: 1px solid rgba(78, 205, 196, 0.2) !important;
+  border-radius: 12px !important;
+}
+
+.results-view .summary-card {
+  background: linear-gradient(135deg, var(--agartha-mid) 0%, var(--agartha-dark) 100%) !important;
+}
+
+/* Tables in results */
+.results-view .ant-table {
+  background: transparent !important;
+}
+
+.results-view .ant-table-thead > tr > th {
+  background: rgba(78, 205, 196, 0.08) !important;
+  color: #88D8E0 !important;
+  border-bottom: 1px solid rgba(78, 205, 196, 0.2) !important;
+  font-weight: 600;
+}
+
+.results-view .ant-table-tbody > tr > td {
+  background: transparent !important;
+  border-bottom: 1px solid rgba(78, 205, 196, 0.1) !important;
+}
+
+.results-view .ant-table-tbody > tr:hover > td {
+  background: rgba(78, 205, 196, 0.05) !important;
+}
+
+/* Dimmed rows for hidden rights */
+.results-view .dimmed-row td {
+  opacity: 0.45;
+}
+
+/* Statistics */
+.results-view .ant-statistic-title {
+  color: var(--agartha-light-cyan) !important;
+  font-size: 0.85rem;
+}
+
+.results-view .ant-statistic-content {
+  color: var(--agartha-ice) !important;
+}
+
+/* Progress bars */
+.results-view .ant-progress-text {
+  color: var(--agartha-ice) !important;
+}
+
+/* Tags */
+.results-view .ant-tag {
+  border-radius: 4px;
+}
+
+/* Collapse panels */
+.results-view .ant-collapse {
+  background: transparent !important;
+  border-color: rgba(78, 205, 196, 0.2) !important;
+}
+
+.results-view .ant-collapse-item {
+  border-color: rgba(78, 205, 196, 0.2) !important;
+}
+
+.results-view .ant-collapse-header {
+  background: rgba(78, 205, 196, 0.05) !important;
+}
+
+.results-view .ant-collapse-content {
+  background: var(--agartha-dark) !important;
+  border-color: rgba(78, 205, 196, 0.2) !important;
+}
+
+/* Card headers */
+.results-view .ant-card-head {
+  border-bottom-color: rgba(78, 205, 196, 0.2) !important;
+}
+
+.results-view .ant-card-head-title {
+  color: var(--agartha-cyan) !important;
+}
+
+/* Alert in results */
+.results-view .ant-alert-warning {
+  background: rgba(255, 217, 61, 0.1) !important;
+  border-color: rgba(255, 217, 61, 0.3) !important;
+}
+
+/* Table summary row */
+.results-view .ant-table-summary {
+  background: rgba(78, 205, 196, 0.05) !important;
+}
+
+.results-view .ant-table-summary td {
+  border-top: 2px solid rgba(78, 205, 196, 0.3) !important;
+}

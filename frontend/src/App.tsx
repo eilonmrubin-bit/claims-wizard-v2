@@ -45,6 +45,7 @@ const agarthaTheme = {
 };
 import dayjs, { Dayjs } from 'dayjs';
 import 'dayjs/locale/he';
+import ResultsView from './ResultsView';
 import type {
   SSOTInput,
   EmploymentPeriod,
@@ -1008,14 +1009,7 @@ function App() {
         )}
 
         {/* Results display */}
-        {result && (
-          <div className="results-container">
-            <div className="results-title">תוצאות החישוב</div>
-            <div className="json-display">
-              <pre>{JSON.stringify(result, null, 2)}</pre>
-            </div>
-          </div>
-        )}
+        {result && <ResultsView ssot={result} />}
       </div>
     </ConfigProvider>
   );
