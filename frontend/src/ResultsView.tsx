@@ -688,8 +688,6 @@ const WeekCollapseContent: React.FC<{ week: WeekData; shifts: ShiftData[] }> = (
     const dayTotal = dayShifts.reduce((sum, s) => sum + (s.claim_amount || 0), 0);
     const dayHours = dayShifts.reduce((sum, s) => sum + s.net_hours, 0);
     const dayOfWeek = dayOfWeekFromDate(date);
-    const isFriday = dayOfWeek === 'שישי';
-    const isShabbat = dayOfWeek === 'שבת';
 
     return {
       key: date,
@@ -698,12 +696,6 @@ const WeekCollapseContent: React.FC<{ week: WeekData; shifts: ShiftData[] }> = (
           <CalendarOutlined />
           <span style={{ fontWeight: 500 }}>{dayOfWeek}</span>
           <span className="ltr-number">{formatDate(date)}</span>
-          {isFriday && week.rest_window_start && (
-            <Tag color="gold">כניסת שבת: {formatTime(week.rest_window_start)}</Tag>
-          )}
-          {isShabbat && week.rest_window_end && (
-            <Tag color="gold">צאת שבת: {formatTime(week.rest_window_end)}</Tag>
-          )}
           <Tag>{dayShifts.length} משמרות</Tag>
           <Tag color="blue">{dayHours.toFixed(1)}h</Tag>
           {dayTotal > 0 && <Tag color="cyan">{formatCurrency(dayTotal)}</Tag>}
@@ -738,24 +730,26 @@ const WeekCollapseContent: React.FC<{ week: WeekData; shifts: ShiftData[] }> = (
           </Col>
         </Row>
 
-        {/* Rest window info */}
-        {(week.rest_window_start || week.rest_window_end) && (
-          <Row gutter={16} style={{ marginTop: 12 }}>
-            <Col span={24}>
-              <Text type="secondary" strong style={{ color: '#FF6B6B' }}>חלון מנוחה (36 שעות):</Text>
+        {/* Rest window info - only show if there's work in rest window */}
+        {week.rest_window_work_hours > 0 && (
+          <Row gutter={16} style={{ marginTop: 12, padding: '8px 12px', background: 'rgba(255, 107, 107, 0.08)', borderRadius: 8 }}>
+            <Col span={24} style={{ marginBottom: 8 }}>
+              <Text strong style={{ color: '#FF6B6B' }}>
+                ⚠ עבודה בחלון מנוחה (36 שעות)
+              </Text>
             </Col>
             <Col span={8}>
-              <Text type="secondary">כניסת שבת:</Text>
+              <Text type="secondary">תחילת חלון:</Text>
               <div className="ltr-number">{formatDateTime(week.rest_window_start)}</div>
             </Col>
             <Col span={8}>
-              <Text type="secondary">יציאת שבת:</Text>
+              <Text type="secondary">סוף חלון:</Text>
               <div className="ltr-number">{formatDateTime(week.rest_window_end)}</div>
             </Col>
             <Col span={8}>
               <Text type="secondary">שעות עבודה בחלון:</Text>
-              <div style={{ color: week.rest_window_work_hours > 0 ? '#FF6B6B' : '#4ECDC4' }}>
-                {week.rest_window_work_hours?.toFixed(1) || 0}
+              <div style={{ color: '#FF6B6B', fontWeight: 'bold' }}>
+                {week.rest_window_work_hours.toFixed(1)}
               </div>
             </Col>
           </Row>
