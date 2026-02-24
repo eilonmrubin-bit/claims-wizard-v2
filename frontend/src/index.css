@@ -494,7 +494,18 @@ body {
 /* Tags */
 .results-view .ant-tag {
   border-radius: 4px;
+  background: rgba(19, 43, 74, 0.8) !important;
+  border-color: rgba(78, 205, 196, 0.3) !important;
 }
+
+/* Override specific Ant Design tag color backgrounds for dark theme */
+.results-view .ant-tag-blue { background: rgba(22, 119, 255, 0.15) !important; color: #69b1ff !important; }
+.results-view .ant-tag-cyan { background: rgba(78, 205, 196, 0.15) !important; color: #4ECDC4 !important; }
+.results-view .ant-tag-green { background: rgba(82, 196, 26, 0.15) !important; color: #95de64 !important; }
+.results-view .ant-tag-gold,
+.results-view .ant-tag-orange { background: rgba(250, 173, 20, 0.15) !important; color: #ffc53d !important; }
+.results-view .ant-tag-red { background: rgba(255, 77, 79, 0.15) !important; color: #ff7875 !important; }
+.results-view .ant-tag-default { background: rgba(19, 43, 74, 0.6) !important; color: #E8F4F8 !important; }
 
 /* Collapse panels */
 .results-view .ant-collapse {

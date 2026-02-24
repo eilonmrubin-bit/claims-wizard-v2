@@ -93,6 +93,7 @@ interface ShiftData {
   shift_index: number;
   effective_period_id: string;
   week_id: string;
+  assigned_week: string;
   start: string;
   end: string;
   net_hours: number;
@@ -471,6 +472,24 @@ const dayOfWeekFromDate = (dateStr: string): string => {
   return days[d.getDay()];
 };
 
+// Helper: translate threshold reason to Hebrew
+const translateThresholdReason = (reason: string): string => {
+  const map: Record<string, string> = {
+    '5-day week': 'שבוע 5 ימים',
+    '6-day week': 'שבוע 6 ימים',
+    '5day': 'שבוע 5 ימים',
+    '6day': 'שבוע 6 ימים',
+    'eve_of_rest': 'ערב מנוחה',
+    'eve_rest': 'ערב מנוחה',
+    'rest_day': 'יום מנוחה',
+    'night_shift': 'משמרת לילה',
+    'night': 'משמרת לילה',
+    'eve_of_rest_5day': 'ערב מנוחה (5 ימים)',
+    'eve_rest+night': 'ערב מנוחה + לילה',
+  };
+  return map[reason] || reason;
+};
+
 // Aggregate hours by tier across all shifts
 interface TierSummary {
   tier: string;
@@ -598,7 +617,7 @@ const ShiftDetail: React.FC<{ shift: ShiftData }> = ({ shift }) => {
         </Col>
         <Col span={4}>
           <Text type="secondary">סף:</Text>
-          <div>{shift.threshold} ({shift.threshold_reason})</div>
+          <div>{shift.threshold} ({translateThresholdReason(shift.threshold_reason)})</div>
         </Col>
         <Col span={5}>
           <Text type="secondary">שעות:</Text>
@@ -668,17 +687,26 @@ const WeekCollapseContent: React.FC<{ week: WeekData; shifts: ShiftData[] }> = (
     const dayShifts = shiftsByDate[date];
     const dayTotal = dayShifts.reduce((sum, s) => sum + (s.claim_amount || 0), 0);
     const dayHours = dayShifts.reduce((sum, s) => sum + s.net_hours, 0);
+    const dayOfWeek = dayOfWeekFromDate(date);
+    const isFriday = dayOfWeek === 'שישי';
+    const isShabbat = dayOfWeek === 'שבת';
 
     return {
       key: date,
       label: (
         <Space>
           <CalendarOutlined />
-          <span>{dayOfWeekFromDate(date)}</span>
+          <span style={{ fontWeight: 500 }}>{dayOfWeek}</span>
           <span className="ltr-number">{formatDate(date)}</span>
+          {isFriday && week.rest_window_start && (
+            <Tag color="gold">כניסת שבת: {formatTime(week.rest_window_start)}</Tag>
+          )}
+          {isShabbat && week.rest_window_end && (
+            <Tag color="gold">צאת שבת: {formatTime(week.rest_window_end)}</Tag>
+          )}
           <Tag>{dayShifts.length} משמרות</Tag>
           <Tag color="blue">{dayHours.toFixed(1)}h</Tag>
-          <Tag color="cyan">{formatCurrency(dayTotal)}</Tag>
+          {dayTotal > 0 && <Tag color="cyan">{formatCurrency(dayTotal)}</Tag>}
         </Space>
       ),
       children: <DayCollapseItem date={date} shifts={dayShifts} />,
@@ -767,7 +795,7 @@ const OvertimeDetailedTab: React.FC<{ shifts: ShiftData[]; weeks: WeekData[] }> 
     const date = new Date(shift.date);
     const year = date.getFullYear();
     const month = `${year}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
-    const weekId = shift.week_id;
+    const weekId = shift.assigned_week || shift.week_id;
 
     if (!hierarchy[year]) hierarchy[year] = {};
     if (!hierarchy[year][month]) hierarchy[year][month] = {};
@@ -775,18 +803,18 @@ const OvertimeDetailedTab: React.FC<{ shifts: ShiftData[]; weeks: WeekData[] }> 
     hierarchy[year][month][weekId].push(shift);
   });
 
-  // Build year items
+  // Build year items (ascending chronological order)
   const yearItems = Object.keys(hierarchy)
-    .sort((a, b) => parseInt(b) - parseInt(a))
+    .sort((a, b) => parseInt(a) - parseInt(b))
     .map((year) => {
       const yearData = hierarchy[parseInt(year)];
       const yearShifts = Object.values(yearData).flatMap((m) => Object.values(m).flat());
       const yearTotal = yearShifts.reduce((sum, s) => sum + (s.claim_amount || 0), 0);
       const yearHours = yearShifts.reduce((sum, s) => sum + s.net_hours, 0);
 
-      // Build month items
+      // Build month items (ascending chronological order)
       const monthItems = Object.keys(yearData)
-        .sort((a, b) => b.localeCompare(a))
+        .sort((a, b) => a.localeCompare(b))
         .map((month) => {
           const monthData = yearData[month];
           const monthShifts = Object.values(monthData).flat();
@@ -794,12 +822,12 @@ const OvertimeDetailedTab: React.FC<{ shifts: ShiftData[]; weeks: WeekData[] }> 
           const monthHours = monthShifts.reduce((sum, s) => sum + s.net_hours, 0);
           const monthName = formatMonth([parseInt(month.split('-')[0]), parseInt(month.split('-')[1])]);
 
-          // Build week items
+          // Build week items (ascending chronological order)
           const weekItems = Object.keys(monthData)
             .sort((a, b) => {
               const weekA = weekMap[a];
               const weekB = weekMap[b];
-              return (weekB?.week_number || 0) - (weekA?.week_number || 0);
+              return (weekA?.week_number || 0) - (weekB?.week_number || 0);
             })
             .map((weekId) => {
               const weekShifts = monthData[weekId];
