@@ -108,7 +108,7 @@ type SeniorityUnit = 'months' | 'years';
 
 // Example JSON input for debug tab
 const EXAMPLE_JSON_INPUT = {
-  case_metadata: { case_name: "תיק בדיקה — 3 שנות עבודה", notes: "עובד בניין, 5 ימים בשבוע, 07:00-17:00" },
+  case_metadata: { case_name: "תיק בדיקה — 3 שנות עבודה", notes: "עובד בניין, 5 ימים בשבוע, 07:00-17:00, שתי תקופות שכר (₪25 ו-₪40)" },
   personal_details: { first_name: "אחמד", last_name: "חסן", id_number: "123456789", birth_year: 1985 },
   defendant_details: { name: "חברת בנייה בע\"מ", id_number: "514000000", address: "תל אביב" },
   employment_periods: [
@@ -128,8 +128,16 @@ const EXAMPLE_JSON_INPUT = {
     {
       id: "st1",
       start: "2020-03-01",
+      end: "2021-12-31",
+      amount: "25",
+      type: "hourly",
+      net_or_gross: "gross"
+    },
+    {
+      id: "st2",
+      start: "2022-01-01",
       end: "2023-06-30",
-      amount: "35",
+      amount: "40",
       type: "hourly",
       net_or_gross: "gross"
     }
