@@ -168,38 +168,51 @@ def compute_seniority_method_a(
 
 def compute_seniority_method_b(
     total_industry_months: int,
-    at_defendant_months: int,
-    employment_start: date | None = None,
-    employment_end: date | None = None,
+    employment_start: date,
+    employment_end: date,
+    did_work_in_month: Callable[[int, int], bool],
 ) -> SeniorityResult:
-    """Compute seniority using Method ב: manual entry.
+    """Compute seniority using Method ב: total industry seniority + work pattern.
 
     Args:
-        total_industry_months: Total industry seniority in months
-        at_defendant_months: Seniority at defendant in months
-        employment_start: Optional start date for series generation
-        employment_end: Optional end date for series generation
+        total_industry_months: Total industry seniority in months (user input)
+        employment_start: First day of employment at defendant
+        employment_end: Last day of employment at defendant
+        did_work_in_month: Function (year, month) -> bool indicating if work occurred
 
-    Returns SeniorityResult with totals and optional monthly series.
+    Returns SeniorityResult with totals and monthly series.
+
+    Raises:
+        ValueError: If total_industry_months < at_defendant_months
     """
+    # Count defendant months from work pattern (same as method א)
+    work_month_set = _count_work_months_from_pattern(
+        employment_start, employment_end, did_work_in_month
+    )
+    at_defendant_months = len(work_month_set)
+
+    # Validate: total cannot be less than defendant
+    if total_industry_months < at_defendant_months:
+        raise ValueError(
+            f"סה\"כ ותק ענפי ({total_industry_months}) "
+            f"לא יכול להיות קטן מותק אצל הנתבע ({at_defendant_months})"
+        )
+
+    # Derive prior months
     prior_months = total_industry_months - at_defendant_months
 
+    monthly = _generate_monthly_series(
+        employment_start, employment_end, work_month_set, prior_months
+    )
+
     totals = SeniorityTotals(
-        input_method=SeniorityMethod.MANUAL,
+        input_method=SeniorityMethod.TOTAL_PLUS_PATTERN,
         prior_seniority_months=prior_months,
         at_defendant_months=at_defendant_months,
         at_defendant_years=_months_to_years(at_defendant_months),
         total_industry_months=total_industry_months,
         total_industry_years=_months_to_years(total_industry_months),
     )
-
-    monthly = []
-    if employment_start and employment_end:
-        # Generate series with all months marked as worked
-        all_months = set(_generate_month_range(employment_start, employment_end))
-        monthly = _generate_monthly_series(
-            employment_start, employment_end, all_months, prior_months
-        )
 
     return SeniorityResult(totals=totals, monthly=monthly)
 

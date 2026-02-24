@@ -200,12 +200,12 @@ def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
                     employment_end=last_day,
                     did_work_in_month=did_work_in_month,
                 )
-            elif seniority_method == SeniorityMethod.MANUAL:
+            elif seniority_method == SeniorityMethod.TOTAL_PLUS_PATTERN:
                 seniority_result = compute_seniority_method_b(
-                    total_industry_months=ssot.input.seniority_input.manual_industry_months or 0,
-                    at_defendant_months=ssot.input.seniority_input.manual_defendant_months or 0,
+                    total_industry_months=ssot.input.seniority_input.total_industry_months or 0,
                     employment_start=first_day,
                     employment_end=last_day,
+                    did_work_in_month=did_work_in_month,
                 )
             else:
                 # Default to method A with 0 prior

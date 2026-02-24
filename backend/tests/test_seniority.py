@@ -127,23 +127,68 @@ class TestMethodA:
 
 
 class TestMethodB:
-    """Test Method ב: Manual entry."""
+    """Test Method ב: Total industry seniority + work pattern."""
 
-    def test_4_manual_entry(self):
-        """Test 4: Manual entry."""
-        # Total: 8 years 3 months = 99 months
-        # At defendant: 4 years 6 months = 54 months
+    def test_4_total_plus_pattern(self):
+        """Test 4: Total industry seniority + work pattern.
+
+        User enters total industry seniority (99 months).
+        Defendant seniority (54 months) is derived from work pattern.
+        Prior seniority is calculated: 99 - 54 = 45 months.
+        """
+        # Employment: 4 years 6 months = 54 months
+
+        def did_work_in_month(year: int, month: int) -> bool:
+            # Worker worked every month at defendant
+            return True
 
         result = compute_seniority_method_b(
             total_industry_months=99,
-            at_defendant_months=54,
+            employment_start=date(2019, 1, 1),
+            employment_end=date(2023, 6, 30),  # 54 months
+            did_work_in_month=did_work_in_month,
         )
 
         assert result.totals.total_industry_months == 99
         assert result.totals.total_industry_years == Decimal("8.25")
         assert result.totals.at_defendant_months == 54
         assert result.totals.at_defendant_years == Decimal("4.5")
-        assert result.totals.input_method == SeniorityMethod.MANUAL
+        assert result.totals.prior_seniority_months == 45  # 99 - 54
+        assert result.totals.input_method == SeniorityMethod.TOTAL_PLUS_PATTERN
+
+    def test_total_less_than_defendant_raises_error(self):
+        """Total industry seniority cannot be less than defendant seniority."""
+
+        def did_work_in_month(year: int, month: int) -> bool:
+            return True
+
+        # Employment: 36 months, but user enters only 24 total
+        with pytest.raises(ValueError, match="לא יכול להיות קטן"):
+            compute_seniority_method_b(
+                total_industry_months=24,
+                employment_start=date(2020, 1, 1),
+                employment_end=date(2022, 12, 31),  # 36 months
+                did_work_in_month=did_work_in_month,
+            )
+
+    def test_total_with_gaps_in_pattern(self):
+        """Total industry seniority with gaps in work pattern."""
+
+        gap_months = {(2021, 7), (2021, 8)}
+
+        def did_work_in_month(year: int, month: int) -> bool:
+            return (year, month) not in gap_months
+
+        result = compute_seniority_method_b(
+            total_industry_months=60,
+            employment_start=date(2020, 1, 1),
+            employment_end=date(2022, 12, 31),  # 36 months span, 34 worked
+            did_work_in_month=did_work_in_month,
+        )
+
+        assert result.totals.at_defendant_months == 34  # 36 - 2 gaps
+        assert result.totals.total_industry_months == 60
+        assert result.totals.prior_seniority_months == 26  # 60 - 34
 
 
 class TestMethodC:
@@ -425,9 +470,15 @@ class TestAntiPatterns:
 
     def test_months_stored_as_integers(self):
         """DO NOT store seniority only as years. Store months as integer."""
+
+        def did_work_in_month(year: int, month: int) -> bool:
+            return True
+
         result = compute_seniority_method_b(
             total_industry_months=99,
-            at_defendant_months=54,
+            employment_start=date(2019, 1, 1),
+            employment_end=date(2023, 6, 30),  # 54 months
+            did_work_in_month=did_work_in_month,
         )
 
         # Months must be integers
@@ -436,9 +487,15 @@ class TestAntiPatterns:
 
     def test_defendant_not_equal_to_total(self):
         """DO NOT assume seniority at defendant equals total industry seniority."""
+
+        def did_work_in_month(year: int, month: int) -> bool:
+            return True
+
         result = compute_seniority_method_b(
             total_industry_months=99,
-            at_defendant_months=54,
+            employment_start=date(2019, 1, 1),
+            employment_end=date(2023, 6, 30),  # 54 months
+            did_work_in_month=did_work_in_month,
         )
 
         # They should be different

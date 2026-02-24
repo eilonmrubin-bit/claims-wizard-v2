@@ -51,13 +51,12 @@ export interface SalaryTier {
   net_or_gross: 'net' | 'gross';
 }
 
-export type SeniorityMethod = 'prior_plus_pattern' | 'manual' | 'matash_pdf';
+export type SeniorityMethod = 'prior_plus_pattern' | 'total_plus_pattern' | 'matash_pdf';
 
 export interface SeniorityInput {
   method: SeniorityMethod;
-  prior_months?: number;
-  manual_industry_months?: number;
-  manual_defendant_months?: number;
+  prior_months?: number;              // Method א - prior seniority before defendant
+  total_industry_months?: number;     // Method ב - total industry seniority
 }
 
 export type RestDay = 'saturday' | 'friday' | 'sunday';

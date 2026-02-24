@@ -43,7 +43,7 @@ class District(str, Enum):
 
 class SeniorityMethod(str, Enum):
     PRIOR_PLUS_PATTERN = "prior_plus_pattern"
-    MANUAL = "manual"
+    TOTAL_PLUS_PATTERN = "total_plus_pattern"
     MATASH_PDF = "matash_pdf"
 
 
@@ -153,10 +153,9 @@ class SalaryTier:
 @dataclass
 class SeniorityInput:
     method: SeniorityMethod = SeniorityMethod.PRIOR_PLUS_PATTERN
-    prior_months: int | None = None  # Method A
-    manual_industry_months: int | None = None  # Method B
-    manual_defendant_months: int | None = None  # Method B
-    matash_file: bytes | None = None  # Method C
+    prior_months: int | None = None  # Method א - prior seniority before defendant
+    total_industry_months: int | None = None  # Method ב - total industry seniority
+    matash_file: bytes | None = None  # Method ג
 
 
 @dataclass

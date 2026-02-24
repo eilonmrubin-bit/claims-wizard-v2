@@ -275,8 +275,7 @@ def _reconstruct_ssot_input(data: dict[str, Any]) -> SSOTInput:
         seniority_input=SeniorityInput(
             method=SeniorityMethod(seniority.get("method", "prior_plus_pattern")),
             prior_months=seniority.get("prior_months"),
-            manual_industry_months=seniority.get("manual_industry_months"),
-            manual_defendant_months=seniority.get("manual_defendant_months"),
+            total_industry_months=seniority.get("total_industry_months"),
         ),
         right_toggles=data.get("right_toggles", {}),
         deductions_input={

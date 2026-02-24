@@ -775,7 +775,9 @@ function App() {
                           <Radio value="prior_plus_pattern">
                             ותק קודם + חישוב מדפוס העבודה
                           </Radio>
-                          <Radio value="manual">הזנה ידנית של סך הותק</Radio>
+                          <Radio value="total_plus_pattern">
+                            סה״כ ותק ענפי + חישוב מדפוס
+                          </Radio>
                           <Radio value="matash_pdf">חילוץ מקובץ מת״ש (בקרוב)</Radio>
                         </Space>
                       </Radio.Group>
@@ -797,39 +799,20 @@ function App() {
                       </Form.Item>
                     )}
 
-                    {formData.seniority_input.method === 'manual' && (
-                      <Row gutter={16}>
-                        <Col span={12}>
-                          <Form.Item label="סך חודשי ותק בענף">
-                            <InputNumber
-                              value={formData.seniority_input.manual_industry_months}
-                              onChange={(v) =>
-                                updateField('seniority_input', {
-                                  ...formData.seniority_input,
-                                  manual_industry_months: v || 0,
-                                })
-                              }
-                              min={0}
-                              style={{ width: '100%' }}
-                            />
-                          </Form.Item>
-                        </Col>
-                        <Col span={12}>
-                          <Form.Item label="חודשי ותק אצל הנתבע">
-                            <InputNumber
-                              value={formData.seniority_input.manual_defendant_months}
-                              onChange={(v) =>
-                                updateField('seniority_input', {
-                                  ...formData.seniority_input,
-                                  manual_defendant_months: v || 0,
-                                })
-                              }
-                              min={0}
-                              style={{ width: '100%' }}
-                            />
-                          </Form.Item>
-                        </Col>
-                      </Row>
+                    {formData.seniority_input.method === 'total_plus_pattern' && (
+                      <Form.Item label="סה״כ חודשי ותק ענפי (כולל כל המעסיקים בענף)">
+                        <InputNumber
+                          value={formData.seniority_input.total_industry_months}
+                          onChange={(v) =>
+                            updateField('seniority_input', {
+                              ...formData.seniority_input,
+                              total_industry_months: v || 0,
+                            })
+                          }
+                          min={0}
+                          style={{ width: 200 }}
+                        />
+                      </Form.Item>
                     )}
                   </div>
                 ),
