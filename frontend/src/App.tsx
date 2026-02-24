@@ -99,6 +99,27 @@ const createEmptyInput = (): SSOTInput => ({
 
 type SeniorityUnit = 'months' | 'years';
 
+// Format months as "X שנים ו-Y חודשים"
+const formatMonthsDisplay = (totalMonths: number): string => {
+  if (totalMonths === 0) return '0 חודשים';
+
+  const years = Math.floor(totalMonths / 12);
+  const months = totalMonths % 12;
+
+  if (years === 0) {
+    return months === 1 ? 'חודש' : `${months} חודשים`;
+  }
+
+  const yearsStr = years === 1 ? 'שנה' : `${years} שנים`;
+
+  if (months === 0) {
+    return yearsStr;
+  }
+
+  const monthsStr = months === 1 ? 'חודש' : `${months} חודשים`;
+  return `${yearsStr} ו-${monthsStr}`;
+};
+
 function App() {
   const [formData, setFormData] = useState<SSOTInput>(createEmptyInput());
   const [loading, setLoading] = useState(false);
@@ -828,7 +849,7 @@ function App() {
                             <Select.Option value="years">שנים</Select.Option>
                           </Select>
                           <span style={{ color: '#88D8E0' }}>
-                            = {formData.seniority_input.prior_months || 0} חודשים
+                            = {formatMonthsDisplay(formData.seniority_input.prior_months || 0)}
                           </span>
                         </Space>
                       </Form.Item>
@@ -874,7 +895,7 @@ function App() {
                             <Select.Option value="years">שנים</Select.Option>
                           </Select>
                           <span style={{ color: '#88D8E0' }}>
-                            = {formData.seniority_input.total_industry_months || 0} חודשים
+                            = {formatMonthsDisplay(formData.seniority_input.total_industry_months || 0)}
                           </span>
                         </Space>
                       </Form.Item>
