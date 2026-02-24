@@ -97,11 +97,15 @@ const createEmptyInput = (): SSOTInput => ({
   right_specific_inputs: {},
 });
 
+type SeniorityUnit = 'months' | 'years';
+
 function App() {
   const [formData, setFormData] = useState<SSOTInput>(createEmptyInput());
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [priorSeniorityUnit, setPriorSeniorityUnit] = useState<SeniorityUnit>('months');
+  const [totalSeniorityUnit, setTotalSeniorityUnit] = useState<SeniorityUnit>('months');
 
   // Update nested fields
   const updateField = <K extends keyof SSOTInput>(
@@ -787,35 +791,44 @@ function App() {
                       <Form.Item label="ותק קודם בענף (לפני הנתבע)">
                         <Space>
                           <InputNumber
-                            value={Math.floor((formData.seniority_input.prior_months || 0) / 12)}
-                            onChange={(years) => {
-                              const currentMonths = (formData.seniority_input.prior_months || 0) % 12;
+                            value={
+                              priorSeniorityUnit === 'years'
+                                ? (formData.seniority_input.prior_months || 0) / 12
+                                : formData.seniority_input.prior_months || 0
+                            }
+                            onChange={(v) => {
+                              const value = v || 0;
                               updateField('seniority_input', {
                                 ...formData.seniority_input,
-                                prior_months: (years || 0) * 12 + currentMonths,
+                                prior_months: priorSeniorityUnit === 'years' ? value * 12 : value,
                               });
                             }}
                             min={0}
-                            max={50}
-                            style={{ width: 80 }}
-                            addonAfter="שנים"
+                            max={priorSeniorityUnit === 'years' ? 50 : 600}
+                            precision={0}
+                            style={{ width: 100 }}
                           />
-                          <InputNumber
-                            value={(formData.seniority_input.prior_months || 0) % 12}
-                            onChange={(months) => {
-                              const currentYears = Math.floor((formData.seniority_input.prior_months || 0) / 12);
-                              updateField('seniority_input', {
-                                ...formData.seniority_input,
-                                prior_months: currentYears * 12 + (months || 0),
-                              });
+                          <Select
+                            value={priorSeniorityUnit}
+                            onChange={(unit: SeniorityUnit) => {
+                              const currentMonths = formData.seniority_input.prior_months || 0;
+                              setPriorSeniorityUnit(unit);
+                              if (unit === 'years') {
+                                // Round to nearest year when switching
+                                const years = Math.round(currentMonths / 12);
+                                updateField('seniority_input', {
+                                  ...formData.seniority_input,
+                                  prior_months: years * 12,
+                                });
+                              }
                             }}
-                            min={0}
-                            max={11}
-                            style={{ width: 80 }}
-                            addonAfter="חודשים"
-                          />
-                          <span style={{ color: '#88D8E0', marginRight: 8 }}>
-                            (סה״כ {formData.seniority_input.prior_months || 0} חודשים)
+                            style={{ width: 100 }}
+                          >
+                            <Select.Option value="months">חודשים</Select.Option>
+                            <Select.Option value="years">שנים</Select.Option>
+                          </Select>
+                          <span style={{ color: '#88D8E0' }}>
+                            = {formData.seniority_input.prior_months || 0} חודשים
                           </span>
                         </Space>
                       </Form.Item>
@@ -825,35 +838,43 @@ function App() {
                       <Form.Item label="סה״כ ותק ענפי (כולל כל המעסיקים בענף)">
                         <Space>
                           <InputNumber
-                            value={Math.floor((formData.seniority_input.total_industry_months || 0) / 12)}
-                            onChange={(years) => {
-                              const currentMonths = (formData.seniority_input.total_industry_months || 0) % 12;
+                            value={
+                              totalSeniorityUnit === 'years'
+                                ? (formData.seniority_input.total_industry_months || 0) / 12
+                                : formData.seniority_input.total_industry_months || 0
+                            }
+                            onChange={(v) => {
+                              const value = v || 0;
                               updateField('seniority_input', {
                                 ...formData.seniority_input,
-                                total_industry_months: (years || 0) * 12 + currentMonths,
+                                total_industry_months: totalSeniorityUnit === 'years' ? value * 12 : value,
                               });
                             }}
                             min={0}
-                            max={50}
-                            style={{ width: 80 }}
-                            addonAfter="שנים"
+                            max={totalSeniorityUnit === 'years' ? 50 : 600}
+                            precision={0}
+                            style={{ width: 100 }}
                           />
-                          <InputNumber
-                            value={(formData.seniority_input.total_industry_months || 0) % 12}
-                            onChange={(months) => {
-                              const currentYears = Math.floor((formData.seniority_input.total_industry_months || 0) / 12);
-                              updateField('seniority_input', {
-                                ...formData.seniority_input,
-                                total_industry_months: currentYears * 12 + (months || 0),
-                              });
+                          <Select
+                            value={totalSeniorityUnit}
+                            onChange={(unit: SeniorityUnit) => {
+                              const currentMonths = formData.seniority_input.total_industry_months || 0;
+                              setTotalSeniorityUnit(unit);
+                              if (unit === 'years') {
+                                const years = Math.round(currentMonths / 12);
+                                updateField('seniority_input', {
+                                  ...formData.seniority_input,
+                                  total_industry_months: years * 12,
+                                });
+                              }
                             }}
-                            min={0}
-                            max={11}
-                            style={{ width: 80 }}
-                            addonAfter="חודשים"
-                          />
-                          <span style={{ color: '#88D8E0', marginRight: 8 }}>
-                            (סה״כ {formData.seniority_input.total_industry_months || 0} חודשים)
+                            style={{ width: 100 }}
+                          >
+                            <Select.Option value="months">חודשים</Select.Option>
+                            <Select.Option value="years">שנים</Select.Option>
+                          </Select>
+                          <span style={{ color: '#88D8E0' }}>
+                            = {formData.seniority_input.total_industry_months || 0} חודשים
                           </span>
                         </Space>
                       </Form.Item>
