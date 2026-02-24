@@ -1,0 +1,44 @@
+{
+  "ot_config": {
+    "weekly_cap": 42,
+    "threshold_5day": 8.4,
+    "threshold_6day": 8.0,
+    "threshold_eve_rest": 7.0,
+    "threshold_night": 7.0,
+    "tier1_max_hours": 2
+  },
+  "full_time_hours_base": 182,
+  "limitation_config": {
+    "limitation_types": [
+      {
+        "id": "general",
+        "name": "התיישנות כללית",
+        "window_years": 7
+      },
+      {
+        "id": "vacation",
+        "name": "התיישנות חופשה",
+        "window_calc": "3_plus_current"
+      }
+    ],
+    "freeze_periods": [
+      {
+        "id": "war_2023",
+        "name": "הקפאת מלחמת התקומה",
+        "start_date": "2023-10-07",
+        "end_date": "2024-04-06",
+        "days": 183
+      }
+    ],
+    "right_limitation_mapping": {
+      "overtime": "general",
+      "holidays": "general",
+      "vacation": "vacation",
+      "severance": "general",
+      "pension": "general",
+      "recreation": "general",
+      "salary_completion": "general",
+      "travel": "general"
+    }
+  }
+}
