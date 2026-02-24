@@ -9,7 +9,7 @@ from decimal import Decimal
 from collections import defaultdict
 
 from ...ssot import Shift, Week, RestDay, District
-from .stage4_threshold import load_shabbat_times
+from .shabbat_times import get_shabbat_times_range, ShabbatTime
 
 
 # Rest window must be exactly 36 hours
@@ -20,7 +20,7 @@ def get_shabbat_bounds(
     week_start: date,
     rest_day: RestDay,
     district: District,
-    shabbat_times: dict,
+    shabbat_times: dict[date, ShabbatTime],
 ) -> tuple[datetime, datetime]:
     """Get Shabbat start and end for the week.
 
@@ -29,24 +29,20 @@ def get_shabbat_bounds(
     """
     if rest_day == RestDay.SATURDAY:
         # Find Friday in this week
-        friday = week_start + timedelta(days=(4 - week_start.weekday()) % 7)
-        if friday < week_start:
-            friday += timedelta(days=7)
+        days_to_friday = (4 - week_start.weekday()) % 7
+        friday = week_start + timedelta(days=days_to_friday)
 
-        if friday in shabbat_times:
-            candles = shabbat_times[friday]["candles"]
-            havdalah = shabbat_times[friday]["havdalah"]
+        # Get actual times from CSV data
+        shabbat = shabbat_times.get(friday)
+        if shabbat:
+            return shabbat.candles, shabbat.havdalah
         else:
-            # Default times
-            candles = datetime.combine(friday, time(16, 30))
-            saturday = friday + timedelta(days=1)
-            havdalah = datetime.combine(saturday, time(17, 30))
-
-        return candles, havdalah
+            raise ValueError(f"No Shabbat times found for {friday} in district data")
 
     elif rest_day == RestDay.FRIDAY:
         # Friday 00:00 to Saturday 00:00
-        friday = week_start + timedelta(days=(4 - week_start.weekday()) % 7)
+        days_to_friday = (4 - week_start.weekday()) % 7
+        friday = week_start + timedelta(days=days_to_friday)
         return (
             datetime.combine(friday, time(0, 0)),
             datetime.combine(friday + timedelta(days=1), time(0, 0))
@@ -91,38 +87,57 @@ def classify_shift_rest_window(
 ) -> None:
     """Classify shift hours as rest window or non-rest.
 
-    Updates shift's rest_window_* and non_rest_* fields.
+    Hours are classified by their actual position in the shift:
+    - Regular hours are the FIRST hours (up to threshold)
+    - OT Tier 1 are the NEXT 2 hours
+    - OT Tier 2 are the remaining hours
+
+    Each category is split based on actual overlap with the rest window.
     """
     if shift.start is None or shift.end is None:
         return
 
-    # Calculate hours inside and outside window
-    overlap_start = max(shift.start, window_start)
-    overlap_end = min(shift.end, window_end)
+    # Calculate time boundaries for each tier
+    # Regular: shift.start to shift.start + regular_hours
+    # Tier 1: end of regular to end of regular + tier1_hours
+    # Tier 2: end of tier1 to shift.end
+
+    regular_end = shift.start + timedelta(hours=float(shift.regular_hours))
+    tier1_end = regular_end + timedelta(hours=float(shift.ot_tier1_hours))
+    # tier2 goes to shift.end
+
+    # Calculate overlap of each tier with rest window
+    shift.rest_window_regular_hours = _overlap_hours(
+        shift.start, regular_end, window_start, window_end
+    )
+    shift.non_rest_regular_hours = shift.regular_hours - shift.rest_window_regular_hours
+
+    shift.rest_window_ot_tier1_hours = _overlap_hours(
+        regular_end, tier1_end, window_start, window_end
+    )
+    shift.non_rest_ot_tier1_hours = shift.ot_tier1_hours - shift.rest_window_ot_tier1_hours
+
+    shift.rest_window_ot_tier2_hours = _overlap_hours(
+        tier1_end, shift.end, window_start, window_end
+    )
+    shift.non_rest_ot_tier2_hours = shift.ot_tier2_hours - shift.rest_window_ot_tier2_hours
+
+
+def _overlap_hours(
+    start1: datetime,
+    end1: datetime,
+    start2: datetime,
+    end2: datetime,
+) -> Decimal:
+    """Calculate overlap hours between two time ranges."""
+    overlap_start = max(start1, start2)
+    overlap_end = min(end1, end2)
 
     if overlap_end > overlap_start:
         diff = overlap_end - overlap_start
-        in_rest_hours = Decimal(str(diff.total_seconds())) / Decimal("3600")
-    else:
-        in_rest_hours = Decimal("0")
+        return Decimal(str(diff.total_seconds())) / Decimal("3600")
 
-    out_rest_hours = shift.net_hours - in_rest_hours
-
-    # Distribute regular and OT hours proportionally
-    if shift.net_hours > 0:
-        in_ratio = in_rest_hours / shift.net_hours
-        out_ratio = out_rest_hours / shift.net_hours
-    else:
-        in_ratio = Decimal("0")
-        out_ratio = Decimal("0")
-
-    shift.rest_window_regular_hours = shift.regular_hours * in_ratio
-    shift.rest_window_ot_tier1_hours = shift.ot_tier1_hours * in_ratio
-    shift.rest_window_ot_tier2_hours = shift.ot_tier2_hours * in_ratio
-
-    shift.non_rest_regular_hours = shift.regular_hours * out_ratio
-    shift.non_rest_ot_tier1_hours = shift.ot_tier1_hours * out_ratio
-    shift.non_rest_ot_tier2_hours = shift.ot_tier2_hours * out_ratio
+    return Decimal("0")
 
 
 def optimize_rest_window(
@@ -236,11 +251,11 @@ def place_rest_windows(
         shifts_by_week[shift.assigned_week].append(shift)
 
     # Get date range and load Shabbat times
-    if shifts:
+    if shifts and rest_day == RestDay.SATURDAY:
         all_dates = [s.assigned_day for s in shifts if s.assigned_day]
         start_date = min(all_dates) if all_dates else date.today()
         end_date = max(all_dates) if all_dates else date.today()
-        shabbat_times = load_shabbat_times(district, start_date, end_date)
+        shabbat_times = get_shabbat_times_range(start_date, end_date, district)
     else:
         shabbat_times = {}
 

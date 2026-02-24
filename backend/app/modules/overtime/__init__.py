@@ -15,6 +15,7 @@ from .stage4_threshold import resolve_thresholds
 from .stage5_daily_ot import detect_daily_ot
 from .stage6_weekly_ot import detect_weekly_ot
 from .stage7_rest_window import place_rest_windows
+from .shabbat_times import get_shabbat_times, get_shabbat_times_range
 
 __all__ = [
     "OTConfig",
@@ -26,4 +27,6 @@ __all__ = [
     "detect_daily_ot",
     "detect_weekly_ot",
     "place_rest_windows",
+    "get_shabbat_times",
+    "get_shabbat_times_range",
 ]

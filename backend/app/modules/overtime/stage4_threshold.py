@@ -9,16 +9,7 @@ from decimal import Decimal
 
 from ...ssot import Shift, Week, WeekType, RestDay, District
 from .config import OTConfig, DEFAULT_CONFIG
-
-
-def load_shabbat_times(district: District, start_date: date, end_date: date) -> dict:
-    """Load Shabbat times from static CSV file.
-
-    Returns dict mapping Friday date to (candles, havdalah) datetimes.
-    """
-    # TODO: Implement actual CSV loading
-    # For now, return empty dict - will use simplified logic
-    return {}
+from .shabbat_times import get_shabbat_times_range, ShabbatTime
 
 
 def is_night_shift(shift: Shift, config: OTConfig) -> bool:
@@ -56,7 +47,7 @@ def is_eve_of_rest(
     shift: Shift,
     rest_day: RestDay,
     district: District,
-    shabbat_times: dict,
+    shabbat_times: dict[date, ShabbatTime],
 ) -> bool:
     """Check if shift falls within eve of rest window.
 
@@ -70,24 +61,22 @@ def is_eve_of_rest(
         return False
 
     if rest_day == RestDay.SATURDAY:
-        # Find the relevant Friday (the one after or on the assigned day)
+        # Find the relevant Friday (the one on or after the assigned day)
         assigned = shift.assigned_day
         days_until_friday = (4 - assigned.weekday()) % 7
-        if days_until_friday == 0:
-            friday = assigned
-        else:
-            friday = assigned + timedelta(days=days_until_friday)
+        friday = assigned + timedelta(days=days_until_friday)
 
-        # If assigned day is after Friday (Sat/Sun), look at next week's Friday
-        if assigned.weekday() > 4:
-            friday = assigned + timedelta(days=(4 - assigned.weekday()) % 7 + 7)
+        # If assigned day is Sat/Sun, we want the previous Friday
+        if assigned.weekday() >= 5:
+            days_since_friday = (assigned.weekday() - 4) % 7
+            friday = assigned - timedelta(days=days_since_friday)
 
-        # Get candle lighting time
-        if friday in shabbat_times:
-            candles = shabbat_times[friday]["candles"]
+        # Get candle lighting time from actual data
+        shabbat = shabbat_times.get(friday)
+        if shabbat:
+            candles = shabbat.candles
         else:
-            # Default: Friday 16:30 (rough average)
-            candles = datetime.combine(friday, time(16, 30))
+            raise ValueError(f"No Shabbat times found for {friday} in district data")
 
         # Eve of rest window: 24 hours before candle lighting to candle lighting
         eve_start = candles - timedelta(hours=24)
@@ -133,10 +122,10 @@ def resolve_thresholds(
     week_lookup = {w.id: w for w in weeks}
 
     # Get date range and load Shabbat times
-    if shifts:
+    if shifts and rest_day == RestDay.SATURDAY:
         start_date = min(s.assigned_day for s in shifts if s.assigned_day)
         end_date = max(s.assigned_day for s in shifts if s.assigned_day)
-        shabbat_times = load_shabbat_times(district, start_date, end_date)
+        shabbat_times = get_shabbat_times_range(start_date, end_date, district)
     else:
         shabbat_times = {}
 
