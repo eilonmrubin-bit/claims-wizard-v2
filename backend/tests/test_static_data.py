@@ -121,3 +121,49 @@ def test_loader_travel_allowance(loader):
 
     amount = loader.get_travel_allowance(date(2025, 3, 1))
     assert amount == Decimal("22.60")
+
+
+def test_loader_holiday_dates(loader):
+    """Test loading holiday dates."""
+    loader.load_all()
+
+    holidays = loader.get_holiday_dates(2024)
+
+    # Should have 9 holidays
+    assert len(holidays) == 9
+
+    # Check specific holidays
+    holiday_ids = {h.holiday_id for h in holidays}
+    assert "rosh_hashana_1" in holiday_ids
+    assert "yom_kippur" in holiday_ids
+    assert "pesach" in holiday_ids
+    assert "shavuot" in holiday_ids
+
+    # Check Rosh Hashana 2024 date
+    rosh_hashana = next(h for h in holidays if h.holiday_id == "rosh_hashana_1")
+    assert rosh_hashana.gregorian_date == date(2024, 10, 3)
+
+
+def test_loader_shabbat_times(loader):
+    """Test loading shabbat times."""
+    loader.load_all()
+
+    # Get shabbat times for a specific Friday in Jerusalem
+    friday = date(2024, 1, 5)
+    times = loader.get_shabbat_times(friday, "jerusalem")
+
+    assert times.date == friday
+    assert times.candles.hour == 16
+    assert times.havdalah.hour == 17
+
+
+def test_loader_shabbat_times_tel_aviv(loader):
+    """Test shabbat times for Tel Aviv."""
+    loader.load_all()
+
+    friday = date(2024, 1, 5)
+    times = loader.get_shabbat_times(friday, "tel_aviv")
+
+    assert times.date == friday
+    # Tel Aviv has later candle lighting than Jerusalem (18 min vs 40 min before sunset)
+    assert times.candles.hour == 16
