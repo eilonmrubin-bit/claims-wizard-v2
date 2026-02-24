@@ -673,3 +673,212 @@ class SSOT:
     # Layer 7 - Deductions and claim summary
     deduction_results: dict[str, DeductionResult] = field(default_factory=dict)
     claim_summary: ClaimSummary = field(default_factory=ClaimSummary)
+
+
+# =============================================================================
+# Day Snapshot - Helper for querying all data for a specific day
+# =============================================================================
+
+@dataclass
+class DaySnapshot:
+    """All SSOT data for a specific day, consolidated in one place.
+
+    Use get_day_snapshot(ssot, target_date) to create.
+    """
+    target_date: date
+
+    # From daily_records
+    daily_record: DailyRecord | None = None
+
+    # From shifts (may be multiple per day)
+    shifts: list[Shift] = field(default_factory=list)
+
+    # From effective_periods
+    effective_period: EffectivePeriod | None = None
+
+    # From seniority_monthly (for the month containing target_date)
+    seniority: SeniorityMonthly | None = None
+
+    # From period_month_records (for the period×month containing target_date)
+    salary: PeriodMonthRecord | None = None
+
+    # From month_aggregates (for the month containing target_date)
+    month_aggregate: MonthAggregate | None = None
+
+    # From weeks (the week containing target_date)
+    week: Week | None = None
+
+    # Computed summary
+    total_hours: Decimal = Decimal("0")
+    total_ot_hours: Decimal = Decimal("0")
+    total_claim: Decimal = Decimal("0")
+
+
+def get_day_snapshot(ssot: "SSOT", target_date: date) -> DaySnapshot:
+    """Get consolidated snapshot of all SSOT data for a specific day.
+
+    Args:
+        ssot: The SSOT to query
+        target_date: The date to get data for
+
+    Returns:
+        DaySnapshot with all relevant data for that day
+    """
+    snapshot = DaySnapshot(target_date=target_date)
+
+    # Find daily_record
+    for dr in ssot.daily_records:
+        if dr.date == target_date:
+            snapshot.daily_record = dr
+            break
+
+    # Find all shifts for this day
+    for shift in ssot.shifts:
+        if shift.assigned_day == target_date:
+            snapshot.shifts.append(shift)
+            snapshot.total_hours += shift.net_hours
+            snapshot.total_ot_hours += shift.ot_tier1_hours + shift.ot_tier2_hours
+            if shift.claim_amount:
+                snapshot.total_claim += shift.claim_amount
+
+    # Find effective_period
+    for ep in ssot.effective_periods:
+        if ep.start <= target_date <= ep.end:
+            snapshot.effective_period = ep
+            break
+
+    # Find seniority for this month
+    target_month = (target_date.year, target_date.month)
+    for sen in ssot.seniority_monthly:
+        if sen.month == target_month:
+            snapshot.seniority = sen
+            break
+
+    # Find salary (period_month_record)
+    if snapshot.effective_period:
+        for pmr in ssot.period_month_records:
+            if (pmr.effective_period_id == snapshot.effective_period.id
+                    and pmr.month == target_month):
+                snapshot.salary = pmr
+                break
+
+    # Find month_aggregate
+    for ma in ssot.month_aggregates:
+        if ma.month == target_month:
+            snapshot.month_aggregate = ma
+            break
+
+    # Find week
+    for week in ssot.weeks:
+        if week.start_date and week.end_date:
+            if week.start_date <= target_date <= week.end_date:
+                snapshot.week = week
+                break
+
+    return snapshot
+
+
+def format_day_snapshot(snapshot: DaySnapshot) -> str:
+    """Format a DaySnapshot as a readable string.
+
+    Args:
+        snapshot: The snapshot to format
+
+    Returns:
+        Human-readable string representation
+    """
+    lines = []
+    lines.append(f"=== יום {snapshot.target_date} ===")
+    lines.append("")
+
+    # Daily record
+    if snapshot.daily_record:
+        dr = snapshot.daily_record
+        work_str = "יום עבודה" if dr.is_work_day else "לא עובד"
+        rest_str = " (יום מנוחה)" if dr.is_rest_day else ""
+        lines.append(f"[רשומה יומית]")
+        lines.append(f"  סטטוס: {work_str}{rest_str}")
+        lines.append(f"  יום בשבוע: {dr.day_of_week}")
+        lines.append(f"  תקופה: {dr.effective_period_id}")
+        if dr.shift_templates:
+            for i, st in enumerate(dr.shift_templates):
+                lines.append(f"  משמרת {i+1}: {st.start_time} - {st.end_time}")
+    else:
+        lines.append("[רשומה יומית] לא נמצאה")
+
+    lines.append("")
+
+    # Shifts
+    if snapshot.shifts:
+        lines.append(f"[משמרות] ({len(snapshot.shifts)})")
+        for shift in snapshot.shifts:
+            lines.append(f"  {shift.id}:")
+            lines.append(f"    שעות נטו: {shift.net_hours:.2f}")
+            lines.append(f"    רגילות: {shift.regular_hours:.2f}")
+            lines.append(f"    OT tier1: {shift.ot_tier1_hours:.2f}")
+            lines.append(f"    OT tier2: {shift.ot_tier2_hours:.2f}")
+            if shift.claim_amount:
+                lines.append(f"    תביעה: {shift.claim_amount:.2f} ש״ח")
+    else:
+        lines.append("[משמרות] אין")
+
+    lines.append("")
+
+    # Effective period
+    if snapshot.effective_period:
+        ep = snapshot.effective_period
+        lines.append(f"[תקופה אפקטיבית]")
+        lines.append(f"  ID: {ep.id}")
+        lines.append(f"  טווח: {ep.start} עד {ep.end}")
+        lines.append(f"  שכר: {ep.salary_amount} ({ep.salary_type.value})")
+    else:
+        lines.append("[תקופה אפקטיבית] לא נמצאה")
+
+    lines.append("")
+
+    # Salary
+    if snapshot.salary:
+        sal = snapshot.salary
+        lines.append(f"[שכר - חודש {sal.month}]")
+        lines.append(f"  שעתי: {sal.salary_hourly:.2f} ש״ח")
+        lines.append(f"  יומי: {sal.salary_daily:.2f} ש״ח")
+        lines.append(f"  חודשי: {sal.salary_monthly:.2f} ש״ח")
+        if sal.minimum_applied:
+            lines.append(f"  * הופעל שכר מינימום: {sal.minimum_wage_value:.2f}")
+    else:
+        lines.append("[שכר] לא נמצא")
+
+    lines.append("")
+
+    # Seniority
+    if snapshot.seniority:
+        sen = snapshot.seniority
+        lines.append(f"[ותק - חודש {sen.month}]")
+        lines.append(f"  אצל נתבע: {sen.at_defendant_cumulative} חודשים")
+        lines.append(f"  ענפי: {sen.total_industry_cumulative} חודשים")
+    else:
+        lines.append("[ותק] לא נמצא")
+
+    lines.append("")
+
+    # Week
+    if snapshot.week:
+        w = snapshot.week
+        week_type_str = "5 ימים" if w.week_type.value == 5 else "6 ימים"
+        lines.append(f"[שבוע {w.id}]")
+        lines.append(f"  סוג: {week_type_str}")
+        lines.append(f"  ימי עבודה: {w.distinct_work_days}")
+        lines.append(f"  שעות רגילות: {w.total_regular_hours:.2f}")
+        lines.append(f"  OT שבועי: {w.weekly_ot_hours:.2f}")
+    else:
+        lines.append("[שבוע] לא נמצא")
+
+    lines.append("")
+
+    # Summary
+    lines.append(f"[סיכום יום]")
+    lines.append(f"  סה״כ שעות: {snapshot.total_hours:.2f}")
+    lines.append(f"  סה״כ OT: {snapshot.total_ot_hours:.2f}")
+    lines.append(f"  סה״כ תביעה: {snapshot.total_claim:.2f} ש״ח")
+
+    return "\n".join(lines)
