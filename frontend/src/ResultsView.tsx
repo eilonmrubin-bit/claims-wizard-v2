@@ -932,6 +932,7 @@ const translateThresholdReason = (reason: string): string => {
     '6-day week': 'שבוע 6 ימים',
     '5day': 'שבוע 5 ימים',
     '6day': 'שבוע 6 ימים',
+    'eve of rest': 'ערב מנוחה',
     'eve_of_rest': 'ערב מנוחה',
     'eve_rest': 'ערב מנוחה',
     'rest_day': 'יום מנוחה',
