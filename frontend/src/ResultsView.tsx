@@ -912,8 +912,12 @@ const getTierLabel = (tier: number, inRest: boolean): string => {
 
 // Helper: get tier color
 const getTierColor = (tier: number, inRest: boolean): string => {
-  if (inRest) return '#FF6B6B'; // Red for rest window
-  if (tier === 0) return '#88D8E0'; // Light cyan for regular
+  if (inRest) {
+    if (tier === 0) return '#FF8E8E'; // Light red - 150% מנוחה רגיל
+    if (tier === 1) return '#FF6B6B'; // Medium red - 175%
+    return '#E74C3C';                  // Dark red - 200%
+  }
+  if (tier === 0) return '#88D8E0'; // Light cyan for regular 100%
   if (tier === 1) return '#FFD93D'; // Yellow for 125%
   return '#FF9F43'; // Orange for 150%
 };
@@ -1301,9 +1305,29 @@ const ShiftDetail: React.FC<{ shift: ShiftData }> = ({ shift }) => {
         <Col span={5}>
           <Text type="secondary">שעות:</Text>
           <div>
-            <span style={{ color: '#88D8E0' }}>{shift.regular_hours.toFixed(1)} רגיל</span>
-            {shift.ot_tier1_hours > 0 && <span style={{ color: '#FFD93D' }}> + {shift.ot_tier1_hours.toFixed(1)} (125%)</span>}
-            {shift.ot_tier2_hours > 0 && <span style={{ color: '#FF9F43' }}> + {shift.ot_tier2_hours.toFixed(1)} (150%)</span>}
+            {/* Regular hours - split if rest window */}
+            {(shift.non_rest_regular_hours || 0) > 0 && (
+              <span style={{ color: '#88D8E0' }}>{shift.non_rest_regular_hours.toFixed(1)} רגיל</span>
+            )}
+            {(shift.rest_window_regular_hours || 0) > 0 && (
+              <span style={{ color: '#FF8E8E' }}>{(shift.non_rest_regular_hours || 0) > 0 ? ' + ' : ''}{shift.rest_window_regular_hours.toFixed(1)} מנוחה</span>
+            )}
+            {/* Fallback if no split data */}
+            {!(shift.non_rest_regular_hours || 0) && !(shift.rest_window_regular_hours || 0) && shift.regular_hours > 0 && (
+              <span style={{ color: '#88D8E0' }}>{shift.regular_hours.toFixed(1)} רגיל</span>
+            )}
+            {/* OT tier 1 */}
+            {shift.ot_tier1_hours > 0 && (
+              (shift.rest_window_ot_tier1_hours || 0) > 0
+                ? <span style={{ color: '#FF6B6B' }}> + {shift.ot_tier1_hours.toFixed(1)} (175%)</span>
+                : <span style={{ color: '#FFD93D' }}> + {shift.ot_tier1_hours.toFixed(1)} (125%)</span>
+            )}
+            {/* OT tier 2 */}
+            {shift.ot_tier2_hours > 0 && (
+              (shift.rest_window_ot_tier2_hours || 0) > 0
+                ? <span style={{ color: '#E74C3C' }}> + {shift.ot_tier2_hours.toFixed(1)} (200%)</span>
+                : <span style={{ color: '#FF9F43' }}> + {shift.ot_tier2_hours.toFixed(1)} (150%)</span>
+            )}
           </div>
         </Col>
         <Col span={5}>

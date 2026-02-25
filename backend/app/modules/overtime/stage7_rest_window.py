@@ -80,6 +80,76 @@ def calculate_work_in_window(
     return total
 
 
+def _advance_time(
+    start_time: datetime,
+    net_hours: Decimal,
+    break_intervals: list[tuple[datetime, datetime]],
+) -> datetime:
+    """Advance 'net_hours' on the timeline, skipping breaks.
+
+    This correctly maps net work hours to gross time positions.
+    """
+    remaining = float(net_hours)
+    current = start_time
+
+    for b_start, b_end in break_intervals:
+        if remaining <= 0:
+            break
+        if b_start <= current:
+            # Break already passed or we're inside it
+            current = max(current, b_end)
+            continue
+        # Calculate work time before this break
+        work_before_break = (b_start - current).total_seconds() / 3600
+        if work_before_break >= remaining:
+            return current + timedelta(hours=remaining)
+        remaining -= work_before_break
+        current = b_end
+
+    return current + timedelta(hours=remaining)
+
+
+def _overlap_hours(
+    start1: datetime,
+    end1: datetime,
+    start2: datetime,
+    end2: datetime,
+) -> Decimal:
+    """Calculate overlap hours between two time ranges (gross, without break adjustment)."""
+    overlap_start = max(start1, start2)
+    overlap_end = min(end1, end2)
+
+    if overlap_end > overlap_start:
+        diff = overlap_end - overlap_start
+        return Decimal(str(diff.total_seconds())) / Decimal("3600")
+
+    return Decimal("0")
+
+
+def _net_overlap_hours(
+    zone_start: datetime,
+    zone_end: datetime,
+    window_start: datetime,
+    window_end: datetime,
+    break_intervals: list[tuple[datetime, datetime]],
+) -> Decimal:
+    """Calculate overlap between a tier zone and the rest window, minus breaks.
+
+    Returns net hours (breaks subtracted from the overlap).
+    """
+    raw = _overlap_hours(zone_start, zone_end, window_start, window_end)
+
+    # Subtract breaks that fall in BOTH the zone AND the window
+    for b_start, b_end in break_intervals:
+        effective_start = max(b_start, zone_start, window_start)
+        effective_end = min(b_end, zone_end, window_end)
+        if effective_end > effective_start:
+            diff = effective_end - effective_start
+            raw -= Decimal(str(diff.total_seconds())) / Decimal("3600")
+
+    return max(raw, Decimal("0"))
+
+
 def classify_shift_rest_window(
     shift: Shift,
     window_start: datetime,
@@ -93,51 +163,37 @@ def classify_shift_rest_window(
     - OT Tier 2 are the remaining hours
 
     Each category is split based on actual overlap with the rest window.
+    Breaks are properly accounted for when mapping net hours to time positions.
     """
     if shift.start is None or shift.end is None:
         return
 
-    # Calculate time boundaries for each tier
-    # Regular: shift.start to shift.start + regular_hours
-    # Tier 1: end of regular to end of regular + tier1_hours
-    # Tier 2: end of tier1 to shift.end
+    # Build sorted break intervals
+    break_intervals = sorted(
+        [(b.start, b.end) for b in (shift.breaks or [])],
+        key=lambda x: x[0]
+    )
 
-    regular_end = shift.start + timedelta(hours=float(shift.regular_hours))
-    tier1_end = regular_end + timedelta(hours=float(shift.ot_tier1_hours))
+    # Calculate time boundaries for each tier, skipping breaks
+    regular_end = _advance_time(shift.start, shift.regular_hours, break_intervals)
+    tier1_end = _advance_time(regular_end, shift.ot_tier1_hours, break_intervals)
     # tier2 goes to shift.end
 
-    # Calculate overlap of each tier with rest window
-    shift.rest_window_regular_hours = _overlap_hours(
-        shift.start, regular_end, window_start, window_end
+    # Calculate net overlap of each tier with rest window (subtracting breaks)
+    shift.rest_window_regular_hours = _net_overlap_hours(
+        shift.start, regular_end, window_start, window_end, break_intervals
     )
     shift.non_rest_regular_hours = shift.regular_hours - shift.rest_window_regular_hours
 
-    shift.rest_window_ot_tier1_hours = _overlap_hours(
-        regular_end, tier1_end, window_start, window_end
+    shift.rest_window_ot_tier1_hours = _net_overlap_hours(
+        regular_end, tier1_end, window_start, window_end, break_intervals
     )
     shift.non_rest_ot_tier1_hours = shift.ot_tier1_hours - shift.rest_window_ot_tier1_hours
 
-    shift.rest_window_ot_tier2_hours = _overlap_hours(
-        tier1_end, shift.end, window_start, window_end
+    shift.rest_window_ot_tier2_hours = _net_overlap_hours(
+        tier1_end, shift.end, window_start, window_end, break_intervals
     )
     shift.non_rest_ot_tier2_hours = shift.ot_tier2_hours - shift.rest_window_ot_tier2_hours
-
-
-def _overlap_hours(
-    start1: datetime,
-    end1: datetime,
-    start2: datetime,
-    end2: datetime,
-) -> Decimal:
-    """Calculate overlap hours between two time ranges."""
-    overlap_start = max(start1, start2)
-    overlap_end = min(end1, end2)
-
-    if overlap_end > overlap_start:
-        diff = overlap_end - overlap_start
-        return Decimal(str(diff.total_seconds())) / Decimal("3600")
-
-    return Decimal("0")
 
 
 def optimize_rest_window(
