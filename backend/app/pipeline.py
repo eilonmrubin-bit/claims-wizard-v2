@@ -212,6 +212,51 @@ def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
             if ot_result.daily_records:
                 ssot.daily_records = ot_result.daily_records
 
+        # Mark partial weeks (employment boundaries + gaps)
+        if ssot.weeks and ssot.input.employment_periods:
+            sorted_periods = sorted(ssot.input.employment_periods, key=lambda ep: ep.start)
+            emp_start = sorted_periods[0].start
+            emp_end = sorted_periods[-1].end
+            heb_days = ['ב׳', 'ג׳', 'ד׳', 'ה׳', 'ו׳', 'ש׳', 'א׳']  # Mon=0..Sun=6
+            sorted_weeks = sorted(ssot.weeks, key=lambda w: w.start_date)
+
+            # Employment start: first week where emp_start > week.start_date
+            for week in sorted_weeks:
+                if week.start_date and emp_start > week.start_date:
+                    week.is_partial = True
+                    week.partial_reason = "employment_start"
+                    week.partial_detail = f"תחילת העסקה {emp_start.strftime('%d.%m.%Y')} (יום {heb_days[emp_start.weekday()]})"
+                    break
+
+            # Employment end: last week where emp_end < week.end_date
+            for week in reversed(sorted_weeks):
+                if week.end_date and emp_end < week.end_date:
+                    week.is_partial = True
+                    week.partial_reason = "employment_end"
+                    week.partial_detail = f"סיום העסקה {emp_end.strftime('%d.%m.%Y')} (יום {heb_days[emp_end.weekday()]})"
+                    break
+
+            # Gaps between employment periods
+            if len(sorted_periods) > 1:
+                for i in range(len(sorted_periods) - 1):
+                    gap_start_date = sorted_periods[i].end  # last day of period i
+                    gap_end_date = sorted_periods[i + 1].start  # first day of period i+1
+                    for week in sorted_weeks:
+                        # Week containing end of period i
+                        if week.start_date and week.end_date and week.start_date <= gap_start_date <= week.end_date:
+                            if gap_start_date > week.start_date:  # gap starts mid-week
+                                if not week.is_partial:  # don't overwrite employment_start/end
+                                    week.is_partial = True
+                                    week.partial_reason = "gap_start"
+                                    week.partial_detail = f"פער החל מ-{gap_start_date.strftime('%d.%m.%Y')}"
+                        # Week containing start of next period
+                        if week.start_date and week.end_date and week.start_date <= gap_end_date <= week.end_date:
+                            if gap_end_date > week.start_date:  # period resumes mid-week
+                                if not week.is_partial:
+                                    week.is_partial = True
+                                    week.partial_reason = "gap_end"
+                                    week.partial_detail = f"חזרה לעבודה {gap_end_date.strftime('%d.%m.%Y')}"
+
         # Step 5a: Seniority (parallel to Step 2)
         if ssot.input.employment_periods:
             first_day = min(ep.start for ep in ssot.input.employment_periods)
