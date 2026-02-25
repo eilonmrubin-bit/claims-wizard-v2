@@ -378,12 +378,19 @@ def place_rest_windows(
         week_shifts = shifts_by_week.get(week.id, [])
 
         # Classify own shifts against own window
+        # Skip if already classified by an adjacent week's window
         for shift in week_shifts:
-            classify_shift_rest_window(
-                shift,
-                week.rest_window_start,
-                week.rest_window_end,
+            already_has_rest = (
+                shift.rest_window_regular_hours > 0 or
+                shift.rest_window_ot_tier1_hours > 0 or
+                shift.rest_window_ot_tier2_hours > 0
             )
+            if not already_has_rest:
+                classify_shift_rest_window(
+                    shift,
+                    week.rest_window_start,
+                    week.rest_window_end,
+                )
 
         # Also check: does this week's window extend into adjacent weeks?
         idx = week_index[week.id]
