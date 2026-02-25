@@ -16,6 +16,7 @@ description: |
 3. **Minimum wage comparison uses the same salary type as the input.** Input is hourly → compare to hourly minimum. Input is daily → compare to daily minimum. Input is monthly → compare to monthly minimum. Input is per-shift → compare to **daily** minimum (per-shift has no legal minimum of its own).
 4. **Net → Gross is always ×1.12.** No tax brackets, no exceptions.
 5. **Never invent minimum wage values.** Use the historical table. If a date is not covered, ASK.
+6. **salary_monthly = hourly × full_time_hours_base (182).** Monthly salary is ALWAYS hourly × 182. It does NOT vary by actual hours worked in a given month. The adjustment for actual hours is done via job_scope (היקף משרה), not via salary_monthly.
 
 ---
 
@@ -110,20 +111,22 @@ else:
 
 ## Step 3: Conversion to All Types
 
-All conversions use **regular hours data from the SSOT**. The overtime pipeline (stages 1–6) writes each shift's regular hours (Tier 0) to the SSOT. The salary conversion module aggregates this data per month:
+All conversions use **regular hours data from the SSOT** for hourly↔daily conversion. The overtime pipeline (stages 1–6) writes each shift's regular hours (Tier 0) to the SSOT. The salary conversion module aggregates this data per month:
 
 - **avg_regular_hours_per_day**: total regular hours in month ÷ number of work days in month
-- **avg_regular_hours_per_month**: sum of `regular_hours` across all shifts in the month
 - **avg_regular_hours_per_shift**: total regular hours in month ÷ number of shifts in month (for per-shift input)
+- **full_time_hours_base**: 182 hours (from system settings, configurable). Used for hourly↔monthly conversion.
 
 **DO NOT** recalculate regular hours independently. Read them from the SSOT.
+
+**CRITICAL:** Monthly salary is always `hourly × full_time_hours_base (182)`. It does NOT use actual regular hours worked in a given month. The variable `avg_regular_hours_per_month` is used ONLY for daily↔hourly conversion context, NOT for monthly calculation.
 
 ### From Hourly (שעתי):
 
 ```
 hourly = effective
 daily = hourly × avg_regular_hours_per_day
-monthly = hourly × avg_regular_hours_per_month
+monthly = hourly × full_time_hours_base            // 182, NOT avg_regular_hours_per_month
 ```
 
 ### From Daily (יומי):
@@ -131,13 +134,13 @@ monthly = hourly × avg_regular_hours_per_month
 ```
 hourly = effective / avg_regular_hours_per_day
 daily = effective
-monthly = hourly × avg_regular_hours_per_month
+monthly = hourly × full_time_hours_base            // 182
 ```
 
 ### From Monthly (חודשי):
 
 ```
-hourly = effective / avg_regular_hours_per_month
+hourly = effective / full_time_hours_base           // 182, NOT avg_regular_hours_per_month
 monthly = effective
 daily = hourly × avg_regular_hours_per_day
 ```
@@ -147,7 +150,7 @@ daily = hourly × avg_regular_hours_per_day
 ```
 hourly = effective / avg_regular_hours_per_shift
 daily = hourly × avg_regular_hours_per_day
-monthly = hourly × avg_regular_hours_per_month
+monthly = hourly × full_time_hours_base            // 182
 ```
 
 **Note:** Per-shift is input-only. The system converts FROM it but never TO it.
@@ -157,10 +160,10 @@ monthly = hourly × avg_regular_hours_per_month
 ## Per-Month Calculation
 
 Conversions are calculated **per calendar month separately**, because:
-- Regular hours per month vary (different number of work days per month)
+- Regular hours per **day** vary (different number of work days per month → different avg_regular_hours_per_day)
 - Minimum wage may change mid-period (rate changes on a specific date)
 
-For a tier spanning Jan–Jun, the system produces 6 separate monthly records, each with its own hourly/daily/monthly values.
+For a tier spanning Jan–Jun, the system produces 6 separate monthly records. The hourly and daily values may vary slightly between months (due to different avg_regular_hours_per_day). The monthly value stays constant as long as the hourly rate doesn't change (since monthly = hourly × 182, and 182 is constant).
 
 ---
 
@@ -175,28 +178,27 @@ SalaryData {
     input_net_or_gross: "net" | "gross"
     input_amount: decimal               // raw user input
     gross_amount: decimal               // after net→gross if applicable
-    
+
     monthly_records: List<{
       month: (year, month)
-      
+
       // Regular hours (written by overtime pipeline)
       avg_regular_hours_per_day: decimal
-      avg_regular_hours_per_month: decimal
       avg_regular_hours_per_shift: decimal?   // only if input is per-shift
-      
+
       // Minimum wage check
       minimum_wage_value: decimal        // the minimum for comparison type
       minimum_wage_type: string          // which minimum was compared (hourly / daily_5day / daily_6day / monthly)
       minimum_applied: boolean
       minimum_gap: decimal               // 0 if not applied
-      
+
       // Effective salary (after minimum enforcement)
       effective_amount: decimal           // in input type
-      
+
       // All conversions
       hourly: decimal
       daily: decimal
-      monthly: decimal
+      monthly: decimal                   // always hourly × 182
     }>
   }>
 }
@@ -275,9 +277,10 @@ effective_date,hourly,daily_5day,daily_6day,monthly
 
 ## Anti-Patterns (DO NOT DO)
 
-1. **DO NOT** hardcode 186 hours/month or 22 days/month. Use regular hours aggregated from the SSOT per month.
+1. **DO NOT** use actual monthly hours (avg_regular_hours_per_month) for monthly salary calculation. Monthly salary = hourly × full_time_hours_base (182). The adjustment for actual hours is via job_scope.
 2. **DO NOT** convert directly between non-hourly types (e.g., daily→monthly without going through hourly). Hourly is always the pivot.
 3. **DO NOT** compare per-shift input to hourly minimum. Use daily minimum for per-shift.
 4. **DO NOT** apply minimum wage before gross normalization. Net→gross first, then minimum check.
 5. **DO NOT** hardcode minimum wage values. Use the historical table.
 6. **DO NOT** use a single conversion for an entire tier. Calculate per month separately.
+7. **DO NOT** hardcode 182 inline. Read full_time_hours_base from system settings (DEFAULT_FULL_TIME_HOURS_BASE).

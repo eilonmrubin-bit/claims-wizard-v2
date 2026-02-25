@@ -101,13 +101,28 @@ The user provides:
 }
 ```
 
-### Method ב: Manual Total Entry
+### Method ב: Total Seniority Entry
 
-The user directly enters:
-1. **Total industry seniority** (ותק ענפי כולל): in months or years+months
-2. **Seniority at defendant** (ותק אצל הנתבע): in months or years+months
+The user provides:
+1. **Total industry seniority** (סה"כ ותק ענפי כולל): in months or years+months
+2. The system calculates seniority at the defendant from the **work pattern data** (same as method א)
 
-No calculation needed — values go directly to SSOT.
+**Calculation:**
+- at_defendant_months = counted from daily_records (same logic as method א)
+- prior_seniority_months = total_industry_months - at_defendant_months
+- If total < at_defendant → validation error (total cannot be less than defendant seniority)
+
+**SSOT output:**
+```
+{
+  total_industry_months: user_entered_total,
+  at_defendant_months: counted_at_defendant,
+  total_industry_years: total_industry_months / 12,
+  at_defendant_years: at_defendant_months / 12
+}
+```
+
+**Note:** Methods א and ב are mirror images — א enters prior and derives total, ב enters total and derives prior. Both calculate at_defendant from daily_records.
 
 ### Method ג: מת"ש PDF Extraction
 
@@ -185,17 +200,17 @@ The user uploads a מת"ש (מרשם תעסוקתי) PDF from ביטוח לאו�
 
 ```
 SeniorityData {
-  input_method: "prior_plus_pattern" | "manual" | "matash_pdf"
-  
+  input_method: "prior_plus_pattern" | "total_plus_pattern" | "matash_pdf"
+
   // Final totals (derived from last entry in monthly series)
   total_industry_months: integer      // total months worked in the industry
   total_industry_years: decimal       // total_industry_months / 12
-  
+
   at_defendant_months: integer        // months worked at the defendant specifically
   at_defendant_years: decimal         // at_defendant_months / 12
-  
-  prior_seniority_months: integer     // only for method א: months before defendant
-  
+
+  prior_seniority_months: integer     // method א: user input; method ב: derived (total - defendant)
+
   // Cumulative monthly series — one entry per calendar month in defendant's employment range
   monthly: List<{
     month: (year, month)
@@ -205,7 +220,7 @@ SeniorityData {
     total_industry_cumulative: integer        // prior + at_defendant_cumulative
     total_industry_years_cumulative: decimal  // total_industry_cumulative / 12
   }>
-  
+
   // For display and audit trail (method ג):
   matash_records?: List<{
     employer_name: string
@@ -226,15 +241,15 @@ SeniorityData {
 ```
 function countWorkMonths(periods: List<{start_date, end_date}>): integer {
   month_set = Set<(year, month)>()
-  
+
   for period in periods:
     cursor = first_day_of_month(period.start_date)
     end = last_day_of_month(period.end_date)
-    
+
     while cursor <= end:
       month_set.add((cursor.year, cursor.month))
       cursor = first_day_of_next_month(cursor)
-  
+
   return month_set.size
 }
 ```
@@ -243,13 +258,13 @@ For method א (work pattern based):
 ```
 function countWorkMonthsFromPattern(employment_start, employment_end, workPattern): integer {
   month_set = Set<(year, month)>()
-  
+
   for each calendar_month in range(employment_start, employment_end):
     for each day in calendar_month:
       if workPattern.didWork(day):
         month_set.add((day.year, day.month))
         break  // one work day is enough, move to next month
-  
+
   return month_set.size
 }
 ```
@@ -262,15 +277,15 @@ After counting work months, generate the cumulative series for the SSOT:
 function generateMonthlySeries(employment_start, employment_end, work_month_set, prior_months):
   series = []
   defendant_cumulative = 0
-  
+
   for each calendar_month in range(employment_start, employment_end):
     worked = (calendar_month.year, calendar_month.month) in work_month_set
-    
+
     if worked:
       defendant_cumulative += 1
-    
+
     industry_cumulative = prior_months + defendant_cumulative
-    
+
     series.append({
       month: (calendar_month.year, calendar_month.month),
       worked: worked,
@@ -279,13 +294,13 @@ function generateMonthlySeries(employment_start, employment_end, work_month_set,
       total_industry_cumulative: industry_cumulative,
       total_industry_years_cumulative: industry_cumulative / 12,
     })
-  
+
   return series
 ```
 
 **Notes:**
 - The series includes EVERY calendar month in the employment range, including months the worker didn't work (gaps). These have `worked: false` and the cumulative values stay flat.
-- For method ב (manual entry): the series still covers every month, but `worked` is derived from the work pattern (if available) or defaults to true for all months.
+- For method ב (total seniority entry): the series covers every month, `worked` is derived from the work pattern (same as method א). at_defendant is counted from daily_records, prior is derived as total - defendant.
 - For method ג (מת"ש): `prior_months` is derived from the total industry count minus the defendant count, and the series covers only the defendant employment range.
 
 ---

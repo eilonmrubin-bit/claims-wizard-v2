@@ -125,10 +125,9 @@ SSOT.input {
 
   // ═══ קלט ותק ═══
   seniority_input: {
-    method: "prior_plus_pattern" | "manual" | "matash_pdf"
-    prior_months: integer?               // שיטה א
-    manual_industry_months: integer?     // שיטה ב
-    manual_defendant_months: integer?    // שיטה ב
+    method: "prior_plus_pattern" | "total_plus_pattern" | "matash_pdf"
+    prior_months: integer?               // שיטה א — ותק קודם (לפני הנתבע)
+    total_industry_months: integer?      // שיטה ב — סה"כ ותק ענפי כולל
     matash_file: binary?                 // שיטה ג
   }
 
@@ -254,7 +253,6 @@ SSOT.shifts: List<{
   date: date                             // תאריך היום שאליו שויכה המשמרת
   shift_index: integer                   // אינדקס המשמרת ביום (0, 1, 2...)
   effective_period_id: string            // → effective_periods[].id
-  week_id: string                        // → weeks[].id
 
   // ═══ Stage 1 — הרכבה ═══
   start: datetime                        // תחילת הסגמנט הראשון
@@ -271,7 +269,7 @@ SSOT.shifts: List<{
 
   // ═══ Stage 2 — שיוך ═══
   assigned_day: date                     // היום שאליו שויכה (majority rule)
-  assigned_week: string                  // (year, week_number) → week_id
+  assigned_week: string                  // (year, week_number) → weeks[].id
 
   // ═══ Stage 4 — סף ═══
   threshold: decimal                     // 7.0 | 8.0 | 8.4
@@ -315,7 +313,7 @@ SSOT.weeks: List<{
   week_number: integer
   start_date: date                       // ראשון של השבוע
   end_date: date                         // שבת של השבוע
-  
+
   // ═══ Stage 3 — סיווג ═══
   distinct_work_days: integer            // מספר ימי עבודה שונים
   week_type: 5 | 6                       // סוג שבוע
@@ -410,7 +408,7 @@ SSOT.seniority_monthly: List<{
 }>
 
 SSOT.seniority_totals: {
-  input_method: "prior_plus_pattern" | "manual" | "matash_pdf"
+  input_method: "prior_plus_pattern" | "total_plus_pattern" | "matash_pdf"
   prior_seniority_months: integer        // חודשי ותק לפני הנתבע
   at_defendant_months: integer           // סה"כ חודשי ותק אצל נתבע
   at_defendant_years: decimal
