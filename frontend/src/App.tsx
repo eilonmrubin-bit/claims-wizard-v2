@@ -168,6 +168,46 @@ const EXAMPLE_JSON_INPUT = {
   right_specific_inputs: {}
 };
 
+// Example for testing rest window (stage 7 + stage 8 pricing)
+const EXAMPLE_REST_WINDOW = {
+  case_metadata: {
+    case_name: "בדיקת חלון מנוחה — משמרת שישי חוצה שבת",
+    notes: "משמרת שישי 14:00-22:00 חוצה כניסת שבת (~16:31-17:40). בודק stage 7 אופטימיזציה + stage 8 pricing split."
+  },
+  personal_details: { first_name: "בדיקה", last_name: "חלון-מנוחה", id_number: "999888777", birth_year: 1990 },
+  defendant_details: { name: "חברת בדיקות בע\"מ", id_number: "514111111", address: "תל אביב" },
+  employment_periods: [
+    { id: "ep1", start: "2024-01-01", end: "2024-03-31" }
+  ],
+  work_patterns: [
+    {
+      id: "wp1",
+      start: "2024-01-01",
+      end: "2024-03-31",
+      work_days: [0, 1, 2, 3, 4, 5],
+      default_shifts: [{ start_time: "07:00:00", end_time: "15:30:00" }],
+      default_breaks: [{ start_time: "12:00:00", end_time: "12:30:00" }],
+      per_day: {
+        "5": {
+          shifts: [{ start_time: "14:00:00", end_time: "22:00:00" }],
+          breaks: [{ start_time: "18:00:00", end_time: "18:30:00" }]
+        }
+      }
+    }
+  ],
+  salary_tiers: [
+    { id: "st1", start: "2024-01-01", end: "2024-03-31", amount: "40", type: "hourly", net_or_gross: "gross" }
+  ],
+  rest_day: "saturday",
+  district: "tel_aviv",
+  industry: "general",
+  filing_date: "2025-12-31",
+  seniority_input: { method: "prior_plus_pattern", prior_months: 0 },
+  right_toggles: {},
+  deductions_input: { overtime: "0", holidays: "0" },
+  right_specific_inputs: {}
+};
+
 // Format months as "X שנים ו-Y חודשים"
 const formatMonthsDisplay = (totalMonths: number): string => {
   if (totalMonths === 0) return '0 חודשים';
@@ -526,8 +566,12 @@ function App() {
     }
   };
 
-  const loadExample = () => {
-    setJsonInput(JSON.stringify(EXAMPLE_JSON_INPUT, null, 2));
+  const loadExample = (example: 'main' | 'rest_window' = 'main') => {
+    const examples = {
+      main: EXAMPLE_JSON_INPUT,
+      rest_window: EXAMPLE_REST_WINDOW,
+    };
+    setJsonInput(JSON.stringify(examples[example], null, 2));
     setJsonError(null);
   };
 
@@ -1286,9 +1330,17 @@ function App() {
                     <Button type="primary" onClick={handleJsonCalculate} loading={loading}>
                       חשב מ-JSON
                     </Button>
-                    <Button onClick={loadExample}>
-                      טען דוגמה
-                    </Button>
+                    <Dropdown
+                      menu={{
+                        items: [
+                          { key: 'main', label: '8 שנים, דפוס משתנה, התיישנות' },
+                          { key: 'rest_window', label: 'חלון מנוחה — שישי חוצה שבת' },
+                        ],
+                        onClick: ({ key }) => loadExample(key as 'main' | 'rest_window'),
+                      }}
+                    >
+                      <Button>טען דוגמה ▾</Button>
+                    </Dropdown>
                     <Button onClick={saveJsonToFile} disabled={!jsonInput}>
                       שמור input לקובץ
                     </Button>
