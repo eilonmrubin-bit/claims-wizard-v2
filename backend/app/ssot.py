@@ -533,6 +533,7 @@ class LimitationWindow:
     base_window_start: date | None = None
     effective_window_start: date | None = None
     freeze_periods_applied: list[FreezePeriodApplied] = field(default_factory=list)
+    claimable_duration: Duration = field(default_factory=Duration)  # effective_window_start → filing_date
 
 
 @dataclass

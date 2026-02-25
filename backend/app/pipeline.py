@@ -119,6 +119,11 @@ def _fill_duration_displays(ssot: SSOT) -> None:
             )
 
     # Limitation results - timeline_data
+    for window in ssot.limitation_results.timeline_data.limitation_windows:
+        window.claimable_duration.display = _format_duration_display(
+            window.claimable_duration.days
+        )
+
     for fp in ssot.limitation_results.timeline_data.freeze_periods:
         fp.duration.display = _format_duration_display(fp.duration.days)
 
@@ -395,6 +400,12 @@ def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
             )
 
             # Convert to SSOT LimitationWindow format with Duration
+            # Compute claimable_duration: effective_window_start → filing_date
+            window_claimable_duration = compute_duration(
+                general_window.effective_window_start,
+                ssot.input.filing_date,
+            )
+
             ssot_window = SSOTLimitationWindow(
                 type_id=general_window.type_id,
                 type_name=general_window.type_name,
@@ -410,6 +421,7 @@ def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
                     )
                     for fp in general_window.freeze_periods_applied
                 ],
+                claimable_duration=window_claimable_duration,
             )
 
             ssot.limitation_results.windows = [ssot_window]
@@ -482,14 +494,29 @@ def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
                     excluded_duration=excluded_dur,
                 )
 
-            # Holidays
+            # Holidays - filter by checking each holiday's gregorian_date
             if ssot.rights_results.holidays:
                 claimable_dur, excluded_dur = compute_right_durations("general")
+
+                # Filter holidays by date - each holiday is either in or out of the window
+                full_amount = Decimal("0")
+                claimable_amount = Decimal("0")
+
+                for year_result in ssot.rights_results.holidays.per_year:
+                    for holiday in year_result.holidays:
+                        if holiday.claim_amount and holiday.gregorian_date:
+                            full_amount += holiday.claim_amount
+                            # Holiday is claimable if its date is within the limitation window
+                            if (effective_window_start <= holiday.gregorian_date <= filing_date):
+                                claimable_amount += holiday.claim_amount
+
+                excluded_amount = full_amount - claimable_amount
+
                 per_right_results["holidays"] = RightLimitationResult(
                     limitation_type_id="general",
-                    full_amount=ssot.rights_results.holidays.grand_total_claim,
-                    claimable_amount=ssot.rights_results.holidays.grand_total_claim,
-                    excluded_amount=Decimal("0"),
+                    full_amount=full_amount,
+                    claimable_amount=claimable_amount,
+                    excluded_amount=excluded_amount,
                     claimable_duration=claimable_dur,
                     excluded_duration=excluded_dur,
                 )
@@ -501,16 +528,7 @@ def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
             ssot.limitation_results.timeline_data.employment_end = employment_end
             ssot.limitation_results.timeline_data.filing_date = filing_date
 
-            # Limitation windows for timeline (with claimable_duration)
-            timeline_windows = []
-            if effective_window_start and filing_date:
-                window_claimable_dur = compute_duration(effective_window_start, filing_date)
-            else:
-                window_claimable_dur = compute_duration(date.today(), date.today())
-                window_claimable_dur.days = 0
-
-            # Note: SSOTLimitationWindow doesn't have claimable_duration field directly
-            # The claimable_duration is computed per-right, so we just store the windows
+            # Limitation windows for timeline (claimable_duration already computed in ssot_window)
             ssot.limitation_results.timeline_data.limitation_windows = [ssot_window]
 
             # Freeze periods for timeline
