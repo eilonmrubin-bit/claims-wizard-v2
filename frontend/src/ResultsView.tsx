@@ -910,6 +910,15 @@ const getTierLabel = (tier: number, inRest: boolean): string => {
   return inRest ? restLabels[tier] : baseLabels[tier];
 };
 
+// Helper: get claim percentage label (what we actually claim, not the full rate)
+const getClaimLabel = (tier: number, inRest: boolean): string => {
+  const claimPct: Record<string, number> = {
+    '0-false': 0, '1-false': 25, '2-false': 50,
+    '0-true': 50, '1-true': 75, '2-true': 100,
+  };
+  return `${claimPct[`${tier}-${inRest}`]}%`;
+};
+
 // Helper: get tier color
 const getTierColor = (tier: number, inRest: boolean): string => {
   if (inRest) {
@@ -1316,17 +1325,27 @@ const ShiftDetail: React.FC<{ shift: ShiftData }> = ({ shift }) => {
             {!(shift.non_rest_regular_hours || 0) && !(shift.rest_window_regular_hours || 0) && shift.regular_hours > 0 && (
               <span style={{ color: '#88D8E0' }}>{shift.regular_hours.toFixed(1)} רגיל</span>
             )}
-            {/* OT tier 1 */}
-            {shift.ot_tier1_hours > 0 && (
-              (shift.rest_window_ot_tier1_hours || 0) > 0
-                ? <span style={{ color: '#FF6B6B' }}> + {shift.ot_tier1_hours.toFixed(1)} (175%)</span>
-                : <span style={{ color: '#FFD93D' }}> + {shift.ot_tier1_hours.toFixed(1)} (125%)</span>
+            {/* OT tier 1 - split rest/non-rest */}
+            {(shift.non_rest_ot_tier1_hours || 0) > 0 && (
+              <span style={{ color: '#FFD93D' }}> + {shift.non_rest_ot_tier1_hours.toFixed(1)} (125%)</span>
             )}
-            {/* OT tier 2 */}
-            {shift.ot_tier2_hours > 0 && (
-              (shift.rest_window_ot_tier2_hours || 0) > 0
-                ? <span style={{ color: '#E74C3C' }}> + {shift.ot_tier2_hours.toFixed(1)} (200%)</span>
-                : <span style={{ color: '#FF9F43' }}> + {shift.ot_tier2_hours.toFixed(1)} (150%)</span>
+            {(shift.rest_window_ot_tier1_hours || 0) > 0 && (
+              <span style={{ color: '#FF6B6B' }}> + {shift.rest_window_ot_tier1_hours.toFixed(1)} (175%)</span>
+            )}
+            {/* Fallback tier1 - if no split data */}
+            {!(shift.non_rest_ot_tier1_hours || 0) && !(shift.rest_window_ot_tier1_hours || 0) && shift.ot_tier1_hours > 0 && (
+              <span style={{ color: '#FFD93D' }}> + {shift.ot_tier1_hours.toFixed(1)} (125%)</span>
+            )}
+            {/* OT tier 2 - split rest/non-rest */}
+            {(shift.non_rest_ot_tier2_hours || 0) > 0 && (
+              <span style={{ color: '#FF9F43' }}> + {shift.non_rest_ot_tier2_hours.toFixed(1)} (150%)</span>
+            )}
+            {(shift.rest_window_ot_tier2_hours || 0) > 0 && (
+              <span style={{ color: '#E74C3C' }}> + {shift.rest_window_ot_tier2_hours.toFixed(1)} (200%)</span>
+            )}
+            {/* Fallback tier2 - if no split data */}
+            {!(shift.non_rest_ot_tier2_hours || 0) && !(shift.rest_window_ot_tier2_hours || 0) && shift.ot_tier2_hours > 0 && (
+              <span style={{ color: '#FF9F43' }}> + {shift.ot_tier2_hours.toFixed(1)} (150%)</span>
             )}
           </div>
         </Col>
@@ -1343,14 +1362,16 @@ const ShiftDetail: React.FC<{ shift: ShiftData }> = ({ shift }) => {
         <div style={{ marginTop: 8, padding: '8px 12px', background: 'rgba(19, 43, 74, 0.5)', borderRadius: 4 }}>
           <Text type="secondary" style={{ fontSize: '0.85em' }}>פירוט תמחור:</Text>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
-            {shift.pricing_breakdown.map((item, idx) => (
-              <Tag key={idx} color={getTierColor(item.tier, item.in_rest)} style={{ marginBottom: 4 }}>
-                {item.hours.toFixed(2)}h × {getTierLabel(item.tier, item.in_rest)}
-                {item.in_rest && ' (מנוחה)'}
-                {' = '}
-                {formatCurrency(item.claim_amount)}
-              </Tag>
-            ))}
+            {shift.pricing_breakdown
+              .filter((item) => item.claim_amount !== 0)
+              .map((item, idx) => (
+                <Tag key={idx} color={getTierColor(item.tier, item.in_rest)} style={{ marginBottom: 4 }}>
+                  {item.hours.toFixed(2)}h × {getClaimLabel(item.tier, item.in_rest)}
+                  {item.in_rest && ' (מנוחה)'}
+                  {' = '}
+                  {formatCurrency(item.claim_amount)}
+                </Tag>
+              ))}
           </div>
         </div>
       )}
