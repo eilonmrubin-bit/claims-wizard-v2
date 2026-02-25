@@ -955,7 +955,19 @@ const translateThresholdReason = (reason: string): string => {
     'eve_of_rest_5day': 'ערב מנוחה (5 ימים)',
     'eve_rest+night': 'ערב מנוחה + לילה',
   };
-  return map[reason] || reason;
+
+  // Exact match first
+  if (map[reason]) return map[reason];
+
+  // Compound reasons: split by ' + ' and translate each part
+  if (reason.includes(' + ')) {
+    return reason
+      .split(' + ')
+      .map((part) => map[part.trim()] || part.trim())
+      .join(' + ');
+  }
+
+  return reason;
 };
 
 /** Calculate hours summary from array of shifts */
@@ -1529,21 +1541,12 @@ const WeekCollapseContent: React.FC<{
 
         {/* Partial week info */}
         {week.is_partial && (
-          <div style={{
-            background: 'rgba(250, 173, 20, 0.1)',
-            border: '1px solid rgba(250, 173, 20, 0.3)',
-            borderRadius: 6,
-            padding: '6px 12px',
-            marginTop: 8,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-          }}>
-            <span style={{ color: '#faad14' }}>ℹ</span>
-            <span style={{ color: '#e8f4f8' }}>
-              שבוע חלקי — {week.partial_detail || week.partial_reason}
-            </span>
-          </div>
+          <Alert
+            message={`שבוע חלקי — ${week.partial_detail || week.partial_reason}`}
+            type="info"
+            showIcon
+            style={{ marginTop: 8, padding: '6px 12px' }}
+          />
         )}
       </div>
 
@@ -1610,9 +1613,8 @@ const OvertimeDetailedTab: React.FC<{ shifts: ShiftData[]; weeks: WeekData[] }> 
               const weekTotal = weekShifts.reduce((sum, s) => sum + (s.claim_amount || 0), 0);
               const weekHours = weekShifts.reduce((sum, s) => sum + s.net_hours, 0);
 
-              // Get ALL shifts in this week (from all months) for ghost days and partial week detection
+              // Get ALL shifts in this week (from all months) for ghost days
               const allWeekShifts = shifts.filter((s) => (s.assigned_week || s.week_id) === weekId);
-              const isPartialWeek = week && allWeekShifts.length < (week.week_type || 5);
 
               return {
                 key: weekId,
@@ -1627,7 +1629,7 @@ const OvertimeDetailedTab: React.FC<{ shifts: ShiftData[]; weeks: WeekData[] }> 
                         <Tag color={week.week_type === 5 ? 'green' : 'blue'}>{week.week_type} ימים</Tag>
                       </>
                     )}
-                    {isPartialWeek && <Tag color="orange">שבוע חלקי</Tag>}
+                    {week?.is_partial && <Tag color="blue">שבוע חלקי</Tag>}
                     <Tag>{weekShifts.length} משמרות</Tag>
                     <HoursSummaryTags summary={calcHoursSummary(weekShifts)} />
                   </Space>
