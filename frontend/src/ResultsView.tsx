@@ -1366,7 +1366,7 @@ const ShiftDetail: React.FC<{ shift: ShiftData }> = ({ shift }) => {
               .filter((item) => item.claim_amount !== 0)
               .map((item, idx) => (
                 <Tag key={idx} color={getTierColor(item.tier, item.in_rest)} style={{ marginBottom: 4 }}>
-                  {item.hours.toFixed(2)}h × {getClaimLabel(item.tier, item.in_rest)}
+                  {item.hours.toFixed(2)}h × {formatCurrency(item.hourly_wage)} × {getClaimLabel(item.tier, item.in_rest)}
                   {item.in_rest && ' (מנוחה)'}
                   {' = '}
                   {formatCurrency(item.claim_amount)}
