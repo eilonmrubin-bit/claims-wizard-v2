@@ -906,7 +906,7 @@ const formatDateTime = (datetime: string | undefined): string => {
 // Helper: get tier label
 const getTierLabel = (tier: number, inRest: boolean): string => {
   const baseLabels: Record<number, string> = { 0: '100%', 1: '125%', 2: '150%' };
-  const restLabels: Record<number, string> = { 0: '150%', 1: '175%', 2: '200%' };
+  const restLabels: Record<number, string> = { 0: '150% (מנוחה)', 1: '175% (מנוחה)', 2: '200% (מנוחה)' };
   return inRest ? restLabels[tier] : baseLabels[tier];
 };
 
@@ -950,6 +950,7 @@ const translateThresholdReason = (reason: string): string => {
     'eve_rest': 'ערב מנוחה',
     'rest_day': 'יום מנוחה',
     'night_shift': 'משמרת לילה',
+    'night shift': 'משמרת לילה',
     'night': 'משמרת לילה',
     'eve_of_rest_5day': 'ערב מנוחה (5 ימים)',
     'eve_rest+night': 'ערב מנוחה + לילה',
@@ -1002,8 +1003,8 @@ const aggregateByTier = (shifts: ShiftData[]): TierSummary[] => {
     }
   });
 
-  // Sort by percentage (100%, 125%, 150%, 175%, 200%)
-  const order = ['100%', '125%', '150%', '175%', '200%'];
+  // Sort by percentage (regular first, then rest)
+  const order = ['100%', '125%', '150%', '150% (מנוחה)', '175% (מנוחה)', '200% (מנוחה)'];
   return order
     .filter((tier) => tierMap[tier])
     .map((tier) => ({
@@ -1480,7 +1481,10 @@ const WeekCollapseContent: React.FC<{
         <Row gutter={16}>
           <Col span={6}>
             <Text type="secondary">סוג שבוע:</Text>
-            <div><Tag color={week.week_type === 5 ? 'green' : 'blue'}>{week.week_type} ימים</Tag></div>
+            <div>
+              <Tag color={week.week_type === 5 ? 'green' : 'blue'}>{week.week_type} ימים</Tag>
+              {week.is_partial && <Tag color="orange">שבוע חלקי</Tag>}
+            </div>
           </Col>
           <Col span={6}>
             <Text type="secondary">ימי עבודה:</Text>
@@ -1523,15 +1527,23 @@ const WeekCollapseContent: React.FC<{
           </Row>
         )}
 
-        {/* Partial week warning */}
+        {/* Partial week info */}
         {week.is_partial && (
-          <Alert
-            message="שבוע חלקי"
-            description={week.partial_detail || week.partial_reason}
-            type="info"
-            showIcon
-            style={{ marginTop: 12 }}
-          />
+          <div style={{
+            background: 'rgba(250, 173, 20, 0.1)',
+            border: '1px solid rgba(250, 173, 20, 0.3)',
+            borderRadius: 6,
+            padding: '6px 12px',
+            marginTop: 8,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+          }}>
+            <span style={{ color: '#faad14' }}>ℹ</span>
+            <span style={{ color: '#e8f4f8' }}>
+              שבוע חלקי — {week.partial_detail || week.partial_reason}
+            </span>
+          </div>
         )}
       </div>
 
@@ -1817,8 +1829,8 @@ const HolidaysBreakdown: React.FC<{ holidays: HolidaysResult }> = ({ holidays })
       <div>
         {!year.met_threshold && (
           <Alert
-            message="לא עמד בסף 1/10"
-            description={`ימי עבודה בשנה: ${year.employment_days_in_year} (מינימום נדרש: 10)`}
+            message="לא עמד בתנאי סף — עבד פחות מעשירית השנה"
+            description={`ימי עבודה בשנה: ${year.employment_days_in_year} (מינימום נדרש: 37)`}
             type="warning"
             showIcon
             style={{ marginBottom: 16 }}
