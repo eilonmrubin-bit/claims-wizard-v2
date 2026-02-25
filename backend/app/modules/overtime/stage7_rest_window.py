@@ -292,6 +292,10 @@ def place_rest_windows(
 ) -> tuple[list[Shift], list[Week]]:
     """Place rest windows for all weeks.
 
+    Handles cross-week rest windows: the 36-hour window may extend into
+    the adjacent week, so we must consider adjacent week shifts for both
+    optimization and classification.
+
     Args:
         shifts: List of shifts with all OT calculated
         weeks: List of classified weeks
@@ -315,10 +319,15 @@ def place_rest_windows(
     else:
         shabbat_times = {}
 
-    for week in weeks:
+    # Sort weeks chronologically
+    sorted_weeks = sorted(weeks, key=lambda w: w.start_date)
+    week_index = {w.id: i for i, w in enumerate(sorted_weeks)}
+
+    # === PASS 1: Optimize window placement ===
+    # For optimization, include adjacent week's boundary shifts
+    for week in sorted_weeks:
         week_shifts = shifts_by_week.get(week.id, [])
 
-        # Get Shabbat bounds for this week
         shabbat_start, shabbat_end = get_shabbat_bounds(
             week.start_date,
             rest_day,
@@ -326,9 +335,30 @@ def place_rest_windows(
             shabbat_times,
         )
 
-        # Optimize window placement
+        # Collect shifts relevant to optimization:
+        # own week + last day of prev week + first day of next week
+        optimization_shifts = list(week_shifts)
+
+        idx = week_index[week.id]
+
+        # Previous week's last-day shifts (e.g., Friday from prev week)
+        if idx > 0:
+            prev_week = sorted_weeks[idx - 1]
+            prev_shifts = shifts_by_week.get(prev_week.id, [])
+            for s in prev_shifts:
+                if s.assigned_day and s.assigned_day >= week.start_date - timedelta(days=1):
+                    optimization_shifts.append(s)
+
+        # Next week's first-day shifts (e.g., Sunday from next week)
+        if idx < len(sorted_weeks) - 1:
+            next_week = sorted_weeks[idx + 1]
+            next_shifts = shifts_by_week.get(next_week.id, [])
+            for s in next_shifts:
+                if s.assigned_day and week.end_date and s.assigned_day <= week.end_date + timedelta(days=1):
+                    optimization_shifts.append(s)
+
         window_start, window_end = optimize_rest_window(
-            week_shifts,
+            optimization_shifts,
             shabbat_start,
             shabbat_end,
         )
@@ -336,15 +366,64 @@ def place_rest_windows(
         week.rest_window_start = window_start
         week.rest_window_end = window_end
 
-        # Calculate work hours in window
+        # Work hours in window (from ALL relevant shifts, not just week_shifts)
         week.rest_window_work_hours = calculate_work_in_window(
-            week_shifts,
+            optimization_shifts,
             window_start,
             window_end,
         )
 
-        # Classify each shift's hours
+    # === PASS 2: Classify each shift against relevant windows ===
+    for week in sorted_weeks:
+        week_shifts = shifts_by_week.get(week.id, [])
+
+        # Classify own shifts against own window
         for shift in week_shifts:
-            classify_shift_rest_window(shift, window_start, window_end)
+            classify_shift_rest_window(
+                shift,
+                week.rest_window_start,
+                week.rest_window_end,
+            )
+
+        # Also check: does this week's window extend into adjacent weeks?
+        idx = week_index[week.id]
+
+        # Check next week's shifts against THIS week's window
+        if idx < len(sorted_weeks) - 1:
+            next_week = sorted_weeks[idx + 1]
+            next_shifts = shifts_by_week.get(next_week.id, [])
+            for shift in next_shifts:
+                if shift.start and week.rest_window_end and shift.start < week.rest_window_end:
+                    # This shift overlaps with current week's rest window
+                    # Only classify if not already classified by its own week
+                    already_has_rest = (
+                        shift.rest_window_regular_hours > 0 or
+                        shift.rest_window_ot_tier1_hours > 0 or
+                        shift.rest_window_ot_tier2_hours > 0
+                    )
+                    if not already_has_rest:
+                        classify_shift_rest_window(
+                            shift,
+                            week.rest_window_start,
+                            week.rest_window_end,
+                        )
+
+        # Check previous week's shifts against THIS week's window
+        if idx > 0:
+            prev_week = sorted_weeks[idx - 1]
+            prev_shifts = shifts_by_week.get(prev_week.id, [])
+            for shift in prev_shifts:
+                if shift.end and week.rest_window_start and shift.end > week.rest_window_start:
+                    already_has_rest = (
+                        shift.rest_window_regular_hours > 0 or
+                        shift.rest_window_ot_tier1_hours > 0 or
+                        shift.rest_window_ot_tier2_hours > 0
+                    )
+                    if not already_has_rest:
+                        classify_shift_rest_window(
+                            shift,
+                            week.rest_window_start,
+                            week.rest_window_end,
+                        )
 
     return shifts, weeks

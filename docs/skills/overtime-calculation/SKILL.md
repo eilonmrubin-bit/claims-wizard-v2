@@ -506,6 +506,24 @@ WeekRecord {
 }
 ```
 
+12. **Rest window crossing week boundary (חלון מנוחה חוצה שבוע)** → The 36-hour rest window is anchored to the rest day, not to the week. When the window extends beyond the week boundary (into the next or previous week), shifts from the adjacent week must be considered:
+
+    **For optimization:** When computing optimal window placement for week A, include shifts from:
+    - The last day of the previous week (e.g., Friday shifts from week A-1 if rest=Saturday)
+    - The first day of the next week (e.g., Sunday shifts from week A+1 if rest=Saturday)
+
+    **For classification:** After all windows are placed, classify ALL shifts against the rest window of their adjacent week if the window extends across the boundary:
+    - A Sunday shift in week B may fall partially in the rest window of week A
+    - A Friday shift in week A may fall partially in the rest window of week A-1
+    - A shift can be affected by at most ONE rest window (its own week's or the adjacent week's)
+    - If a shift is already classified with rest hours by its own week's window, do not overwrite
+
+    **Implementation in `place_rest_windows`:**
+    1. First pass: compute all windows (optimization) considering adjacent shifts
+    2. Second pass: classify shifts — for each shift, check both its own week's window AND the adjacent week's window
+
+    **Example:** rest_day=Saturday, Havdalah 17:32 → window ends Sunday ~04:30. A Sunday shift starting 02:00 has ~2.5h inside the previous week's rest window. Without cross-week handling, these hours are priced at regular rates instead of rest rates (150%+).
+
 ---
 
 ## Testing Strategy
