@@ -498,17 +498,28 @@ def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
             if ssot.rights_results.holidays:
                 claimable_dur, excluded_dur = compute_right_durations("general")
 
+                # full_amount is ALWAYS grand_total_claim (before limitation)
+                full_amount = ssot.rights_results.holidays.grand_total_claim
+
                 # Filter holidays by date - each holiday is either in or out of the window
-                full_amount = Decimal("0")
                 claimable_amount = Decimal("0")
 
                 for year_result in ssot.rights_results.holidays.per_year:
+                    # Check individual holidays
                     for holiday in year_result.holidays:
                         if holiday.claim_amount and holiday.gregorian_date:
-                            full_amount += holiday.claim_amount
                             # Holiday is claimable if its date is within the limitation window
-                            if (effective_window_start <= holiday.gregorian_date <= filing_date):
+                            if effective_window_start <= holiday.gregorian_date <= filing_date:
                                 claimable_amount += holiday.claim_amount
+
+                    # "Election day" (יום בחירה) has no specific date.
+                    # Claimable if any part of the year overlaps with the limitation window.
+                    if year_result.election_day_entitled and year_result.election_day_value:
+                        # Check if any part of this year is within the limitation window
+                        year_start = date(year_result.year, 1, 1)
+                        year_end = date(year_result.year, 12, 31)
+                        if year_start <= filing_date and year_end >= effective_window_start:
+                            claimable_amount += year_result.election_day_value
 
                 excluded_amount = full_amount - claimable_amount
 
