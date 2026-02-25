@@ -1352,22 +1352,67 @@ const DayCollapseItem: React.FC<{ date: string; shifts: ShiftData[] }> = ({ date
 };
 
 // Week collapse item with rest window info
-const WeekCollapseContent: React.FC<{ week: WeekData; shifts: ShiftData[] }> = ({ week, shifts }) => {
-  // Group shifts by date
+const WeekCollapseContent: React.FC<{
+  week: WeekData;
+  shifts: ShiftData[];
+  allWeekShifts?: ShiftData[];
+  currentMonth?: string;
+}> = ({ week, shifts, allWeekShifts, currentMonth }) => {
+  // Group shifts by date (current month shifts)
   const shiftsByDate: Record<string, ShiftData[]> = {};
   shifts.forEach((shift) => {
     if (!shiftsByDate[shift.date]) shiftsByDate[shift.date] = [];
     shiftsByDate[shift.date].push(shift);
   });
 
-  const sortedDates = Object.keys(shiftsByDate).sort();
+  // Find ghost days (shifts from other months in the same week)
+  const ghostDays: Record<string, { shifts: ShiftData[]; monthName: string }> = {};
+  if (allWeekShifts && currentMonth) {
+    allWeekShifts.forEach((shift) => {
+      const shiftDate = new Date(shift.date);
+      const shiftMonth = `${shiftDate.getFullYear()}-${(shiftDate.getMonth() + 1).toString().padStart(2, '0')}`;
+      if (shiftMonth !== currentMonth) {
+        if (!ghostDays[shift.date]) {
+          ghostDays[shift.date] = {
+            shifts: [],
+            monthName: formatMonth([shiftDate.getFullYear(), shiftDate.getMonth() + 1]),
+          };
+        }
+        ghostDays[shift.date].shifts.push(shift);
+      }
+    });
+  }
 
-  const dayItems = sortedDates.map((date) => {
-    const dayShifts = shiftsByDate[date];
-    const dayTotal = dayShifts.reduce((sum, s) => sum + (s.claim_amount || 0), 0);
-    const dayHours = dayShifts.reduce((sum, s) => sum + s.net_hours, 0);
+  // Combine and sort all dates (current + ghost)
+  const allDates = [...new Set([...Object.keys(shiftsByDate), ...Object.keys(ghostDays)])].sort();
+
+  const dayItems = allDates.map((date) => {
+    const isGhost = !shiftsByDate[date];
+    const dayShifts = shiftsByDate[date] || [];
+    const ghostInfo = ghostDays[date];
     const dayOfWeek = dayOfWeekFromDate(date);
 
+    if (isGhost && ghostInfo) {
+      // Ghost day - show grayed out
+      return {
+        key: date,
+        label: (
+          <Tooltip title={`יום זה שייך לחודש ${ghostInfo.monthName}`}>
+            <Space style={{ opacity: 0.5, color: '#888' }}>
+              <CalendarOutlined />
+              <span style={{ fontWeight: 500 }}>{dayOfWeek}</span>
+              <span className="ltr-number">{formatDate(date)}</span>
+              <Tag color="default">{ghostInfo.shifts.length} משמרות</Tag>
+              <Tag color="default">{ghostInfo.monthName}</Tag>
+            </Space>
+          </Tooltip>
+        ),
+        children: null,
+        collapsible: 'disabled' as const,
+      };
+    }
+
+    // Normal day
     return {
       key: date,
       label: (
@@ -1494,18 +1539,23 @@ const OvertimeDetailedTab: React.FC<{ shifts: ShiftData[]; weeks: WeekData[] }> 
           const monthHours = monthShifts.reduce((sum, s) => sum + s.net_hours, 0);
           const monthName = formatMonth([parseInt(month.split('-')[0]), parseInt(month.split('-')[1])]);
 
-          // Build week items (ascending chronological order)
+          // Build week items (ascending chronological order by start_date)
           const weekItems = Object.keys(monthData)
             .sort((a, b) => {
               const weekA = weekMap[a];
               const weekB = weekMap[b];
-              return (weekA?.week_number || 0) - (weekB?.week_number || 0);
+              if (!weekA || !weekB) return 0;
+              return new Date(weekA.start_date).getTime() - new Date(weekB.start_date).getTime();
             })
             .map((weekId) => {
               const weekShifts = monthData[weekId];
               const week = weekMap[weekId];
               const weekTotal = weekShifts.reduce((sum, s) => sum + (s.claim_amount || 0), 0);
               const weekHours = weekShifts.reduce((sum, s) => sum + s.net_hours, 0);
+
+              // Get ALL shifts in this week (from all months) for ghost days and partial week detection
+              const allWeekShifts = shifts.filter((s) => (s.assigned_week || s.week_id) === weekId);
+              const isPartialWeek = week && allWeekShifts.length < (week.week_type || 5);
 
               return {
                 key: weekId,
@@ -1520,12 +1570,13 @@ const OvertimeDetailedTab: React.FC<{ shifts: ShiftData[]; weeks: WeekData[] }> 
                         <Tag color={week.week_type === 5 ? 'green' : 'blue'}>{week.week_type} ימים</Tag>
                       </>
                     )}
+                    {isPartialWeek && <Tag color="orange">שבוע חלקי</Tag>}
                     <Tag>{weekShifts.length} משמרות</Tag>
                     <HoursSummaryTags summary={calcHoursSummary(weekShifts)} />
                   </Space>
                 ),
                 children: week ? (
-                  <WeekCollapseContent week={week} shifts={weekShifts} />
+                  <WeekCollapseContent week={week} shifts={weekShifts} allWeekShifts={allWeekShifts} currentMonth={month} />
                 ) : (
                   <div>{weekShifts.map((s) => <ShiftDetail key={s.id} shift={s} />)}</div>
                 ),
