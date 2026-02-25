@@ -1777,8 +1777,13 @@ const HolidaysBreakdown: React.FC<{ holidays: HolidaysResult }> = ({ holidays })
 // ============================================================================
 
 const LimitationTimeline: React.FC<{ limitation: LimitationResults }> = ({ limitation }) => {
-  const { windows, timeline_data } = limitation;
+  const { windows, timeline_data, per_right } = limitation;
   const summary = timeline_data?.summary;
+
+  // Get claimable_duration display from general limitation (or first available)
+  const claimableDurationDisplay = per_right?.general?.claimable_duration?.display
+    || Object.values(per_right || {})[0]?.claimable_duration?.display
+    || '';
 
   const claimablePercent = summary?.total_employment_days
     ? Math.round((summary.claimable_days_general / summary.total_employment_days) * 100)
@@ -1802,7 +1807,7 @@ const LimitationTimeline: React.FC<{ limitation: LimitationResults }> = ({ limit
           </Col>
           <Col span={6}>
             <Statistic
-              title="ימים תבעיים"
+              title="ימים שלא התיישנו"
               value={summary.claimable_days_general}
               valueStyle={{ color: '#4ECDC4' }}
             />
@@ -1824,6 +1829,14 @@ const LimitationTimeline: React.FC<{ limitation: LimitationResults }> = ({ limit
         </Row>
       )}
 
+      {/* Claimable duration display */}
+      {claimableDurationDisplay && (
+        <div style={{ marginBottom: 16 }}>
+          <Text type="secondary">סך התקופה שלא התיישנה: </Text>
+          <Text strong style={{ color: '#4ECDC4' }}>{claimableDurationDisplay}</Text>
+        </div>
+      )}
+
       {/* Windows */}
       {windows.map((window, idx) => (
         <div key={idx} style={{ marginBottom: 16 }}>
@@ -1832,7 +1845,7 @@ const LimitationTimeline: React.FC<{ limitation: LimitationResults }> = ({ limit
             percent={claimablePercent}
             strokeColor="#4ECDC4"
             trailColor="rgba(255, 107, 107, 0.3)"
-            format={() => `${claimablePercent}% תבעי`}
+            format={() => `${claimablePercent}% לא התיישן`}
           />
           <Row gutter={16} style={{ marginTop: 8 }}>
             <Col span={12}>

@@ -519,7 +519,26 @@ def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
                         year_start = date(year_result.year, 1, 1)
                         year_end = date(year_result.year, 12, 31)
                         if year_start <= filing_date and year_end >= effective_window_start:
-                            claimable_amount += year_result.election_day_value
+                            # Edge Case 10: If year is split by limitation, recalculate
+                            # election_day_value using only salary_daily from claimable months
+                            if (effective_window_start.year == year_result.year and
+                                    effective_window_start.month > 1):
+                                # Year is split - find max salary_daily from claimable months only
+                                adjusted_value = Decimal("0")
+                                for pmr in ssot.period_month_records:
+                                    pmr_year, pmr_month = pmr.month
+                                    if pmr_year == year_result.year:
+                                        # Month is claimable if it starts on or after effective_window_start
+                                        month_start = date(pmr_year, pmr_month, 1)
+                                        if month_start >= effective_window_start:
+                                            if pmr.salary_daily > adjusted_value:
+                                                adjusted_value = pmr.salary_daily
+                                # Use adjusted value (may be 0 if no claimable months have records)
+                                if adjusted_value > Decimal("0"):
+                                    claimable_amount += adjusted_value
+                            else:
+                                # Year is fully within window - use original value
+                                claimable_amount += year_result.election_day_value
 
                 excluded_amount = full_amount - claimable_amount
 

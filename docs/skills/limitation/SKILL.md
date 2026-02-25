@@ -55,13 +55,13 @@ The limitation engine is NOT part of the calculation pipeline — it sits AFTER 
 ```
 LimitationConfig {
   filing_date: date                    // מועד הגשת התביעה — required input
-  
+
   limitation_types: List<LimitationType> {
     id: string                         // e.g., "general", "vacation"
     name: string                       // e.g., "התיישנות כללית", "התיישנות חופשה"
     window_calc: WindowCalcMethod      // how to compute the base window
   }
-  
+
   freeze_periods: List<FreezePeriod> {
     id: string                         // unique identifier
     name: string                       // e.g., "הקפאת מלחמת התקומה"
@@ -137,13 +137,13 @@ A freeze period **pauses** the limitation clock. The limitation period is define
 ```
 function computeEffectiveWindow(filing_date, base_window_start, freeze_periods):
   merged = mergeAndSort(freeze_periods)  // merge overlapping, sort by start ascending
-  
+
   active_needed = daysBetween(base_window_start, filing_date)
-  
+
   // Walk backward from filing_date in chunks (between freeze periods)
   cursor = filing_date
   active_accumulated = 0
-  
+
   // Process freeze periods from latest to earliest
   for freeze in reversed(merged):
     if freeze.end >= cursor:
@@ -151,22 +151,22 @@ function computeEffectiveWindow(filing_date, base_window_start, freeze_periods):
         // cursor is INSIDE this freeze — jump past it
         cursor = freeze.start - 1 day
       continue  // freeze is entirely after cursor, or we already jumped past it
-    
+
     // Active gap: from (freeze.end + 1) to cursor
     gap_start = freeze.end + 1 day
     if gap_start > cursor:
       gap_days = 0
     else:
       gap_days = daysBetween(gap_start, cursor)
-    
+
     if active_accumulated + gap_days >= active_needed:
       // Answer is within this gap
       remaining = active_needed - active_accumulated
       return cursor - remaining + 1 day
-    
+
     active_accumulated += gap_days
     cursor = freeze.start - 1 day  // jump over the freeze
-  
+
   // Final gap: from beginning of time to cursor
   remaining = active_needed - active_accumulated
   return cursor - remaining + 1 day
@@ -217,7 +217,7 @@ function applyLimitation(results: List<RightResult>, config: LimitationConfig): 
   for type in config.limitation_types:
     base_start = type.window_calc(config.filing_date)
     windows[type.id] = computeEffectiveWindow(config.filing_date, base_start, config.freeze_periods)
-  
+
   // Filter each result, tracking excluded amounts
   included = []
   excluded = []
@@ -227,7 +227,7 @@ function applyLimitation(results: List<RightResult>, config: LimitationConfig): 
       included.append(r)
     else:
       excluded.append(r)
-  
+
   return { included, excluded }
 }
 ```
@@ -250,14 +250,14 @@ Shows the periods where the worker actually worked. The worker may not have work
 
 ```
 RTL: ימין = ישן, שמאל = חדש
-                                                                    
+
          הגשת תביעה          הקפאה            effective    base     תחילת עבודה
               │            ┌────────┐          window_start window     │
               ▼            │        │             │         │          ▼
 Bar 1:   ├────────────────▓▓▓▓▓▓▓▓▓▓────────────┼─ ─ ─ ─ ─┼─────────┤
   התיישנות│    לא התיישן   ▓ הקפאה  ▓ לא התיישן  │ התיישן   │ התיישן  │
          │  (highlighted) ▓(marked)▓(highlighted)│(grayed)  │(grayed) │
-              
+
 Bar 2:   ├──────────────────────────────────────────────┼─────────────┤
   עבודה   │               עבודה בפועל                    │  לא עבד    │
          │              (highlighted)                   │ (grayed)   │
@@ -292,25 +292,25 @@ TimelineData {
   employment_start: date
   employment_end: date
   filing_date: date
-  
+
   limitation_windows: List<{
     type_id: string               // "general", "vacation"
     type_name: string             // "התיישנות כללית", "התיישנות חופשה"
     base_window_start: date       // without freezes
     effective_window_start: date  // with freezes
   }>
-  
+
   freeze_periods: List<{
     name: string
     start_date: date
     end_date: date
   }>
-  
+
   work_periods: List<{            // actual employment periods
     start_date: date
     end_date: date
   }>
-  
+
   summary: {
     total_employment_days: integer
     claimable_days_general: integer
@@ -350,6 +350,8 @@ TimelineData {
 8. **No freeze periods configured** — effective window = base window. The algorithm handles this naturally (zero freeze gaps to skip).
 
 9. **No limitation types configured** — should not happen (general is always present). If it does, treat all rights as using general.
+
+10. **Election day (יום בחירה) in a year split by limitation** — The holidays module computes `election_day_value` as `max(salary_daily)` across ALL period_month_records in a year. When limitation splits a year, the post-processing filter in pipeline.py must recalculate election_day_value using only the salary_daily values from months that fall WITHIN the claimable window. This ensures the worker doesn't receive a day value based on a salary from the expired portion of the year. Note: years where the worker didn't work some months are already handled — period_month_records exist only for months with actual shifts.
 
 ---
 
