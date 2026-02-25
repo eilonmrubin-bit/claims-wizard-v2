@@ -108,36 +108,52 @@ type SeniorityUnit = 'months' | 'years';
 
 // Example JSON input for debug tab
 const EXAMPLE_JSON_INPUT = {
-  case_metadata: { case_name: "תיק בדיקה — 3 שנות עבודה", notes: "עובד בניין, 5 ימים בשבוע, 07:00-17:00, שתי תקופות שכר (₪25 ו-₪40)" },
+  case_metadata: { case_name: "תיק בדיקה — 8 שנות עבודה, דפוס משתנה, התיישנות חלקית", notes: "עובד בניין, שינוי דפוס מ-6 ל-5 ימים, 3 מדרגות שכר, ~1.5 שנים מתיישנות" },
   personal_details: { first_name: "אחמד", last_name: "חסן", id_number: "123456789", birth_year: 1985 },
   defendant_details: { name: "חברת בנייה בע\"מ", id_number: "514000000", address: "תל אביב" },
   employment_periods: [
-    { id: "ep1", start: "2020-03-01", end: "2023-06-30" }
+    { id: "ep1", start: "2017-01-01", end: "2024-12-31" }
   ],
   work_patterns: [
     {
       id: "wp1",
-      start: "2020-03-01",
-      end: "2023-06-30",
+      start: "2017-01-01",
+      end: "2021-06-30",
+      work_days: [0, 1, 2, 3, 4, 5],
+      default_shifts: [{ start_time: "06:00:00", end_time: "14:00:00" }],
+      default_breaks: [{ start_time: "10:00:00", end_time: "10:30:00" }]
+    },
+    {
+      id: "wp2",
+      start: "2021-07-01",
+      end: "2024-12-31",
       work_days: [0, 1, 2, 3, 4],
-      default_shifts: [{ start_time: "07:00:00", end_time: "17:00:00" }],
+      default_shifts: [{ start_time: "08:00:00", end_time: "18:00:00" }],
       default_breaks: [{ start_time: "12:00:00", end_time: "12:30:00" }]
     }
   ],
   salary_tiers: [
     {
       id: "st1",
-      start: "2020-03-01",
-      end: "2021-12-31",
-      amount: "25",
+      start: "2017-01-01",
+      end: "2019-12-31",
+      amount: "30",
       type: "hourly",
       net_or_gross: "gross"
     },
     {
       id: "st2",
-      start: "2022-01-01",
-      end: "2023-06-30",
-      amount: "40",
+      start: "2020-01-01",
+      end: "2022-12-31",
+      amount: "35",
+      type: "hourly",
+      net_or_gross: "gross"
+    },
+    {
+      id: "st3",
+      start: "2023-01-01",
+      end: "2024-12-31",
+      amount: "45",
       type: "hourly",
       net_or_gross: "gross"
     }
