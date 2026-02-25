@@ -1495,7 +1495,7 @@ const WeekCollapseContent: React.FC<{
             <Text type="secondary">סוג שבוע:</Text>
             <div>
               <Tag color={week.week_type === 5 ? 'green' : 'blue'}>{week.week_type} ימים</Tag>
-              {week.is_partial && <Tag color="orange">שבוע חלקי</Tag>}
+              {week.is_partial && <Tag color="purple">שבוע חלקי</Tag>}
             </div>
           </Col>
           <Col span={6}>
@@ -1629,7 +1629,7 @@ const OvertimeDetailedTab: React.FC<{ shifts: ShiftData[]; weeks: WeekData[] }> 
                         <Tag color={week.week_type === 5 ? 'green' : 'blue'}>{week.week_type} ימים</Tag>
                       </>
                     )}
-                    {week?.is_partial && <Tag color="blue">שבוע חלקי</Tag>}
+                    {week?.is_partial && <Tag color="purple">שבוע חלקי</Tag>}
                     <Tag>{weekShifts.length} משמרות</Tag>
                     <HoursSummaryTags summary={calcHoursSummary(weekShifts)} />
                   </Space>
