@@ -193,11 +193,19 @@ interface TimelineSummary {
   total_freeze_days: number;
 }
 
+interface LimitationRightResult {
+  claimable_duration?: { display: string };
+  full_amount?: number;
+  claimable_amount?: number;
+}
+
 interface LimitationResults {
   windows: LimitationWindow[];
   timeline_data: {
+    filing_date?: string;
     summary: TimelineSummary;
   };
+  per_right?: Record<string, LimitationRightResult>;
 }
 
 interface TotalEmployment {
@@ -1847,6 +1855,12 @@ const LimitationTimeline: React.FC<{ limitation: LimitationResults }> = ({ limit
             trailColor="rgba(255, 107, 107, 0.3)"
             format={() => `${claimablePercent}% לא התיישן`}
           />
+          <Row gutter={16} style={{ marginTop: 8 }}>
+            <Col span={24}>
+              <Text type="secondary">תאריך הגשת תביעה: </Text>
+              <span className="ltr-number">{formatDate(timeline_data?.filing_date)}</span>
+            </Col>
+          </Row>
           <Row gutter={16} style={{ marginTop: 8 }}>
             <Col span={12}>
               <Text type="secondary">חלון בסיסי: </Text>

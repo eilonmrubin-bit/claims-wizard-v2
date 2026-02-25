@@ -208,6 +208,9 @@ def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
 
             ssot.shifts = ot_result.shifts
             ssot.weeks = ot_result.weeks
+            # Update daily_records with day_segments from stage 3.5
+            if ot_result.daily_records:
+                ssot.daily_records = ot_result.daily_records
 
         # Step 5a: Seniority (parallel to Step 2)
         if ssot.input.employment_periods:

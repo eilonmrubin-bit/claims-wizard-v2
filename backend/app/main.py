@@ -465,7 +465,6 @@ def _reconstruct_ssot(data: dict[str, Any]) -> SSOT:
             date=parse_date(d.get("date")),
             shift_index=d.get("shift_index", 0),
             effective_period_id=d.get("effective_period_id", ""),
-            week_id=d.get("week_id", ""),
             start=parse_datetime(d.get("start")),
             end=parse_datetime(d.get("end")),
             segments=segments,
