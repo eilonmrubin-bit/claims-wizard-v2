@@ -12,6 +12,8 @@ from datetime import date, timedelta
 from decimal import Decimal
 from typing import Callable
 
+from ..ssot import Duration
+
 
 @dataclass
 class FreezePeriod:
@@ -102,6 +104,42 @@ DEFAULT_WAR_FREEZE = FreezePeriod(
 def days_between(start: date, end: date) -> int:
     """Calculate days between two dates (inclusive of both endpoints)."""
     return (end - start).days + 1
+
+
+def compute_duration(start: date, end: date) -> Duration:
+    """Compute Duration object from start and end dates.
+
+    Fills all numeric fields. Display field is left empty for Phase 4 formatter.
+    """
+    if start > end:
+        return Duration()
+
+    total_days = days_between(start, end)
+
+    # Decimal representations
+    months_decimal = Decimal(total_days) / Decimal("30")
+    years_decimal = Decimal(total_days) / Decimal("365")
+
+    # Whole/remainder representations
+    years_whole = total_days // 365
+    remaining_after_years = total_days % 365
+    months_whole = remaining_after_years // 30
+    days_remainder = remaining_after_years % 30
+
+    # Alternative: total months and remainder
+    total_months_whole = total_days // 30
+    months_remainder = total_months_whole % 12
+
+    return Duration(
+        days=total_days,
+        months_decimal=months_decimal,
+        years_decimal=years_decimal,
+        months_whole=total_months_whole,
+        days_remainder=total_days % 30,
+        years_whole=years_whole,
+        months_remainder=months_remainder,
+        display="",  # Filled by Phase 4 formatter
+    )
 
 
 def merge_freeze_periods(freezes: list[FreezePeriod]) -> list[FreezePeriod]:

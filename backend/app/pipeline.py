@@ -6,7 +6,7 @@ reads from and writes to the SSOT. All other modules are pure functions.
 See docs/skills/claims-wizard-spec/PIPELINE.md for execution order.
 """
 
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from .ssot import (
@@ -16,6 +16,10 @@ from .ssot import (
     OvertimeMonthlyBreakdown,
     RightLimitationResult,
     LimitationResults,
+    LimitationWindow as SSOTLimitationWindow,
+    FreezePeriodApplied,
+    TimelineWorkPeriod,
+    TimelineSummary,
     WeekType,
 )
 from .errors import PipelineError, PipelineResult, ValidationError
@@ -40,6 +44,7 @@ from .modules.holidays import calculate_all_years
 from .modules.limitation import (
     compute_limitation_window,
     filter_monthly_results,
+    compute_duration,
     LimitationConfig,
     FreezePeriod,
     GENERAL_LIMITATION,
@@ -97,6 +102,28 @@ def _fill_duration_displays(ssot: SSOT) -> None:
     ssot.total_employment.gap_duration.display = _format_duration_display(
         ssot.total_employment.gap_duration.days
     )
+
+    # Limitation results - windows freeze periods
+    for window in ssot.limitation_results.windows:
+        for fp in window.freeze_periods_applied:
+            fp.duration.display = _format_duration_display(fp.duration.days)
+
+    # Limitation results - per_right durations
+    for right_result in ssot.limitation_results.per_right.values():
+        right_result.claimable_duration.display = _format_duration_display(
+            right_result.claimable_duration.days
+        )
+        if right_result.excluded_duration:
+            right_result.excluded_duration.display = _format_duration_display(
+                right_result.excluded_duration.days
+            )
+
+    # Limitation results - timeline_data
+    for fp in ssot.limitation_results.timeline_data.freeze_periods:
+        fp.duration.display = _format_duration_display(fp.duration.days)
+
+    for wp in ssot.limitation_results.timeline_data.work_periods:
+        wp.duration.display = _format_duration_display(wp.duration.days)
 
 
 def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
@@ -367,10 +394,72 @@ def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
                 limitation_config,
             )
 
-            ssot.limitation_results.windows = [general_window]
+            # Convert to SSOT LimitationWindow format with Duration
+            ssot_window = SSOTLimitationWindow(
+                type_id=general_window.type_id,
+                type_name=general_window.type_name,
+                base_window_start=general_window.base_window_start,
+                effective_window_start=general_window.effective_window_start,
+                freeze_periods_applied=[
+                    FreezePeriodApplied(
+                        name=fp.name,
+                        start_date=fp.start_date,
+                        end_date=fp.end_date,
+                        days=fp.days,
+                        duration=compute_duration(fp.start_date, fp.end_date),
+                    )
+                    for fp in general_window.freeze_periods_applied
+                ],
+            )
+
+            ssot.limitation_results.windows = [ssot_window]
+
+            # Get employment dates
+            employment_start = ssot.total_employment.first_day
+            employment_end = ssot.total_employment.last_day
+            filing_date = ssot.input.filing_date
+
+            # Compute claimable period boundaries
+            effective_window_start = general_window.effective_window_start
 
             # Filter each right by limitation
             per_right_results = {}
+
+            # Helper to compute durations for a right
+            def compute_right_durations(
+                limitation_type_id: str,
+            ) -> tuple:
+                """Compute claimable and excluded durations for a right."""
+                # Get the window for this limitation type
+                window_start = effective_window_start
+
+                # Claimable period: intersection of [effective_window_start, filing_date]
+                # with [employment_start, employment_end]
+                if employment_start and employment_end:
+                    claimable_start = max(window_start, employment_start)
+                    claimable_end = min(filing_date, employment_end)
+
+                    if claimable_start <= claimable_end:
+                        claimable_dur = compute_duration(claimable_start, claimable_end)
+                    else:
+                        claimable_dur = compute_duration(date.today(), date.today())
+                        claimable_dur.days = 0
+
+                    # Excluded period: employment before effective_window_start
+                    if employment_start < window_start:
+                        excluded_end = min(window_start - timedelta(days=1), employment_end)
+                        if employment_start <= excluded_end:
+                            excluded_dur = compute_duration(employment_start, excluded_end)
+                        else:
+                            excluded_dur = None
+                    else:
+                        excluded_dur = None
+                else:
+                    claimable_dur = compute_duration(date.today(), date.today())
+                    claimable_dur.days = 0
+                    excluded_dur = None
+
+                return claimable_dur, excluded_dur
 
             # Overtime
             if ssot.rights_results.overtime:
@@ -383,23 +472,94 @@ def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
                     general_window.effective_window_start,
                     ssot.input.filing_date,
                 )
+                claimable_dur, excluded_dur = compute_right_durations("general")
                 per_right_results["overtime"] = RightLimitationResult(
                     limitation_type_id="general",
                     full_amount=ssot.rights_results.overtime.total_claim,
                     claimable_amount=total_claimable,
                     excluded_amount=total_excluded,
+                    claimable_duration=claimable_dur,
+                    excluded_duration=excluded_dur,
                 )
 
             # Holidays
             if ssot.rights_results.holidays:
+                claimable_dur, excluded_dur = compute_right_durations("general")
                 per_right_results["holidays"] = RightLimitationResult(
                     limitation_type_id="general",
                     full_amount=ssot.rights_results.holidays.grand_total_claim,
                     claimable_amount=ssot.rights_results.holidays.grand_total_claim,
                     excluded_amount=Decimal("0"),
+                    claimable_duration=claimable_dur,
+                    excluded_duration=excluded_dur,
                 )
 
             ssot.limitation_results.per_right = per_right_results
+
+            # Fill timeline_data
+            ssot.limitation_results.timeline_data.employment_start = employment_start
+            ssot.limitation_results.timeline_data.employment_end = employment_end
+            ssot.limitation_results.timeline_data.filing_date = filing_date
+
+            # Limitation windows for timeline (with claimable_duration)
+            timeline_windows = []
+            if effective_window_start and filing_date:
+                window_claimable_dur = compute_duration(effective_window_start, filing_date)
+            else:
+                window_claimable_dur = compute_duration(date.today(), date.today())
+                window_claimable_dur.days = 0
+
+            # Note: SSOTLimitationWindow doesn't have claimable_duration field directly
+            # The claimable_duration is computed per-right, so we just store the windows
+            ssot.limitation_results.timeline_data.limitation_windows = [ssot_window]
+
+            # Freeze periods for timeline
+            ssot.limitation_results.timeline_data.freeze_periods = [
+                FreezePeriodApplied(
+                    name=fp.name,
+                    start_date=fp.start_date,
+                    end_date=fp.end_date,
+                    days=fp.days,
+                    duration=compute_duration(fp.start_date, fp.end_date),
+                )
+                for fp in general_window.freeze_periods_applied
+            ]
+
+            # Work periods for timeline (from effective_periods)
+            work_periods = []
+            for ep in ssot.effective_periods:
+                work_periods.append(TimelineWorkPeriod(
+                    start_date=ep.start,
+                    end_date=ep.end,
+                    duration=compute_duration(ep.start, ep.end),
+                ))
+            ssot.limitation_results.timeline_data.work_periods = work_periods
+
+            # Summary
+            total_employment_days = ssot.total_employment.worked_duration.days if ssot.total_employment.worked_duration else 0
+
+            # Claimable days for general limitation
+            if employment_start and employment_end and effective_window_start and filing_date:
+                claimable_start = max(effective_window_start, employment_start)
+                claimable_end = min(filing_date, employment_end)
+                if claimable_start <= claimable_end:
+                    claimable_days_general = (claimable_end - claimable_start).days + 1
+                else:
+                    claimable_days_general = 0
+                excluded_days_general = max(0, total_employment_days - claimable_days_general)
+            else:
+                claimable_days_general = 0
+                excluded_days_general = 0
+
+            # Total freeze days that affected the window
+            total_freeze_days = sum(fp.days for fp in general_window.freeze_periods_applied)
+
+            ssot.limitation_results.timeline_data.summary = TimelineSummary(
+                total_employment_days=total_employment_days,
+                claimable_days_general=claimable_days_general,
+                excluded_days_general=excluded_days_general,
+                total_freeze_days=total_freeze_days,
+            )
 
         # Step 2: Deductions
         rights_amounts = {}

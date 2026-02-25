@@ -286,7 +286,6 @@ class Shift:
     date: date
     shift_index: int = 0
     effective_period_id: str = ""
-    week_id: str = ""
 
     # Stage 1 - Assembly
     start: datetime | None = None
