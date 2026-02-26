@@ -28,7 +28,6 @@ import {
   BankOutlined,
   WarningOutlined,
   CheckCircleOutlined,
-  CloseCircleOutlined,
   DollarOutlined,
   PercentageOutlined,
   DownloadOutlined,
@@ -323,12 +322,6 @@ const translateDayOfWeek = (day: string): string => {
   return days[day] || day;
 };
 
-// Helper: format hours
-const formatHours = (hours: number | undefined): string => {
-  if (hours === undefined || hours === null) return '0';
-  return hours.toFixed(1);
-};
-
 // Helper: translate salary type
 const translateSalaryType = (type: string): string => {
   const map: Record<string, string> = {
@@ -592,7 +585,7 @@ const consolidateRecords = (records: PeriodMonthRecord[]): SalaryPeriodRow[] => 
 const SalaryBreakdown: React.FC<{
   effectivePeriods?: EffectivePeriodData[];
   periodMonthRecords?: PeriodMonthRecord[];
-}> = ({ effectivePeriods = [], periodMonthRecords = [] }) => {
+}> = ({ effectivePeriods: _effectivePeriods = [], periodMonthRecords = [] }) => {
   if (!periodMonthRecords.length) {
     return null;
   }
@@ -899,7 +892,6 @@ const formatTime = (datetime: string | undefined): string => {
 // Helper: format datetime to date and time
 const formatDateTime = (datetime: string | undefined): string => {
   if (!datetime) return '-';
-  const d = new Date(datetime);
   return `${formatDate(datetime)} ${formatTime(datetime)}`;
 };
 
@@ -1067,7 +1059,7 @@ const OvertimeSummaryTab: React.FC<{
   const hasMutiplePeriods = periodIds.length > 1;
 
   // Build period summaries
-  const periodSummaries: PeriodOvertimeSummary[] = periodIds.map((periodId, idx) => {
+  const periodSummaries: PeriodOvertimeSummary[] = periodIds.map((periodId) => {
     const periodShifts = shiftsByPeriod[periodId];
     const ep = effectivePeriods.find((p) => p.id === periodId);
     const pmrs = periodMonthRecords.filter((pmr) => pmr.effective_period_id === periodId);
@@ -1393,10 +1385,7 @@ const ShiftDetail: React.FC<{ shift: ShiftData }> = ({ shift }) => {
 };
 
 // Day collapse item
-const DayCollapseItem: React.FC<{ date: string; shifts: ShiftData[] }> = ({ date, shifts }) => {
-  const dayTotal = shifts.reduce((sum, s) => sum + (s.claim_amount || 0), 0);
-  const dayHours = shifts.reduce((sum, s) => sum + s.net_hours, 0);
-
+const DayCollapseItem: React.FC<{ date: string; shifts: ShiftData[] }> = ({ shifts }) => {
   return (
     <div>
       {shifts.map((shift, idx) => (
@@ -1586,8 +1575,6 @@ const OvertimeDetailedTab: React.FC<{ shifts: ShiftData[]; weeks: WeekData[] }> 
     .map((year) => {
       const yearData = hierarchy[parseInt(year)];
       const yearShifts = Object.values(yearData).flatMap((m) => Object.values(m).flat());
-      const yearTotal = yearShifts.reduce((sum, s) => sum + (s.claim_amount || 0), 0);
-      const yearHours = yearShifts.reduce((sum, s) => sum + s.net_hours, 0);
 
       // Build month items (ascending chronological order)
       const monthItems = Object.keys(yearData)
@@ -1595,8 +1582,6 @@ const OvertimeDetailedTab: React.FC<{ shifts: ShiftData[]; weeks: WeekData[] }> 
         .map((month) => {
           const monthData = yearData[month];
           const monthShifts = Object.values(monthData).flat();
-          const monthTotal = monthShifts.reduce((sum, s) => sum + (s.claim_amount || 0), 0);
-          const monthHours = monthShifts.reduce((sum, s) => sum + s.net_hours, 0);
           const monthName = formatMonth([parseInt(month.split('-')[0]), parseInt(month.split('-')[1])]);
 
           // Build week items (ascending chronological order by start_date)
@@ -1610,8 +1595,6 @@ const OvertimeDetailedTab: React.FC<{ shifts: ShiftData[]; weeks: WeekData[] }> 
             .map((weekId) => {
               const weekShifts = monthData[weekId];
               const week = weekMap[weekId];
-              const weekTotal = weekShifts.reduce((sum, s) => sum + (s.claim_amount || 0), 0);
-              const weekHours = weekShifts.reduce((sum, s) => sum + s.net_hours, 0);
 
               // Get ALL shifts in this week (from all months) for ghost days
               const allWeekShifts = shifts.filter((s) => (s.assigned_week || s.week_id) === weekId);

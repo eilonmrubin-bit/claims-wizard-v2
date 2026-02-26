@@ -48,10 +48,11 @@ const agarthaTheme = {
     fontFamily: "'Heebo', system-ui, sans-serif",
   },
 };
-import dayjs, { Dayjs } from 'dayjs';
+import dayjs from 'dayjs';
 import 'dayjs/locale/he';
 import ResultsView from './ResultsView';
 import DateInput from './components/DateInput';
+import WeekPanel from './components/WeekPanel';
 import type {
   SSOTInput,
   EmploymentPeriod,
@@ -67,6 +68,8 @@ import type {
   CountPeriod,
   NightPlacement,
   PatternSource,
+  PerDayShifts,
+  ShiftInputMode,
 } from './types';
 
 dayjs.locale('he');
@@ -76,15 +79,33 @@ const generateId = (): string => {
   return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
 };
 
-// Day names in Hebrew
-const DAY_NAMES: Record<number, string> = {
-  0: 'ראשון',
-  1: 'שני',
-  2: 'שלישי',
-  3: 'רביעי',
-  4: 'חמישי',
-  5: 'שישי',
-  6: 'שבת',
+// Time conversion helpers
+const timeToMinutes = (timeStr: string): number => {
+  if (!timeStr) return 0;
+  const [h, m] = timeStr.split(':').map(Number);
+  return h * 60 + m;
+};
+
+const minutesToTimeStr = (mins: number): string => {
+  const normalizedMins = ((mins % (24 * 60)) + 24 * 60) % (24 * 60);
+  const h = Math.floor(normalizedMins / 60);
+  const m = normalizedMins % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`;
+};
+
+// Convert break_minutes to TimeRange centered in the shift
+const breakToTimeRange = (breakMinutes: number, shiftStart: string, shiftEnd: string): TimeRange | null => {
+  if (breakMinutes <= 0) return null;
+  const sMins = timeToMinutes(shiftStart);
+  let eMins = timeToMinutes(shiftEnd);
+  // Handle overnight shifts
+  if (eMins <= sMins) eMins += 24 * 60;
+  const mid = Math.floor((sMins + eMins) / 2);
+  const half = Math.floor(breakMinutes / 2);
+  return {
+    start_time: minutesToTimeStr(mid - half),
+    end_time: minutesToTimeStr(mid - half + breakMinutes),
+  };
 };
 
 // Get end of current month as default filing date
@@ -357,52 +378,12 @@ function App() {
     updateField('work_patterns', updated);
   };
 
-  const updateShift = (patternIndex: number, shiftIndex: number, field: keyof TimeRange, value: string) => {
-    const updated = [...formData.work_patterns];
-    const shifts = [...updated[patternIndex].default_shifts];
-    shifts[shiftIndex] = { ...shifts[shiftIndex], [field]: value };
-    updated[patternIndex] = { ...updated[patternIndex], default_shifts: shifts };
-    updateField('work_patterns', updated);
-  };
-
-  const addShift = (patternIndex: number) => {
-    const updated = [...formData.work_patterns];
-    updated[patternIndex].default_shifts.push({ start_time: '08:00:00', end_time: '17:00:00' });
-    updateField('work_patterns', updated);
-  };
-
-  const removeShift = (patternIndex: number, shiftIndex: number) => {
-    const updated = [...formData.work_patterns];
-    updated[patternIndex].default_shifts = updated[patternIndex].default_shifts.filter((_, i) => i !== shiftIndex);
-    updateField('work_patterns', updated);
-  };
-
-  const updateBreak = (patternIndex: number, breakIndex: number, field: keyof TimeRange, value: string) => {
-    const updated = [...formData.work_patterns];
-    const breaks = [...updated[patternIndex].default_breaks];
-    breaks[breakIndex] = { ...breaks[breakIndex], [field]: value };
-    updated[patternIndex] = { ...updated[patternIndex], default_breaks: breaks };
-    updateField('work_patterns', updated);
-  };
-
-  const addBreak = (patternIndex: number) => {
-    const updated = [...formData.work_patterns];
-    updated[patternIndex].default_breaks.push({ start_time: '12:00:00', end_time: '12:30:00' });
-    updateField('work_patterns', updated);
-  };
-
-  const removeBreak = (patternIndex: number, breakIndex: number) => {
-    const updated = [...formData.work_patterns];
-    updated[patternIndex].default_breaks = updated[patternIndex].default_breaks.filter((_, i) => i !== breakIndex);
-    updateField('work_patterns', updated);
-  };
-
   // Level C handlers
   const updateDayType = (
     patternIndex: number,
     dayTypeIndex: number,
     field: keyof DayTypeInput,
-    value: number | CountPeriod
+    value: number | CountPeriod | string
   ) => {
     const updated = [...formData.work_patterns];
     const pattern = updated[patternIndex];
@@ -427,6 +408,26 @@ function App() {
     updateField('work_patterns', updated);
   };
 
+  const updateLevelCInputMode = (patternIndex: number, mode: ShiftInputMode) => {
+    const updated = [...formData.work_patterns];
+    const pattern = updated[patternIndex];
+    if (!pattern.level_c) return;
+    updated[patternIndex] = {
+      ...pattern,
+      level_c: { ...pattern.level_c, input_mode: mode },
+    };
+    updateField('work_patterns', updated);
+  };
+
+  // Create default per_day structure for weekly_simple
+  const createDefaultPerDay = (): Record<number, PerDayShifts> => ({
+    0: { shifts: [{ start_time: '07:00:00', end_time: '16:00:00' }], break_minutes: 30 },
+    1: { shifts: [{ start_time: '07:00:00', end_time: '16:00:00' }], break_minutes: 30 },
+    2: { shifts: [{ start_time: '07:00:00', end_time: '16:00:00' }], break_minutes: 30 },
+    3: { shifts: [{ start_time: '07:00:00', end_time: '16:00:00' }], break_minutes: 30 },
+    4: { shifts: [{ start_time: '07:00:00', end_time: '16:00:00' }], break_minutes: 30 },
+  });
+
   // Switch pattern type and initialize appropriate data
   const switchPatternType = (patternIndex: number, newType: PatternType) => {
     const updated = [...formData.work_patterns];
@@ -435,36 +436,11 @@ function App() {
       ...pattern,
       pattern_type: newType,
       level_c: newType === 'statistical' && !pattern.level_c ? createDefaultLevelC() : pattern.level_c,
+      per_day: newType === 'weekly_simple' && !pattern.per_day ? createDefaultPerDay() : pattern.per_day,
+      work_days: newType === 'weekly_simple' && (!pattern.work_days || pattern.work_days.length === 0) ? [0, 1, 2, 3, 4] : pattern.work_days,
+      input_mode: newType === 'weekly_simple' && !pattern.input_mode ? 'time_range' : pattern.input_mode,
     };
     updateField('work_patterns', updated);
-  };
-
-  // SNAP work pattern dates to employment period
-  const snapWorkPatternToPeriod = (patternIndex: number, periodIndex: number) => {
-    const period = formData.employment_periods[periodIndex];
-    if (!period) return;
-    const updated = [...formData.work_patterns];
-    updated[patternIndex] = {
-      ...updated[patternIndex],
-      start: period.start,
-      end: period.end,
-    };
-    updateField('work_patterns', updated);
-    message.success(`דפוס עבודה ${patternIndex + 1} הותאם לתקופת העסקה ${periodIndex + 1}`);
-  };
-
-  // SNAP salary tier dates to employment period
-  const snapSalaryTierToPeriod = (tierIndex: number, periodIndex: number) => {
-    const period = formData.employment_periods[periodIndex];
-    if (!period) return;
-    const updated = [...formData.salary_tiers];
-    updated[tierIndex] = {
-      ...updated[tierIndex],
-      start: period.start,
-      end: period.end,
-    };
-    updateField('salary_tiers', updated);
-    message.success(`מדרגת שכר ${tierIndex + 1} הותאמה לתקופת העסקה ${periodIndex + 1}`);
   };
 
   // SNAP work pattern to multiple periods (uses min start, max end)
@@ -516,64 +492,6 @@ function App() {
   const snapSalaryTierToAll = (tierIndex: number) => {
     const allIndices = formData.employment_periods.map((_, i) => i);
     snapSalaryTierToMultiple(tierIndex, allIndices);
-  };
-
-  // Extend work pattern to new end date
-  const extendWorkPattern = (patternIndex: number, start: string, end: string) => {
-    const updated = [...formData.work_patterns];
-    updated[patternIndex] = {
-      ...updated[patternIndex],
-      start: start || updated[patternIndex].start,
-      end: end,
-    };
-    updateField('work_patterns', updated);
-    message.success(`דפוס עבודה ${patternIndex + 1} הורחב עד ${dayjs(end).format('DD.MM.YYYY')}`);
-    setError(null); // Clear error after fix
-  };
-
-  // Extend salary tier to new end date
-  const extendSalaryTier = (tierIndex: number, start: string, end: string) => {
-    const updated = [...formData.salary_tiers];
-    updated[tierIndex] = {
-      ...updated[tierIndex],
-      start: start || updated[tierIndex].start,
-      end: end,
-    };
-    updateField('salary_tiers', updated);
-    message.success(`מדרגת שכר ${tierIndex + 1} הורחבה עד ${dayjs(end).format('DD.MM.YYYY')}`);
-    setError(null); // Clear error after fix
-  };
-
-  // Add work pattern for specific date range
-  const addWorkPatternForRange = (start: string, end: string) => {
-    const newPattern: WorkPattern = {
-      id: generateId(),
-      start,
-      end,
-      work_days: [0, 1, 2, 3, 4], // Default: Sunday-Thursday
-      default_shifts: [{ start_time: '08:00:00', end_time: '17:00:00' }],
-      default_breaks: [{ start_time: '12:00:00', end_time: '12:30:00' }],
-    };
-    updateField('work_patterns', [...formData.work_patterns, newPattern]);
-    message.success(`נוצר דפוס עבודה חדש לתקופה ${dayjs(start).format('DD.MM.YYYY')} - ${dayjs(end).format('DD.MM.YYYY')}`);
-    setError(null); // Clear error after fix
-  };
-
-  // Add salary tier for specific date range
-  const addSalaryTierForRange = (start: string, end: string) => {
-    // Copy last tier's settings if exists
-    const lastTier = formData.salary_tiers[formData.salary_tiers.length - 1];
-    const newTier: SalaryTier = {
-      id: generateId(),
-      start,
-      end,
-      amount: lastTier?.amount || '0',
-      type: lastTier?.type || 'hourly',
-      net_or_gross: lastTier?.net_or_gross || 'gross',
-    };
-    updateField('salary_tiers', [...formData.salary_tiers, newTier]);
-    message.success(`נוצרה מדרגת שכר חדשה לתקופה ${dayjs(start).format('DD.MM.YYYY')} - ${dayjs(end).format('DD.MM.YYYY')}`);
-    setError(null); // Clear error after fix
   };
 
   // Render SNAP popover content for multi-select
@@ -669,14 +587,38 @@ function App() {
   const buildPatternSources = (): PatternSource[] => {
     return formData.work_patterns
       .filter(p => p.pattern_type && p.pattern_type !== 'weekly_simple')
-      .map(p => ({
-        id: p.id,
-        type: p.pattern_type as PatternType,
-        start: p.start,
-        end: p.end,
-        level_c_data: p.pattern_type === 'statistical' ? p.level_c : undefined,
-        level_b_data: p.pattern_type === 'cyclic' ? p.level_b : undefined,
-      }));
+      .map(p => {
+        let level_c_data = p.pattern_type === 'statistical' ? p.level_c : undefined;
+
+        // Convert time_range mode to shifts/breaks format for Level C
+        if (level_c_data && level_c_data.input_mode === 'time_range') {
+          level_c_data = {
+            ...level_c_data,
+            day_types: level_c_data.day_types.map(dt => {
+              if (dt.shift_start && dt.shift_end) {
+                const shifts = [{ start_time: dt.shift_start, end_time: dt.shift_end }];
+                const breakRange = breakToTimeRange(dt.break_minutes, dt.shift_start, dt.shift_end);
+                return {
+                  ...dt,
+                  hours: 0, // Backend will calculate from shifts
+                  shifts,
+                  breaks: breakRange ? [breakRange] : undefined,
+                };
+              }
+              return dt;
+            }),
+          };
+        }
+
+        return {
+          id: p.id,
+          type: p.pattern_type as PatternType,
+          start: p.start,
+          end: p.end,
+          level_c_data,
+          level_b_data: p.pattern_type === 'cyclic' ? p.level_b : undefined,
+        };
+      });
   };
 
   // Submit handler
@@ -781,15 +723,6 @@ function App() {
     a.download = 'claims-wizard-input.json';
     a.click();
     URL.revokeObjectURL(url);
-  };
-
-  // Helper: convert Dayjs to ISO string
-  const dayjsToIso = (d: Dayjs | null): string => {
-    return d ? d.format('YYYY-MM-DD') : '';
-  };
-
-  const timeToString = (d: Dayjs | null): string => {
-    return d ? d.format('HH:mm:ss') : '';
   };
 
   return (
@@ -1044,6 +977,18 @@ function App() {
                         {/* Level C (Statistical) Form */}
                         {pattern.pattern_type === 'statistical' && pattern.level_c && (
                           <>
+                            {/* Input mode selector */}
+                            <Form.Item label="מצב הזנה" style={{ marginBottom: 8 }}>
+                              <Radio.Group
+                                value={pattern.level_c.input_mode || 'duration'}
+                                onChange={(e) => updateLevelCInputMode(pIndex, e.target.value as ShiftInputMode)}
+                                size="small"
+                              >
+                                <Radio value="duration">אורך (שעות)</Radio>
+                                <Radio value="time_range">טווח (שעה-שעה)</Radio>
+                              </Radio.Group>
+                            </Form.Item>
+
                             <Divider>סוגי משמרות</Divider>
                             {pattern.level_c.day_types.map((dayType, dtIndex) => {
                               const labels: Record<string, string> = {
@@ -1052,12 +997,13 @@ function App() {
                                 rest_day: 'יום מנוחה',
                                 night: 'לילה',
                               };
+                              const levelCMode = pattern.level_c?.input_mode || 'duration';
                               return (
                                 <Row key={dayType.type_id} gutter={8} align="middle" style={{ marginBottom: 8 }}>
-                                  <Col span={4}>
+                                  <Col span={3}>
                                     <span style={{ color: '#88D8E0' }}>{labels[dayType.type_id]}:</span>
                                   </Col>
-                                  <Col span={4}>
+                                  <Col span={3}>
                                     <InputNumber
                                       value={dayType.count}
                                       onChange={(v) => updateDayType(pIndex, dtIndex, 'count', v || 0)}
@@ -1080,19 +1026,45 @@ function App() {
                                       <Select.Option value="monthly">לחודש</Select.Option>
                                     </Select>
                                   </Col>
+                                  {levelCMode === 'duration' ? (
+                                    <Col span={4}>
+                                      <InputNumber
+                                        value={dayType.hours}
+                                        onChange={(v) => updateDayType(pIndex, dtIndex, 'hours', v || 0)}
+                                        min={0}
+                                        max={dayType.type_id === 'night' ? 12 : 14}
+                                        precision={1}
+                                        step={0.5}
+                                        style={{ width: '100%' }}
+                                        addonAfter="שעות"
+                                      />
+                                    </Col>
+                                  ) : (
+                                    <>
+                                      <Col span={3}>
+                                        <TimePicker
+                                          value={dayType.shift_start ? dayjs(dayType.shift_start, 'HH:mm:ss') : null}
+                                          onChange={(d) => updateDayType(pIndex, dtIndex, 'shift_start', d ? d.format('HH:mm:ss') : '')}
+                                          format="HH:mm"
+                                          size="small"
+                                          style={{ width: '100%' }}
+                                          placeholder="התחלה"
+                                        />
+                                      </Col>
+                                      <Col span={1} style={{ textAlign: 'center' }}>-</Col>
+                                      <Col span={3}>
+                                        <TimePicker
+                                          value={dayType.shift_end ? dayjs(dayType.shift_end, 'HH:mm:ss') : null}
+                                          onChange={(d) => updateDayType(pIndex, dtIndex, 'shift_end', d ? d.format('HH:mm:ss') : '')}
+                                          format="HH:mm"
+                                          size="small"
+                                          style={{ width: '100%' }}
+                                          placeholder="סיום"
+                                        />
+                                      </Col>
+                                    </>
+                                  )}
                                   <Col span={4}>
-                                    <InputNumber
-                                      value={dayType.hours}
-                                      onChange={(v) => updateDayType(pIndex, dtIndex, 'hours', v || 0)}
-                                      min={0}
-                                      max={dayType.type_id === 'night' ? 12 : 14}
-                                      precision={1}
-                                      step={0.5}
-                                      style={{ width: '100%' }}
-                                      addonAfter="שעות"
-                                    />
-                                  </Col>
-                                  <Col span={5}>
                                     <InputNumber
                                       value={dayType.break_minutes}
                                       onChange={(v) => updateDayType(pIndex, dtIndex, 'break_minutes', v || 0)}
@@ -1109,7 +1081,7 @@ function App() {
                             })}
 
                             {/* Night placement - only show if night count > 0 */}
-                            {pattern.level_c.day_types.find(dt => dt.type_id === 'night')?.count > 0 && (
+                            {(pattern.level_c?.day_types.find(dt => dt.type_id === 'night')?.count ?? 0) > 0 && (
                               <Form.Item label="שיבוץ לילות" style={{ marginTop: 16 }}>
                                 <Radio.Group
                                   value={pattern.level_c.night_placement}
@@ -1124,96 +1096,20 @@ function App() {
                           </>
                         )}
 
-                        {/* Level A (Weekly Simple) Form */}
+                        {/* Level A (Weekly Simple) Form - WeekPanel */}
                         {(pattern.pattern_type === 'weekly_simple' || !pattern.pattern_type) && (
-                          <>
-                            <Form.Item label="ימי עבודה">
-                              <Checkbox.Group
-                                value={pattern.work_days}
-                                onChange={(vals) => updateWorkPattern(pIndex, 'work_days', vals)}
-                              >
-                                <Row>
-                                  {[0, 1, 2, 3, 4, 5, 6].map((day) => (
-                                    <Col span={3} key={day}>
-                                      <Checkbox value={day}>{DAY_NAMES[day]}</Checkbox>
-                                    </Col>
-                                  ))}
-                                </Row>
-                              </Checkbox.Group>
-                            </Form.Item>
-
-                            <Divider>משמרות</Divider>
-                            {pattern.default_shifts.map((shift, sIndex) => (
-                              <Row gutter={16} key={sIndex} align="middle" style={{ marginBottom: 8 }}>
-                                <Col span={10}>
-                                  <TimePicker
-                                    value={shift.start_time ? dayjs(shift.start_time, 'HH:mm:ss') : null}
-                                    onChange={(d) => updateShift(pIndex, sIndex, 'start_time', timeToString(d))}
-                                    format="HH:mm"
-                                    style={{ width: '100%' }}
-                                    placeholder="שעת התחלה"
-                                  />
-                                </Col>
-                                <Col span={10}>
-                                  <TimePicker
-                                    value={shift.end_time ? dayjs(shift.end_time, 'HH:mm:ss') : null}
-                                    onChange={(d) => updateShift(pIndex, sIndex, 'end_time', timeToString(d))}
-                                    format="HH:mm"
-                                    style={{ width: '100%' }}
-                                    placeholder="שעת סיום"
-                                  />
-                                </Col>
-                                <Col span={4}>
-                                  {pattern.default_shifts.length > 1 && (
-                                    <Button
-                                      type="text"
-                                      danger
-                                      icon={<DeleteOutlined />}
-                                      onClick={() => removeShift(pIndex, sIndex)}
-                                    />
-                                  )}
-                                </Col>
-                              </Row>
-                            ))}
-                            <Button type="dashed" size="small" onClick={() => addShift(pIndex)} icon={<PlusOutlined />}>
-                              הוסף משמרת
-                            </Button>
-
-                            <Divider>הפסקות</Divider>
-                            {pattern.default_breaks.map((brk, bIndex) => (
-                              <Row gutter={16} key={bIndex} align="middle" style={{ marginBottom: 8 }}>
-                                <Col span={10}>
-                                  <TimePicker
-                                    value={brk.start_time ? dayjs(brk.start_time, 'HH:mm:ss') : null}
-                                    onChange={(d) => updateBreak(pIndex, bIndex, 'start_time', timeToString(d))}
-                                    format="HH:mm"
-                                    style={{ width: '100%' }}
-                                    placeholder="תחילת הפסקה"
-                                  />
-                                </Col>
-                                <Col span={10}>
-                                  <TimePicker
-                                    value={brk.end_time ? dayjs(brk.end_time, 'HH:mm:ss') : null}
-                                    onChange={(d) => updateBreak(pIndex, bIndex, 'end_time', timeToString(d))}
-                                    format="HH:mm"
-                                    style={{ width: '100%' }}
-                                    placeholder="סיום הפסקה"
-                                  />
-                                </Col>
-                                <Col span={4}>
-                                  <Button
-                                    type="text"
-                                    danger
-                                    icon={<DeleteOutlined />}
-                                    onClick={() => removeBreak(pIndex, bIndex)}
-                                  />
-                                </Col>
-                              </Row>
-                            ))}
-                            <Button type="dashed" size="small" onClick={() => addBreak(pIndex)} icon={<PlusOutlined />}>
-                              הוסף הפסקה
-                            </Button>
-                          </>
+                          <WeekPanel
+                            workDays={pattern.work_days}
+                            perDay={pattern.per_day || {}}
+                            restDay={formData.rest_day}
+                            inputMode={pattern.input_mode || 'time_range'}
+                            onInputModeChange={(mode) => updateWorkPattern(pIndex, 'input_mode', mode)}
+                            onChange={(workDays, perDay) => {
+                              const updated = [...formData.work_patterns];
+                              updated[pIndex] = { ...updated[pIndex], work_days: workDays, per_day: perDay };
+                              updateField('work_patterns', updated);
+                            }}
+                          />
                         )}
                       </Card>
                     ))}

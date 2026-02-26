@@ -251,6 +251,8 @@ def _reconstruct_ssot_input(data: dict[str, Any]) -> SSOTInput:
                     count_period=CountPeriod(dt.get("count_period", "weekly")),
                     hours=Decimal(str(dt.get("hours", 0))) if dt.get("hours") is not None else None,
                     break_minutes=int(dt.get("break_minutes", 0)),
+                    shifts=[parse_time_range(s) for s in dt.get("shifts", [])] if dt.get("shifts") else None,
+                    breaks=[parse_time_range(b) for b in dt.get("breaks", [])] if dt.get("breaks") else None,
                 ))
             level_c_data = PatternLevelC(
                 id=d.get("id", ""),

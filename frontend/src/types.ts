@@ -40,13 +40,16 @@ export interface DayTypeInput {
   type_id: DayType;
   count: number;           // average days per week/month
   count_period: CountPeriod;
-  hours: number;           // gross hours including break
+  hours: number;           // gross hours including break (duration mode)
   break_minutes: number;   // 0-180, integer
+  shift_start?: string;    // HH:mm:ss — for time_range mode
+  shift_end?: string;      // HH:mm:ss — for time_range mode
 }
 
 export interface PatternLevelC {
   day_types: DayTypeInput[];
   night_placement: NightPlacement;
+  input_mode?: ShiftInputMode;  // 'time_range' | 'duration' — default 'duration'
 }
 
 // Level A per-day structure
