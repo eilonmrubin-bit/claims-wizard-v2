@@ -45,11 +45,6 @@ DAY_NAMES = {
     6: "Saturday",
 }
 
-# 1/10 threshold - must work at least this many days to be eligible
-THRESHOLD_FRACTION = Decimal("0.1")
-DAYS_IN_YEAR = 365
-
-
 @dataclass
 class HolidayDate:
     """Holiday date from static data."""
@@ -137,12 +132,6 @@ def _get_eve_of_rest(rest_day: RestDay) -> int:
     return 5  # Default to Friday
 
 
-def calculate_threshold(days_in_year: int = DAYS_IN_YEAR) -> int:
-    """Calculate the minimum days required for eligibility (1/10 of year, rounded up)."""
-    import math
-    return math.ceil(days_in_year * float(THRESHOLD_FRACTION))
-
-
 def calculate_year_entitlement(
     year: int,
     rest_day: RestDay,
@@ -150,7 +139,8 @@ def calculate_year_entitlement(
     get_week_type: Callable[[date], WeekType],
     get_daily_salary: Callable[[date], Decimal],
     get_max_daily_salary_in_year: Callable[[int], Decimal],
-    count_employment_days_in_year: Callable[[int], int],
+    seniority_eligibility_date: date | None,
+    is_employed_in_year: Callable[[int], bool],
     data_path: Path | None = None,
 ) -> HolidayYearResult:
     """Calculate holiday entitlement for a single calendar year.
@@ -162,31 +152,26 @@ def calculate_year_entitlement(
         get_week_type: Function to get week type (5/6) for a date
         get_daily_salary: Function to get salary_daily for a date
         get_max_daily_salary_in_year: Function to get max salary_daily in a year
-        count_employment_days_in_year: Function to count employment days in a year
+        seniority_eligibility_date: Date when worker became eligible for holidays (None if never)
+        is_employed_in_year: Function to check if at least 1 daily_record exists in the year
         data_path: Optional path to holiday CSV
 
     Returns:
         HolidayYearResult with entitlement details
     """
-    # Step 1: Check 1/10 threshold
-    employment_days = count_employment_days_in_year(year)
-    threshold = calculate_threshold()
-    met_threshold = employment_days >= threshold
-
     result = HolidayYearResult(
         year=year,
-        met_threshold=met_threshold,
-        employment_days_in_year=employment_days,
         holidays=[],
         election_day_entitled=False,
         total_entitled_days=0,
         total_claim=Decimal("0"),
     )
 
-    if not met_threshold:
+    # Step 0: If no seniority eligibility — no entitlement at all
+    if seniority_eligibility_date is None:
         return result
 
-    # Step 2: Get holiday dates for this year
+    # Step 1: Get holiday dates for this year
     holidays = get_holiday_dates(year, data_path)
 
     rest_dow = _rest_day_to_dow(rest_day)
@@ -195,13 +180,16 @@ def calculate_year_entitlement(
     total_claim = Decimal("0")
     entitled_count = 0
 
-    # Step 3-6: Process each holiday
+    # Step 2-3: Process each holiday
     for h in holidays:
         dow = _get_day_of_week(h.gregorian_date)
         employed = is_employed_on_date(h.gregorian_date)
 
-        # Get week type for this specific holiday
-        week_type = get_week_type(h.gregorian_date) if employed else WeekType.FIVE_DAY
+        # Check if holiday is before seniority eligibility date
+        before_seniority = h.gregorian_date < seniority_eligibility_date
+
+        # Get week type for this specific holiday (None if not employed)
+        week_type = get_week_type(h.gregorian_date) if employed else None
 
         is_rest = dow == rest_dow
         is_eve = dow == eve_of_rest_dow
@@ -212,7 +200,10 @@ def calculate_year_entitlement(
 
         if not employed:
             excluded = True
-            exclude_reason = "לא מועסק בתאריך זה"
+            exclude_reason = "לא הועסק בתאריך החג"
+        elif before_seniority:
+            excluded = True
+            exclude_reason = "טרם השלמת 3 חודשי ותק"
         elif is_rest:
             excluded = True
             exclude_reason = "חג שחל ביום המנוחה"
@@ -220,7 +211,7 @@ def calculate_year_entitlement(
             excluded = True
             exclude_reason = "חג שחל בערב מנוחה (שבוע 5 ימים)"
 
-        entitled = employed and not excluded
+        entitled = employed and not before_seniority and not excluded
 
         # Get day value if entitled
         day_value = None
@@ -236,6 +227,7 @@ def calculate_year_entitlement(
             hebrew_date=h.hebrew_date,
             gregorian_date=h.gregorian_date,
             employed_on_date=employed,
+            before_seniority=before_seniority,
             day_of_week=DAY_NAMES[dow],
             week_type=week_type,
             is_rest_day=is_rest,
@@ -248,12 +240,20 @@ def calculate_year_entitlement(
         )
         result.holidays.append(entry)
 
-    # Step 5: Election day - always entitled if threshold met
-    result.election_day_entitled = True
-    election_day_value = get_max_daily_salary_in_year(year)
-    result.election_day_value = election_day_value
-    entitled_count += 1
-    total_claim += election_day_value
+    # Step 4: Election day
+    # Entitled if: (a) seniority gate passed before end of year, AND (b) at least 1 daily_record in this year
+    year_end = date(year, 12, 31)
+    election_day_entitled = (
+        seniority_eligibility_date <= year_end
+        and is_employed_in_year(year)
+    )
+
+    if election_day_entitled:
+        result.election_day_entitled = True
+        election_day_value = get_max_daily_salary_in_year(year)
+        result.election_day_value = election_day_value
+        entitled_count += 1
+        total_claim += election_day_value
 
     result.total_entitled_days = entitled_count
     result.total_claim = total_claim
@@ -269,7 +269,8 @@ def calculate_all_years(
     get_week_type: Callable[[date], WeekType],
     get_daily_salary: Callable[[date], Decimal],
     get_max_daily_salary_in_year: Callable[[int], Decimal],
-    count_employment_days_in_year: Callable[[int], int],
+    seniority_eligibility_date: date | None,
+    is_employed_in_year: Callable[[int], bool],
     data_path: Path | None = None,
 ) -> HolidaysResult:
     """Calculate holiday entitlement for all years in employment period.
@@ -282,13 +283,15 @@ def calculate_all_years(
         get_week_type: Function to get week type (5/6) for a date
         get_daily_salary: Function to get salary_daily for a date
         get_max_daily_salary_in_year: Function to get max salary_daily in a year
-        count_employment_days_in_year: Function to count employment days in a year
+        seniority_eligibility_date: Date when worker became eligible for holidays (None if never)
+        is_employed_in_year: Function to check if at least 1 daily_record exists in the year
         data_path: Optional path to holiday CSV
 
     Returns:
         HolidaysResult with all years
     """
     result = HolidaysResult(
+        seniority_eligibility_date=seniority_eligibility_date,
         per_year=[],
         grand_total_days=0,
         grand_total_claim=Decimal("0"),
@@ -302,7 +305,8 @@ def calculate_all_years(
             get_week_type=get_week_type,
             get_daily_salary=get_daily_salary,
             get_max_daily_salary_in_year=get_max_daily_salary_in_year,
-            count_employment_days_in_year=count_employment_days_in_year,
+            seniority_eligibility_date=seniority_eligibility_date,
+            is_employed_in_year=is_employed_in_year,
             data_path=data_path,
         )
         result.per_year.append(year_result)

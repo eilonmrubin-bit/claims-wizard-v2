@@ -470,8 +470,9 @@ class HolidayEntry:
     hebrew_date: str = ""
     gregorian_date: date | None = None
     employed_on_date: bool = False
+    before_seniority: bool = False
     day_of_week: str = ""
-    week_type: WeekType = WeekType.FIVE_DAY
+    week_type: WeekType | None = None
     is_rest_day: bool = False
     is_eve_of_rest: bool = False
     excluded: bool = False
@@ -484,8 +485,6 @@ class HolidayEntry:
 @dataclass
 class HolidayYearResult:
     year: int = 0
-    met_threshold: bool = False
-    employment_days_in_year: int = 0
     holidays: list[HolidayEntry] = field(default_factory=list)
     election_day_entitled: bool = False
     election_day_value: Decimal | None = None
@@ -495,6 +494,7 @@ class HolidayYearResult:
 
 @dataclass
 class HolidaysResult:
+    seniority_eligibility_date: date | None = None
     per_year: list[HolidayYearResult] = field(default_factory=list)
     grand_total_days: int = 0
     grand_total_claim: Decimal = Decimal("0")

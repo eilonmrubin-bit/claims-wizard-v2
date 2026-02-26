@@ -143,8 +143,9 @@ interface HolidayEntry {
   hebrew_date: string;
   gregorian_date: string;
   employed_on_date: boolean;
+  before_seniority?: boolean;
   day_of_week: string;
-  week_type: number;
+  week_type?: number;
   is_rest_day: boolean;
   is_eve_of_rest: boolean;
   excluded: boolean;
@@ -156,8 +157,6 @@ interface HolidayEntry {
 
 interface HolidayYearResult {
   year: number;
-  met_threshold: boolean;
-  employment_days_in_year: number;
   holidays: HolidayEntry[];
   election_day_entitled: boolean;
   election_day_value?: number;
@@ -166,6 +165,7 @@ interface HolidayYearResult {
 }
 
 interface HolidaysResult {
+  seniority_eligibility_date?: string;
   per_year: HolidayYearResult[];
   grand_total_days: number;
   grand_total_claim: number;
@@ -1788,9 +1788,9 @@ const HolidaysBreakdown: React.FC<{ holidays: HolidaysResult }> = ({ holidays })
       title: <span style={{ color: '#88D8E0' }}>שבוע</span>,
       dataIndex: 'week_type',
       key: 'week_type',
-      render: (w: number) => (
+      render: (w: number | undefined) => (
         <span style={{ color: '#E8F4F8' }}>
-          {w === -1 ? '—' : `${w} ימים`}
+          {w == null ? '—' : `${w} ימים`}
         </span>
       ),
     },
@@ -1816,63 +1816,67 @@ const HolidaysBreakdown: React.FC<{ holidays: HolidaysResult }> = ({ holidays })
     },
   ];
 
-  const yearItems = holidays.per_year.map((year) => ({
-    key: String(year.year),
-    label: (
-      <Space>
-        <span>{year.year}</span>
-        <Tag color={year.met_threshold ? 'green' : 'red'}>
-          {year.total_entitled_days} ימים
-        </Tag>
-        <span className="ltr-number">{formatCurrency(year.total_claim)}</span>
-      </Space>
-    ),
-    children: (
-      <div>
-        {!year.met_threshold && (
-          <Alert
-            message="לא עמד בתנאי סף — עבד פחות מעשירית השנה"
-            description={`ימי עבודה בשנה: ${year.employment_days_in_year} (מינימום נדרש: 37)`}
-            type="warning"
-            showIcon
-            style={{ marginBottom: 16 }}
-          />
-        )}
-        {year.met_threshold && (
-          <>
-            <Table
-              dataSource={[
-                ...year.holidays,
-                // Add election day as the last row
-                {
-                  name: 'יום בחירה',
-                  hebrew_date: '—',
-                  gregorian_date: '',
-                  employed_on_date: true,
-                  day_of_week: '—',
-                  week_type: -1,  // Mark as election day, not a regular week_type
-                  is_rest_day: false,
-                  is_eve_of_rest: false,
-                  excluded: false,
-                  exclude_reason: undefined,
-                  entitled: true,
-                  day_value: year.election_day_value ?? undefined,
-                  claim_amount: year.election_day_value ?? undefined,
-                },
-              ]}
-              columns={holidayColumns}
-              rowKey="name"
-              pagination={false}
-              size="small"
-              rowClassName={(record) =>
-                record.name === 'יום בחירה' ? 'election-day-row' : ''
-              }
+  const yearItems = holidays.per_year.map((year) => {
+    // Check if all holidays in this year are before_seniority
+    const allBeforeSeniority = year.holidays.length > 0 &&
+      year.holidays.every((h) => h.before_seniority || !h.employed_on_date);
+    const hasEntitledDays = year.total_entitled_days > 0;
+
+    return {
+      key: String(year.year),
+      label: (
+        <Space>
+          <span>{year.year}</span>
+          <Tag color={hasEntitledDays ? 'green' : 'default'}>
+            {year.total_entitled_days} ימים
+          </Tag>
+          <span className="ltr-number">{formatCurrency(year.total_claim)}</span>
+        </Space>
+      ),
+      children: (
+        <div>
+          {allBeforeSeniority && (
+            <Alert
+              message="טרם השלמת 3 חודשי ותק"
+              description="כל החגים בשנה זו היו לפני השלמת 3 חודשי ותק אצל הנתבע"
+              type="info"
+              showIcon
+              style={{ marginBottom: 16 }}
             />
-          </>
-        )}
-      </div>
-    ),
-  }));
+          )}
+          <Table
+            dataSource={[
+              ...year.holidays,
+              // Add election day as the last row (only if entitled)
+              ...(year.election_day_entitled ? [{
+                name: 'יום בחירה',
+                hebrew_date: '—',
+                gregorian_date: '',
+                employed_on_date: true,
+                before_seniority: false,
+                day_of_week: '—',
+                week_type: undefined,  // Mark as election day, not a regular week_type
+                is_rest_day: false,
+                is_eve_of_rest: false,
+                excluded: false,
+                exclude_reason: undefined,
+                entitled: true,
+                day_value: year.election_day_value ?? undefined,
+                claim_amount: year.election_day_value ?? undefined,
+              }] : []),
+            ]}
+            columns={holidayColumns}
+            rowKey="name"
+            pagination={false}
+            size="small"
+            rowClassName={(record) =>
+              record.name === 'יום בחירה' ? 'election-day-row' : ''
+            }
+          />
+        </div>
+      ),
+    };
+  });
 
   return (
     <Card

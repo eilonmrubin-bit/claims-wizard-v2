@@ -13,7 +13,6 @@ import os
 from app.modules.holidays import (
     calculate_year_entitlement,
     calculate_all_years,
-    calculate_threshold,
     get_holiday_dates,
     _get_day_of_week,
     _get_eve_of_rest,
@@ -59,18 +58,6 @@ def test_data_path():
         path = Path(f.name)
     yield path
     os.unlink(path)
-
-
-class TestThreshold:
-    """Test the 1/10 threshold calculation."""
-
-    def test_threshold_365_days(self):
-        """1/10 of 365 = 36.5, rounded up = 37."""
-        assert calculate_threshold(365) == 37
-
-    def test_threshold_366_days(self):
-        """1/10 of 366 = 36.6, rounded up = 37."""
-        assert calculate_threshold(366) == 37
 
 
 class TestDayOfWeek:
@@ -126,28 +113,6 @@ class TestHolidayLoading:
         assert holidays == []
 
 
-class TestBelowThreshold:
-    """Test cases where worker is below 1/10 threshold."""
-
-    def test_below_threshold_no_entitlement(self, test_data_path):
-        """Worker below threshold gets 0 holidays."""
-        result = calculate_year_entitlement(
-            year=2024,
-            rest_day=RestDay.SATURDAY,
-            is_employed_on_date=lambda d: True,
-            get_week_type=lambda d: WeekType.FIVE_DAY,
-            get_daily_salary=lambda d: Decimal("250"),
-            get_max_daily_salary_in_year=lambda y: Decimal("250"),
-            count_employment_days_in_year=lambda y: 30,  # Below 37
-            data_path=test_data_path,
-        )
-
-        assert result.met_threshold is False
-        assert result.total_entitled_days == 0
-        assert result.total_claim == Decimal("0")
-        assert result.election_day_entitled is False
-
-
 class TestRestDayExclusion:
     """Test holidays excluded when falling on rest day."""
 
@@ -161,7 +126,8 @@ class TestRestDayExclusion:
             get_week_type=lambda d: WeekType.FIVE_DAY,
             get_daily_salary=lambda d: Decimal("250"),
             get_max_daily_salary_in_year=lambda y: Decimal("250"),
-            count_employment_days_in_year=lambda y: 300,
+            seniority_eligibility_date=date(2023, 1, 1),
+            is_employed_in_year=lambda y: True,
             data_path=test_data_path,
         )
 
@@ -179,7 +145,8 @@ class TestRestDayExclusion:
             get_week_type=lambda d: WeekType.SIX_DAY,
             get_daily_salary=lambda d: Decimal("250"),
             get_max_daily_salary_in_year=lambda y: Decimal("250"),
-            count_employment_days_in_year=lambda y: 300,
+            seniority_eligibility_date=date(2023, 1, 1),
+            is_employed_in_year=lambda y: True,
             data_path=test_data_path,
         )
 
@@ -201,7 +168,8 @@ class TestEveOfRestExclusion:
             get_week_type=lambda d: WeekType.FIVE_DAY,
             get_daily_salary=lambda d: Decimal("250"),
             get_max_daily_salary_in_year=lambda y: Decimal("250"),
-            count_employment_days_in_year=lambda y: 300,
+            seniority_eligibility_date=date(2023, 1, 1),
+            is_employed_in_year=lambda y: True,
             data_path=test_data_path,
         )
 
@@ -220,7 +188,8 @@ class TestEveOfRestExclusion:
             get_week_type=lambda d: WeekType.SIX_DAY,
             get_daily_salary=lambda d: Decimal("250"),
             get_max_daily_salary_in_year=lambda y: Decimal("250"),
-            count_employment_days_in_year=lambda y: 300,
+            seniority_eligibility_date=date(2023, 1, 1),
+            is_employed_in_year=lambda y: True,
             data_path=test_data_path,
         )
 
@@ -249,7 +218,8 @@ class TestWeekTypePerHoliday:
             get_week_type=get_week_type,
             get_daily_salary=lambda d: Decimal("250"),
             get_max_daily_salary_in_year=lambda y: Decimal("250"),
-            count_employment_days_in_year=lambda y: 300,
+            seniority_eligibility_date=date(2023, 1, 1),
+            is_employed_in_year=lambda y: True,
             data_path=test_data_path,
         )
 
@@ -271,7 +241,8 @@ class TestElectionDay:
             get_week_type=lambda d: WeekType.FIVE_DAY,
             get_daily_salary=lambda d: Decimal("250"),
             get_max_daily_salary_in_year=lambda y: Decimal("300"),
-            count_employment_days_in_year=lambda y: 300,
+            seniority_eligibility_date=date(2023, 1, 1),
+            is_employed_in_year=lambda y: True,
             data_path=test_data_path,
         )
 
@@ -286,7 +257,8 @@ class TestElectionDay:
             get_week_type=lambda d: WeekType.FIVE_DAY,
             get_daily_salary=lambda d: Decimal("250"),
             get_max_daily_salary_in_year=lambda y: Decimal("350"),  # Higher than daily
-            count_employment_days_in_year=lambda y: 300,
+            seniority_eligibility_date=date(2023, 1, 1),
+            is_employed_in_year=lambda y: True,
             data_path=test_data_path,
         )
 
@@ -305,8 +277,8 @@ class TestPartialYear:
 
     def test_partial_year_started_late(self, test_data_path):
         """Partial year - started in October."""
-        # Only employed from Oct 1, 2024 onwards (92 days)
-        # Threshold = 37, so eligible
+        # Only employed from Oct 1, 2024 onwards
+        # Seniority already achieved before this year
         # Only holidays from Oct onward should be considered
 
         def is_employed(d: date) -> bool:
@@ -319,11 +291,10 @@ class TestPartialYear:
             get_week_type=lambda d: WeekType.FIVE_DAY,
             get_daily_salary=lambda d: Decimal("250"),
             get_max_daily_salary_in_year=lambda y: Decimal("250"),
-            count_employment_days_in_year=lambda y: 92,
+            seniority_eligibility_date=date(2024, 1, 1),
+            is_employed_in_year=lambda y: True,
             data_path=test_data_path,
         )
-
-        assert result.met_threshold is True
 
         # April holidays should be excluded (not employed)
         pesach = next(h for h in result.holidays if h.name == "פסח")
@@ -347,11 +318,10 @@ class TestPartialYear:
             get_week_type=lambda d: WeekType.FIVE_DAY,
             get_daily_salary=lambda d: Decimal("250"),
             get_max_daily_salary_in_year=lambda y: Decimal("250"),
-            count_employment_days_in_year=lambda y: 91,
+            seniority_eligibility_date=date(2024, 1, 1),
+            is_employed_in_year=lambda y: True,
             data_path=test_data_path,
         )
-
-        assert result.met_threshold is True
 
         # October holidays should be excluded (not employed)
         rosh_hashana_1 = next(h for h in result.holidays if h.name == "ראש השנה א'")
@@ -371,7 +341,8 @@ class TestMultipleYears:
             get_week_type=lambda d: WeekType.FIVE_DAY,
             get_daily_salary=lambda d: Decimal("250"),
             get_max_daily_salary_in_year=lambda y: Decimal("250"),
-            count_employment_days_in_year=lambda y: 300,
+            seniority_eligibility_date=date(2023, 1, 1),
+            is_employed_in_year=lambda y: True,
             data_path=test_data_path,
         )
 
@@ -400,7 +371,8 @@ class TestDayValue:
             get_week_type=lambda d: WeekType.SIX_DAY,
             get_daily_salary=get_daily_salary,
             get_max_daily_salary_in_year=lambda y: Decimal("300"),
-            count_employment_days_in_year=lambda y: 300,
+            seniority_eligibility_date=date(2023, 1, 1),
+            is_employed_in_year=lambda y: True,
             data_path=test_data_path,
         )
 
@@ -428,7 +400,8 @@ class TestEdgeCases:
             get_week_type=lambda d: WeekType.FIVE_DAY,
             get_daily_salary=lambda d: Decimal("250"),
             get_max_daily_salary_in_year=lambda y: Decimal("250"),
-            count_employment_days_in_year=lambda y: 300,
+            seniority_eligibility_date=date(2023, 1, 1),
+            is_employed_in_year=lambda y: True,
             data_path=test_data_path,
         )
 
@@ -445,7 +418,8 @@ class TestEdgeCases:
             get_week_type=lambda d: WeekType.FIVE_DAY,
             get_daily_salary=lambda d: Decimal("250"),
             get_max_daily_salary_in_year=lambda y: Decimal("250"),
-            count_employment_days_in_year=lambda y: 300,
+            seniority_eligibility_date=date(2023, 1, 1),
+            is_employed_in_year=lambda y: True,
             data_path=test_data_path,
         )
 
@@ -463,7 +437,8 @@ class TestEdgeCases:
             get_week_type=lambda d: WeekType.SIX_DAY,
             get_daily_salary=lambda d: Decimal("250"),
             get_max_daily_salary_in_year=lambda y: Decimal("250"),
-            count_employment_days_in_year=lambda y: 300,
+            seniority_eligibility_date=date(2023, 1, 1),
+            is_employed_in_year=lambda y: True,
             data_path=test_data_path,
         )
 
@@ -480,7 +455,8 @@ class TestEdgeCases:
             get_week_type=lambda d: WeekType.SIX_DAY,
             get_daily_salary=lambda d: Decimal("250"),
             get_max_daily_salary_in_year=lambda y: Decimal("250"),
-            count_employment_days_in_year=lambda y: 300,
+            seniority_eligibility_date=date(2023, 1, 1),
+            is_employed_in_year=lambda y: True,
             data_path=test_data_path,
         )
 
@@ -503,7 +479,8 @@ class TestEdgeCases:
             get_week_type=lambda d: WeekType.FIVE_DAY,
             get_daily_salary=lambda d: Decimal("250") if d.month < 7 else Decimal("300"),
             get_max_daily_salary_in_year=get_max_salary,
-            count_employment_days_in_year=lambda y: 300,
+            seniority_eligibility_date=date(2023, 1, 1),
+            is_employed_in_year=lambda y: True,
             data_path=test_data_path,
         )
 
@@ -527,7 +504,8 @@ class TestTotalCalculation:
             get_week_type=lambda d: WeekType.SIX_DAY,
             get_daily_salary=lambda d: Decimal("250"),
             get_max_daily_salary_in_year=lambda y: Decimal("250"),
-            count_employment_days_in_year=lambda y: 300,
+            seniority_eligibility_date=date(2023, 1, 1),
+            is_employed_in_year=lambda y: True,
             data_path=test_data_path,
         )
 
@@ -546,7 +524,8 @@ class TestTotalCalculation:
             get_week_type=lambda d: WeekType.SIX_DAY,
             get_daily_salary=lambda d: Decimal("250"),
             get_max_daily_salary_in_year=lambda y: Decimal("250"),
-            count_employment_days_in_year=lambda y: 300,
+            seniority_eligibility_date=date(2023, 1, 1),
+            is_employed_in_year=lambda y: True,
             data_path=test_data_path,
         )
 
@@ -555,3 +534,77 @@ class TestTotalCalculation:
 
         assert result.grand_total_days == expected_days
         assert result.grand_total_claim == expected_claim
+
+
+class TestSeniorityGate:
+    """Test seniority prerequisite."""
+
+    def test_no_seniority_no_entitlement(self, test_data_path):
+        """Worker who never reached 3 months — no entitlement."""
+        result = calculate_year_entitlement(
+            year=2024,
+            rest_day=RestDay.SATURDAY,
+            is_employed_on_date=lambda d: True,
+            get_week_type=lambda d: WeekType.FIVE_DAY,
+            get_daily_salary=lambda d: Decimal("250"),
+            get_max_daily_salary_in_year=lambda y: Decimal("250"),
+            seniority_eligibility_date=None,
+            is_employed_in_year=lambda y: True,
+            data_path=test_data_path,
+        )
+        assert result.total_entitled_days == 0
+        assert result.election_day_entitled is False
+
+    def test_holidays_before_seniority_excluded(self, test_data_path):
+        """Holidays before eligibility date are excluded."""
+        # Eligibility date = July 1, 2024
+        # April holidays (Pesach) should be excluded
+        # October holidays should be entitled
+        result = calculate_year_entitlement(
+            year=2024,
+            rest_day=RestDay.SATURDAY,
+            is_employed_on_date=lambda d: True,
+            get_week_type=lambda d: WeekType.SIX_DAY,
+            get_daily_salary=lambda d: Decimal("250"),
+            get_max_daily_salary_in_year=lambda y: Decimal("250"),
+            seniority_eligibility_date=date(2024, 7, 1),
+            is_employed_in_year=lambda y: True,
+            data_path=test_data_path,
+        )
+        pesach = next(h for h in result.holidays if h.name == "פסח")
+        assert pesach.before_seniority is True
+        assert pesach.entitled is False
+
+        rosh_hashana_1 = next(h for h in result.holidays if h.name == "ראש השנה א'")
+        assert rosh_hashana_1.before_seniority is False
+        assert rosh_hashana_1.entitled is True  # Oct 3 (Thursday), 6-day week
+
+    def test_election_day_entitled_after_gate(self, test_data_path):
+        """Election day entitled in year where gate was crossed."""
+        result = calculate_year_entitlement(
+            year=2024,
+            rest_day=RestDay.SATURDAY,
+            is_employed_on_date=lambda d: True,
+            get_week_type=lambda d: WeekType.SIX_DAY,
+            get_daily_salary=lambda d: Decimal("250"),
+            get_max_daily_salary_in_year=lambda y: Decimal("250"),
+            seniority_eligibility_date=date(2024, 4, 1),
+            is_employed_in_year=lambda y: True,
+            data_path=test_data_path,
+        )
+        assert result.election_day_entitled is True
+
+    def test_election_day_not_entitled_before_gate(self, test_data_path):
+        """Election day NOT entitled if gate crossed in next year."""
+        result = calculate_year_entitlement(
+            year=2024,
+            rest_day=RestDay.SATURDAY,
+            is_employed_on_date=lambda d: True,
+            get_week_type=lambda d: WeekType.SIX_DAY,
+            get_daily_salary=lambda d: Decimal("250"),
+            get_max_daily_salary_in_year=lambda y: Decimal("250"),
+            seniority_eligibility_date=date(2025, 3, 1),
+            is_employed_in_year=lambda y: True,
+            data_path=test_data_path,
+        )
+        assert result.election_day_entitled is False

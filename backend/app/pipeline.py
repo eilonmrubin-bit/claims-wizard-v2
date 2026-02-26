@@ -382,6 +382,19 @@ def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
             # Week type lookup from weeks
             week_type_by_week_id = {w.id: w.week_type for w in ssot.weeks}
 
+            # Compute seniority eligibility date for holidays
+            seniority_eligibility_date = None
+            if ssot.seniority_monthly:
+                for entry in ssot.seniority_monthly:
+                    if entry.at_defendant_cumulative >= 3:
+                        y, m = entry.month
+                        # Eligibility = first day of NEXT month
+                        if m == 12:
+                            seniority_eligibility_date = date(y + 1, 1, 1)
+                        else:
+                            seniority_eligibility_date = date(y, m + 1, 1)
+                        break
+
             def is_employed_on_date(d: date) -> bool:
                 return d in daily_lookup
 
@@ -409,11 +422,8 @@ def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
                         max_salary = pmr.salary_daily
                 return max_salary
 
-            def count_employment_days_in_year(year: int) -> int:
-                return sum(
-                    1 for dr in ssot.daily_records
-                    if dr.date.year == year and dr.is_work_day
-                )
+            def is_employed_in_year(year: int) -> bool:
+                return any(dr.date.year == year for dr in ssot.daily_records)
 
             holidays_result = calculate_all_years(
                 start_year=first_day.year,
@@ -423,7 +433,8 @@ def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
                 get_week_type=get_week_type,
                 get_daily_salary=get_daily_salary,
                 get_max_daily_salary_in_year=get_max_daily_salary_in_year,
-                count_employment_days_in_year=count_employment_days_in_year,
+                seniority_eligibility_date=seniority_eligibility_date,
+                is_employed_in_year=is_employed_in_year,
             )
 
             ssot.rights_results.holidays = holidays_result
