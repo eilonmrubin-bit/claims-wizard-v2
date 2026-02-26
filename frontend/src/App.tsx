@@ -67,9 +67,10 @@ import type {
   PatternLevelC,
   CountPeriod,
   NightPlacement,
-  PatternSource,
   PerDayShifts,
   ShiftInputMode,
+  WeekPattern,
+  PatternLevelB,
 } from './types';
 
 dayjs.locale('he');
@@ -106,6 +107,50 @@ const breakToTimeRange = (breakMinutes: number, shiftStart: string, shiftEnd: st
     start_time: minutesToTimeStr(mid - half),
     end_time: minutesToTimeStr(mid - half + breakMinutes),
   };
+};
+
+/**
+ * Convert frontend PerDayShifts to backend DayShifts format.
+ * - time_range mode: shifts as-is, convert break_minutes to TimeRange
+ * - duration mode: convert shift_type+duration_hours to TimeRange, then break
+ */
+const convertPerDayForBackend = (
+  perDay: Record<number, PerDayShifts>,
+  inputMode: ShiftInputMode
+): Record<string, { shifts: TimeRange[]; breaks?: TimeRange[] }> => {
+  const result: Record<string, { shifts: TimeRange[]; breaks?: TimeRange[] }> = {};
+
+  for (const [dayStr, dayData] of Object.entries(perDay)) {
+    let shifts: TimeRange[];
+
+    if (inputMode === 'duration' && dayData.shift_type && dayData.duration_hours) {
+      // Duration mode: convert to time range
+      const startHour = dayData.shift_type === 'night' ? 22 : 6;
+      const totalMinutes = Math.round(dayData.duration_hours * 60);
+      const endMinutes = (startHour * 60 + totalMinutes) % (24 * 60);
+      shifts = [{
+        start_time: `${String(startHour).padStart(2, '0')}:00:00`,
+        end_time: `${String(Math.floor(endMinutes / 60)).padStart(2, '0')}:${String(endMinutes % 60).padStart(2, '0')}:00`,
+      }];
+    } else {
+      // Time range mode: use shifts directly
+      shifts = dayData.shifts;
+    }
+
+    // Convert break_minutes to TimeRange (centered in shift)
+    const breaks: TimeRange[] = [];
+    if (dayData.break_minutes > 0 && shifts.length > 0) {
+      const br = breakToTimeRange(dayData.break_minutes, shifts[0].start_time, shifts[0].end_time);
+      if (br) breaks.push(br);
+    }
+
+    result[dayStr] = {
+      shifts,
+      breaks: breaks.length > 0 ? breaks : undefined,
+    };
+  }
+
+  return result;
 };
 
 // Get end of current month as default filing date
@@ -428,6 +473,18 @@ function App() {
     4: { shifts: [{ start_time: '07:00:00', end_time: '16:00:00' }], break_minutes: 30 },
   });
 
+  // Create default week for cyclic patterns
+  const createDefaultWeek = (): WeekPattern => ({
+    work_days: [0, 1, 2, 3, 4],
+    per_day: createDefaultPerDay(),
+  });
+
+  // Create default level_b structure for cyclic patterns
+  const createDefaultLevelB = (): PatternLevelB => ({
+    cycle_length: 2,
+    cycle: [createDefaultWeek(), createDefaultWeek()],
+  });
+
   // Switch pattern type and initialize appropriate data
   const switchPatternType = (patternIndex: number, newType: PatternType) => {
     const updated = [...formData.work_patterns];
@@ -436,10 +493,41 @@ function App() {
       ...pattern,
       pattern_type: newType,
       level_c: newType === 'statistical' && !pattern.level_c ? createDefaultLevelC() : pattern.level_c,
+      level_b: newType === 'cyclic' && !pattern.level_b ? createDefaultLevelB() : pattern.level_b,
       per_day: newType === 'weekly_simple' && !pattern.per_day ? createDefaultPerDay() : pattern.per_day,
       work_days: newType === 'weekly_simple' && (!pattern.work_days || pattern.work_days.length === 0) ? [0, 1, 2, 3, 4] : pattern.work_days,
-      input_mode: newType === 'weekly_simple' && !pattern.input_mode ? 'time_range' : pattern.input_mode,
+      input_mode: (newType === 'weekly_simple' || newType === 'cyclic') && !pattern.input_mode ? 'time_range' : pattern.input_mode,
     };
+    updateField('work_patterns', updated);
+  };
+
+  // Update a week in the cyclic pattern
+  const updateCycleWeek = (patternIndex: number, weekIndex: number, workDays: number[], perDay: Record<number, PerDayShifts>) => {
+    const updated = [...formData.work_patterns];
+    const levelB = { ...updated[patternIndex].level_b! };
+    const cycle = [...levelB.cycle];
+    cycle[weekIndex] = { work_days: workDays, per_day: perDay };
+    levelB.cycle = cycle;
+    updated[patternIndex] = { ...updated[patternIndex], level_b: levelB };
+    updateField('work_patterns', updated);
+  };
+
+  // Set cycle length (add/remove weeks)
+  const setCycleLength = (patternIndex: number, length: number) => {
+    const updated = [...formData.work_patterns];
+    const levelB = { ...updated[patternIndex].level_b! };
+    const currentLen = levelB.cycle.length;
+    let cycle = [...levelB.cycle];
+    if (length > currentLen) {
+      for (let i = currentLen; i < length; i++) {
+        cycle.push(createDefaultWeek());
+      }
+    } else if (length < currentLen) {
+      cycle = cycle.slice(0, Math.max(length, 2));
+    }
+    levelB.cycle = cycle;
+    levelB.cycle_length = cycle.length;
+    updated[patternIndex] = { ...updated[patternIndex], level_b: levelB };
     updateField('work_patterns', updated);
   };
 
@@ -584,7 +672,8 @@ function App() {
   };
 
   // Build pattern_sources for patterns that need translation
-  const buildPatternSources = (): PatternSource[] => {
+  // Returns backend-compatible format (may differ from frontend types)
+  const buildPatternSources = () => {
     return formData.work_patterns
       .filter(p => p.pattern_type && p.pattern_type !== 'weekly_simple')
       .map(p => {
@@ -610,13 +699,27 @@ function App() {
           };
         }
 
+        // Convert cyclic pattern to backend format
+        const level_b_data = p.pattern_type === 'cyclic' && p.level_b ? {
+          cycle_length: p.level_b.cycle_length,
+          cycle: p.level_b.cycle.map(week => ({
+            id: p.id,
+            start: p.start,
+            end: p.end,
+            work_days: week.work_days,
+            default_shifts: [],
+            default_breaks: [],
+            per_day: convertPerDayForBackend(week.per_day, p.input_mode || 'time_range'),
+          })),
+        } : undefined;
+
         return {
           id: p.id,
           type: p.pattern_type as PatternType,
           start: p.start,
           end: p.end,
           level_c_data,
-          level_b_data: p.pattern_type === 'cyclic' ? p.level_b : undefined,
+          level_b_data,
         };
       });
   };
@@ -970,7 +1073,7 @@ function App() {
                           >
                             <Radio value="statistical">סטטיסטי</Radio>
                             <Radio value="weekly_simple">שבועי ידני</Radio>
-                            <Radio value="cyclic" disabled>מחזורי</Radio>
+                            <Radio value="cyclic">מחזורי</Radio>
                           </Radio.Group>
                         </Form.Item>
 
@@ -1110,6 +1213,63 @@ function App() {
                               updateField('work_patterns', updated);
                             }}
                           />
+                        )}
+
+                        {/* Level B (Cyclic) Form */}
+                        {pattern.pattern_type === 'cyclic' && pattern.level_b && (
+                          <>
+                            <Form.Item label="אורך מחזור" style={{ marginBottom: 12 }}>
+                              <InputNumber
+                                value={pattern.level_b.cycle_length}
+                                onChange={(v) => setCycleLength(pIndex, v || 2)}
+                                min={2}
+                                max={52}
+                                addonAfter="שבועות"
+                                style={{ width: 180 }}
+                              />
+                            </Form.Item>
+
+                            <Collapse
+                              accordion
+                              defaultActiveKey={['0']}
+                              items={pattern.level_b.cycle.map((week, wIndex) => ({
+                                key: String(wIndex),
+                                label: `שבוע ${wIndex + 1}`,
+                                children: (
+                                  <WeekPanel
+                                    workDays={week.work_days}
+                                    perDay={week.per_day}
+                                    restDay={formData.rest_day}
+                                    inputMode={pattern.input_mode || 'time_range'}
+                                    onInputModeChange={(mode) => updateWorkPattern(pIndex, 'input_mode', mode)}
+                                    onChange={(wd, pd) => updateCycleWeek(pIndex, wIndex, wd, pd)}
+                                  />
+                                ),
+                              }))}
+                            />
+
+                            <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
+                              <Button
+                                type="dashed"
+                                size="small"
+                                onClick={() => setCycleLength(pIndex, pattern.level_b!.cycle_length + 1)}
+                                disabled={pattern.level_b.cycle_length >= 52}
+                                icon={<PlusOutlined />}
+                              >
+                                הוסף שבוע
+                              </Button>
+                              <Button
+                                type="dashed"
+                                size="small"
+                                danger
+                                onClick={() => setCycleLength(pIndex, pattern.level_b!.cycle_length - 1)}
+                                disabled={pattern.level_b.cycle_length <= 2}
+                                icon={<DeleteOutlined />}
+                              >
+                                הסר שבוע אחרון
+                              </Button>
+                            </div>
+                          </>
                         )}
                       </Card>
                     ))}

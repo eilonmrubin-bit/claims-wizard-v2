@@ -262,12 +262,29 @@ def _reconstruct_ssot_input(data: dict[str, Any]) -> SSOTInput:
                 night_placement=NightPlacement(lc.get("night_placement", "average")),
             )
 
+        # Parse level_b_data (cyclic patterns)
+        level_b_data = None
+        lb = d.get("level_b_data")
+        if lb:
+            from app.modules.pattern_translator import PatternLevelB
+            cycle_patterns = []
+            for wp in lb.get("cycle", []):
+                cycle_patterns.append(parse_work_pattern(wp))
+            level_b_data = PatternLevelB(
+                id=d.get("id", ""),
+                start=parse_date(d.get("start")),
+                end=parse_date(d.get("end")),
+                cycle=cycle_patterns,
+                cycle_length=int(lb.get("cycle_length", len(cycle_patterns))),
+            )
+
         return PatternSource(
             id=d.get("id", ""),
             type=PatternType(d.get("type", d.get("pattern_type", "weekly_simple"))),
             start=parse_date(d.get("start")),
             end=parse_date(d.get("end")),
             level_c_data=level_c_data,
+            level_b_data=level_b_data,
         )
 
     # Parse main structure
