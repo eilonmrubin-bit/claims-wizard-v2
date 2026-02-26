@@ -6,7 +6,6 @@ import {
   InputNumber,
   Button,
   Select,
-  DatePicker,
   TimePicker,
   Checkbox,
   Radio,
@@ -20,15 +19,15 @@ import {
   message,
   theme,
   Tooltip,
+  Popover,
   Dropdown,
   Tabs,
 } from 'antd';
-import type { MenuProps } from 'antd';
 import {
   PlusOutlined,
   DeleteOutlined,
   CalculatorOutlined,
-  AimOutlined,
+  LinkOutlined,
   CodeOutlined,
 } from '@ant-design/icons';
 import heIL from 'antd/locale/he_IL';
@@ -52,6 +51,7 @@ const agarthaTheme = {
 import dayjs, { Dayjs } from 'dayjs';
 import 'dayjs/locale/he';
 import ResultsView from './ResultsView';
+import DateInput from './components/DateInput';
 import type {
   SSOTInput,
   EmploymentPeriod,
@@ -61,6 +61,12 @@ import type {
   SeniorityMethod,
   RestDay,
   District,
+  PatternType,
+  DayTypeInput,
+  PatternLevelC,
+  CountPeriod,
+  NightPlacement,
+  PatternSource,
 } from './types';
 
 dayjs.locale('he');
@@ -238,6 +244,38 @@ function App() {
   const [totalSeniorityUnit, setTotalSeniorityUnit] = useState<SeniorityUnit>('months');
   const [jsonInput, setJsonInput] = useState('');
   const [jsonError, setJsonError] = useState<string | null>(null);
+  // SNAP selection state: keyed by pattern/tier ID
+  const [snapSelections, setSnapSelections] = useState<Record<string, number[]>>({});
+
+  // Helper: toggle period selection for SNAP
+  const toggleSnapSelection = (id: string, periodIndex: number) => {
+    setSnapSelections((prev) => {
+      const current = prev[id] || [];
+      const exists = current.includes(periodIndex);
+      return {
+        ...prev,
+        [id]: exists
+          ? current.filter((i) => i !== periodIndex)
+          : [...current, periodIndex],
+      };
+    });
+  };
+
+  // Helper: compute min start, max end from multiple periods
+  const computeSnapRange = (periodIndices: number[]): { start: string; end: string } | null => {
+    if (periodIndices.length === 0) return null;
+    const periods = periodIndices
+      .map((i) => formData.employment_periods[i])
+      .filter((p) => p && p.start && p.end);
+    if (periods.length === 0) return null;
+
+    const starts = periods.map((p) => p.start).sort();
+    const ends = periods.map((p) => p.end).sort();
+    return {
+      start: starts[0],
+      end: ends[ends.length - 1],
+    };
+  };
 
   // Update nested fields
   const updateField = <K extends keyof SSOTInput>(
@@ -282,15 +320,28 @@ function App() {
     updateField('employment_periods', updated);
   };
 
+  // Default Level C data
+  const createDefaultLevelC = (): PatternLevelC => ({
+    day_types: [
+      { type_id: 'regular', count: 5, count_period: 'weekly', hours: 9, break_minutes: 30 },
+      { type_id: 'eve_of_rest', count: 0, count_period: 'weekly', hours: 6, break_minutes: 0 },
+      { type_id: 'rest_day', count: 0, count_period: 'weekly', hours: 0, break_minutes: 0 },
+      { type_id: 'night', count: 0, count_period: 'weekly', hours: 0, break_minutes: 0 },
+    ],
+    night_placement: 'average',
+  });
+
   // Work patterns handlers
   const addWorkPattern = () => {
     const newPattern: WorkPattern = {
       id: generateId(),
       start: '',
       end: '',
+      pattern_type: 'statistical', // Default to statistical (Level C)
       work_days: [0, 1, 2, 3, 4], // Default: Sunday-Thursday
       default_shifts: [{ start_time: '08:00:00', end_time: '17:00:00' }],
       default_breaks: [{ start_time: '12:00:00', end_time: '12:30:00' }],
+      level_c: createDefaultLevelC(),
     };
     updateField('work_patterns', [...formData.work_patterns, newPattern]);
   };
@@ -346,6 +397,48 @@ function App() {
     updateField('work_patterns', updated);
   };
 
+  // Level C handlers
+  const updateDayType = (
+    patternIndex: number,
+    dayTypeIndex: number,
+    field: keyof DayTypeInput,
+    value: number | CountPeriod
+  ) => {
+    const updated = [...formData.work_patterns];
+    const pattern = updated[patternIndex];
+    if (!pattern.level_c) return;
+    const dayTypes = [...pattern.level_c.day_types];
+    dayTypes[dayTypeIndex] = { ...dayTypes[dayTypeIndex], [field]: value };
+    updated[patternIndex] = {
+      ...pattern,
+      level_c: { ...pattern.level_c, day_types: dayTypes },
+    };
+    updateField('work_patterns', updated);
+  };
+
+  const updateNightPlacement = (patternIndex: number, placement: NightPlacement) => {
+    const updated = [...formData.work_patterns];
+    const pattern = updated[patternIndex];
+    if (!pattern.level_c) return;
+    updated[patternIndex] = {
+      ...pattern,
+      level_c: { ...pattern.level_c, night_placement: placement },
+    };
+    updateField('work_patterns', updated);
+  };
+
+  // Switch pattern type and initialize appropriate data
+  const switchPatternType = (patternIndex: number, newType: PatternType) => {
+    const updated = [...formData.work_patterns];
+    const pattern = updated[patternIndex];
+    updated[patternIndex] = {
+      ...pattern,
+      pattern_type: newType,
+      level_c: newType === 'statistical' && !pattern.level_c ? createDefaultLevelC() : pattern.level_c,
+    };
+    updateField('work_patterns', updated);
+  };
+
   // SNAP work pattern dates to employment period
   const snapWorkPatternToPeriod = (patternIndex: number, periodIndex: number) => {
     const period = formData.employment_periods[periodIndex];
@@ -372,6 +465,57 @@ function App() {
     };
     updateField('salary_tiers', updated);
     message.success(`מדרגת שכר ${tierIndex + 1} הותאמה לתקופת העסקה ${periodIndex + 1}`);
+  };
+
+  // SNAP work pattern to multiple periods (uses min start, max end)
+  const snapWorkPatternToMultiple = (patternIndex: number, periodIndices: number[]) => {
+    const range = computeSnapRange(periodIndices);
+    if (!range) return;
+    const updated = [...formData.work_patterns];
+    updated[patternIndex] = {
+      ...updated[patternIndex],
+      start: range.start,
+      end: range.end,
+    };
+    updateField('work_patterns', updated);
+    // Clear selection after snap
+    setSnapSelections((prev) => {
+      const newSel = { ...prev };
+      delete newSel[formData.work_patterns[patternIndex].id];
+      return newSel;
+    });
+    message.success(`דפוס עבודה ${patternIndex + 1} הותאם ל-${periodIndices.length} תקופות`);
+  };
+
+  // SNAP salary tier to multiple periods
+  const snapSalaryTierToMultiple = (tierIndex: number, periodIndices: number[]) => {
+    const range = computeSnapRange(periodIndices);
+    if (!range) return;
+    const updated = [...formData.salary_tiers];
+    updated[tierIndex] = {
+      ...updated[tierIndex],
+      start: range.start,
+      end: range.end,
+    };
+    updateField('salary_tiers', updated);
+    // Clear selection after snap
+    setSnapSelections((prev) => {
+      const newSel = { ...prev };
+      delete newSel[formData.salary_tiers[tierIndex].id];
+      return newSel;
+    });
+    message.success(`מדרגת שכר ${tierIndex + 1} הותאמה ל-${periodIndices.length} תקופות`);
+  };
+
+  // SNAP to all employment periods
+  const snapWorkPatternToAll = (patternIndex: number) => {
+    const allIndices = formData.employment_periods.map((_, i) => i);
+    snapWorkPatternToMultiple(patternIndex, allIndices);
+  };
+
+  const snapSalaryTierToAll = (tierIndex: number) => {
+    const allIndices = formData.employment_periods.map((_, i) => i);
+    snapSalaryTierToMultiple(tierIndex, allIndices);
   };
 
   // Extend work pattern to new end date
@@ -432,16 +576,49 @@ function App() {
     setError(null); // Clear error after fix
   };
 
-  // Generate SNAP menu items for employment periods
-  const getSnapMenuItems = (onSelect: (periodIndex: number) => void): MenuProps['items'] => {
+  // Render SNAP popover content for multi-select
+  const renderSnapContent = (
+    id: string,
+    onSnapSelected: (indices: number[]) => void,
+    onSnapAll: () => void
+  ) => {
+    const selected = snapSelections[id] || [];
     if (formData.employment_periods.length === 0) {
-      return [{ key: 'none', label: 'אין תקופות העסקה', disabled: true }];
+      return <div style={{ padding: 8, color: '#88D8E0' }}>אין תקופות העסקה</div>;
     }
-    return formData.employment_periods.map((period, index) => ({
-      key: String(index),
-      label: `תקופה ${index + 1}: ${period.start ? dayjs(period.start).format('DD.MM.YYYY') : '?'} - ${period.end ? dayjs(period.end).format('DD.MM.YYYY') : '?'}`,
-      onClick: () => onSelect(index),
-    }));
+    return (
+      <div style={{ minWidth: 260 }}>
+        {formData.employment_periods.map((period, index) => (
+          <div key={index} style={{ padding: '4px 0' }}>
+            <Checkbox
+              checked={selected.includes(index)}
+              onChange={() => toggleSnapSelection(id, index)}
+            >
+              תקופה {index + 1}: {period.start ? dayjs(period.start).format('DD.MM.YYYY') : '?'} - {period.end ? dayjs(period.end).format('DD.MM.YYYY') : '?'}
+            </Checkbox>
+          </div>
+        ))}
+        <Divider style={{ margin: '8px 0' }} />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <Button
+            size="small"
+            type="primary"
+            disabled={selected.length === 0}
+            onClick={() => onSnapSelected(selected)}
+            block
+          >
+            התאם לנבחרות ({selected.length})
+          </Button>
+          <Button
+            size="small"
+            onClick={onSnapAll}
+            block
+          >
+            התאם לכולן
+          </Button>
+        </div>
+      </div>
+    );
   };
 
   // Salary tiers handlers
@@ -488,6 +665,20 @@ function App() {
     });
   };
 
+  // Build pattern_sources for patterns that need translation
+  const buildPatternSources = (): PatternSource[] => {
+    return formData.work_patterns
+      .filter(p => p.pattern_type && p.pattern_type !== 'weekly_simple')
+      .map(p => ({
+        id: p.id,
+        type: p.pattern_type as PatternType,
+        start: p.start,
+        end: p.end,
+        level_c_data: p.pattern_type === 'statistical' ? p.level_c : undefined,
+        level_b_data: p.pattern_type === 'cyclic' ? p.level_b : undefined,
+      }));
+  };
+
   // Submit handler
   const handleCalculate = async () => {
     setLoading(true);
@@ -495,12 +686,18 @@ function App() {
     setResult(null);
 
     try {
+      const patternSources = buildPatternSources();
+      const requestBody = {
+        ...formData,
+        pattern_sources: patternSources.length > 0 ? patternSources : undefined,
+      };
+
       const response = await fetch('/calculate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify(requestBody),
       });
 
       const data = await response.json();
@@ -739,23 +936,19 @@ function App() {
                         <Row gutter={16} align="middle">
                           <Col span={10}>
                             <Form.Item label="תאריך התחלה">
-                              <DatePicker
-                                value={period.start ? dayjs(period.start) : null}
-                                onChange={(d) => updateEmploymentPeriod(index, 'start', dayjsToIso(d))}
-                                format="DD.MM.YYYY"
+                              <DateInput
+                                value={period.start}
+                                onChange={(v) => updateEmploymentPeriod(index, 'start', v)}
                                 style={{ width: '100%' }}
-                                placeholder="בחר תאריך"
                               />
                             </Form.Item>
                           </Col>
                           <Col span={10}>
                             <Form.Item label="תאריך סיום">
-                              <DatePicker
-                                value={period.end ? dayjs(period.end) : null}
-                                onChange={(d) => updateEmploymentPeriod(index, 'end', dayjsToIso(d))}
-                                format="DD.MM.YYYY"
+                              <DateInput
+                                value={period.end}
+                                onChange={(v) => updateEmploymentPeriod(index, 'end', v)}
                                 style={{ width: '100%' }}
-                                placeholder="בחר תאריך"
                               />
                             </Form.Item>
                           </Col>
@@ -800,128 +993,228 @@ function App() {
                         <Row gutter={16}>
                           <Col span={11}>
                             <Form.Item label="תאריך התחלה">
-                              <DatePicker
-                                value={pattern.start ? dayjs(pattern.start) : null}
-                                onChange={(d) => updateWorkPattern(pIndex, 'start', dayjsToIso(d))}
-                                format="DD.MM.YYYY"
+                              <DateInput
+                                value={pattern.start}
+                                onChange={(v) => updateWorkPattern(pIndex, 'start', v)}
                                 style={{ width: '100%' }}
                               />
                             </Form.Item>
                           </Col>
                           <Col span={11}>
                             <Form.Item label="תאריך סיום">
-                              <DatePicker
-                                value={pattern.end ? dayjs(pattern.end) : null}
-                                onChange={(d) => updateWorkPattern(pIndex, 'end', dayjsToIso(d))}
-                                format="DD.MM.YYYY"
+                              <DateInput
+                                value={pattern.end}
+                                onChange={(v) => updateWorkPattern(pIndex, 'end', v)}
                                 style={{ width: '100%' }}
                               />
                             </Form.Item>
                           </Col>
                           <Col span={2} style={{ display: 'flex', alignItems: 'center', paddingTop: 30 }}>
-                            <Dropdown
-                              menu={{ items: getSnapMenuItems((periodIndex) => snapWorkPatternToPeriod(pIndex, periodIndex)) }}
+                            <Popover
+                              content={renderSnapContent(
+                                pattern.id,
+                                (indices) => snapWorkPatternToMultiple(pIndex, indices),
+                                () => snapWorkPatternToAll(pIndex)
+                              )}
+                              trigger="click"
                               placement="bottomRight"
                             >
-                              <Tooltip title="התאם תאריכים לתקופת העסקה">
+                              <Tooltip title="התאם לתקופות העסקה">
                                 <Button
                                   type="default"
                                   size="small"
-                                  icon={<AimOutlined />}
-                                >
-                                  SNAP
-                                </Button>
+                                  icon={<LinkOutlined />}
+                                />
                               </Tooltip>
-                            </Dropdown>
+                            </Popover>
                           </Col>
                         </Row>
 
-                        <Form.Item label="ימי עבודה">
-                          <Checkbox.Group
-                            value={pattern.work_days}
-                            onChange={(vals) => updateWorkPattern(pIndex, 'work_days', vals)}
+                        <Form.Item label="סוג דפוס">
+                          <Radio.Group
+                            value={pattern.pattern_type || 'weekly_simple'}
+                            onChange={(e) => switchPatternType(pIndex, e.target.value as PatternType)}
                           >
-                            <Row>
-                              {[0, 1, 2, 3, 4, 5, 6].map((day) => (
-                                <Col span={3} key={day}>
-                                  <Checkbox value={day}>{DAY_NAMES[day]}</Checkbox>
-                                </Col>
-                              ))}
-                            </Row>
-                          </Checkbox.Group>
+                            <Radio value="statistical">סטטיסטי</Radio>
+                            <Radio value="weekly_simple">שבועי ידני</Radio>
+                            <Radio value="cyclic" disabled>מחזורי</Radio>
+                          </Radio.Group>
                         </Form.Item>
 
-                        <Divider>משמרות</Divider>
-                        {pattern.default_shifts.map((shift, sIndex) => (
-                          <Row gutter={16} key={sIndex} align="middle" style={{ marginBottom: 8 }}>
-                            <Col span={10}>
-                              <TimePicker
-                                value={shift.start_time ? dayjs(shift.start_time, 'HH:mm:ss') : null}
-                                onChange={(d) => updateShift(pIndex, sIndex, 'start_time', timeToString(d))}
-                                format="HH:mm"
-                                style={{ width: '100%' }}
-                                placeholder="שעת התחלה"
-                              />
-                            </Col>
-                            <Col span={10}>
-                              <TimePicker
-                                value={shift.end_time ? dayjs(shift.end_time, 'HH:mm:ss') : null}
-                                onChange={(d) => updateShift(pIndex, sIndex, 'end_time', timeToString(d))}
-                                format="HH:mm"
-                                style={{ width: '100%' }}
-                                placeholder="שעת סיום"
-                              />
-                            </Col>
-                            <Col span={4}>
-                              {pattern.default_shifts.length > 1 && (
-                                <Button
-                                  type="text"
-                                  danger
-                                  icon={<DeleteOutlined />}
-                                  onClick={() => removeShift(pIndex, sIndex)}
-                                />
-                              )}
-                            </Col>
-                          </Row>
-                        ))}
-                        <Button type="dashed" size="small" onClick={() => addShift(pIndex)} icon={<PlusOutlined />}>
-                          הוסף משמרת
-                        </Button>
+                        {/* Level C (Statistical) Form */}
+                        {pattern.pattern_type === 'statistical' && pattern.level_c && (
+                          <>
+                            <Divider>סוגי משמרות</Divider>
+                            {pattern.level_c.day_types.map((dayType, dtIndex) => {
+                              const labels: Record<string, string> = {
+                                regular: 'יום רגיל',
+                                eve_of_rest: 'ערב מנוחה',
+                                rest_day: 'יום מנוחה',
+                                night: 'לילה',
+                              };
+                              return (
+                                <Row key={dayType.type_id} gutter={8} align="middle" style={{ marginBottom: 8 }}>
+                                  <Col span={4}>
+                                    <span style={{ color: '#88D8E0' }}>{labels[dayType.type_id]}:</span>
+                                  </Col>
+                                  <Col span={4}>
+                                    <InputNumber
+                                      value={dayType.count}
+                                      onChange={(v) => updateDayType(pIndex, dtIndex, 'count', v || 0)}
+                                      min={0}
+                                      max={dayType.count_period === 'weekly' ? 7 : 31}
+                                      precision={1}
+                                      step={0.5}
+                                      style={{ width: '100%' }}
+                                      addonAfter="ימים"
+                                    />
+                                  </Col>
+                                  <Col span={3}>
+                                    <Select
+                                      value={dayType.count_period}
+                                      onChange={(v) => updateDayType(pIndex, dtIndex, 'count_period', v as CountPeriod)}
+                                      style={{ width: '100%' }}
+                                      size="small"
+                                    >
+                                      <Select.Option value="weekly">לשבוע</Select.Option>
+                                      <Select.Option value="monthly">לחודש</Select.Option>
+                                    </Select>
+                                  </Col>
+                                  <Col span={4}>
+                                    <InputNumber
+                                      value={dayType.hours}
+                                      onChange={(v) => updateDayType(pIndex, dtIndex, 'hours', v || 0)}
+                                      min={0}
+                                      max={dayType.type_id === 'night' ? 12 : 14}
+                                      precision={1}
+                                      step={0.5}
+                                      style={{ width: '100%' }}
+                                      addonAfter="שעות"
+                                    />
+                                  </Col>
+                                  <Col span={5}>
+                                    <InputNumber
+                                      value={dayType.break_minutes}
+                                      onChange={(v) => updateDayType(pIndex, dtIndex, 'break_minutes', v || 0)}
+                                      min={0}
+                                      max={180}
+                                      precision={0}
+                                      style={{ width: '100%' }}
+                                      addonBefore="הפסקה"
+                                      addonAfter="דק'"
+                                    />
+                                  </Col>
+                                </Row>
+                              );
+                            })}
 
-                        <Divider>הפסקות</Divider>
-                        {pattern.default_breaks.map((brk, bIndex) => (
-                          <Row gutter={16} key={bIndex} align="middle" style={{ marginBottom: 8 }}>
-                            <Col span={10}>
-                              <TimePicker
-                                value={brk.start_time ? dayjs(brk.start_time, 'HH:mm:ss') : null}
-                                onChange={(d) => updateBreak(pIndex, bIndex, 'start_time', timeToString(d))}
-                                format="HH:mm"
-                                style={{ width: '100%' }}
-                                placeholder="תחילת הפסקה"
-                              />
-                            </Col>
-                            <Col span={10}>
-                              <TimePicker
-                                value={brk.end_time ? dayjs(brk.end_time, 'HH:mm:ss') : null}
-                                onChange={(d) => updateBreak(pIndex, bIndex, 'end_time', timeToString(d))}
-                                format="HH:mm"
-                                style={{ width: '100%' }}
-                                placeholder="סיום הפסקה"
-                              />
-                            </Col>
-                            <Col span={4}>
-                              <Button
-                                type="text"
-                                danger
-                                icon={<DeleteOutlined />}
-                                onClick={() => removeBreak(pIndex, bIndex)}
-                              />
-                            </Col>
-                          </Row>
-                        ))}
-                        <Button type="dashed" size="small" onClick={() => addBreak(pIndex)} icon={<PlusOutlined />}>
-                          הוסף הפסקה
-                        </Button>
+                            {/* Night placement - only show if night count > 0 */}
+                            {pattern.level_c.day_types.find(dt => dt.type_id === 'night')?.count > 0 && (
+                              <Form.Item label="שיבוץ לילות" style={{ marginTop: 16 }}>
+                                <Radio.Group
+                                  value={pattern.level_c.night_placement}
+                                  onChange={(e) => updateNightPlacement(pIndex, e.target.value as NightPlacement)}
+                                >
+                                  <Radio value="employer_favor">לטובת מעביד</Radio>
+                                  <Radio value="employee_favor">לטובת עובד</Radio>
+                                  <Radio value="average">ממוצע</Radio>
+                                </Radio.Group>
+                              </Form.Item>
+                            )}
+                          </>
+                        )}
+
+                        {/* Level A (Weekly Simple) Form */}
+                        {(pattern.pattern_type === 'weekly_simple' || !pattern.pattern_type) && (
+                          <>
+                            <Form.Item label="ימי עבודה">
+                              <Checkbox.Group
+                                value={pattern.work_days}
+                                onChange={(vals) => updateWorkPattern(pIndex, 'work_days', vals)}
+                              >
+                                <Row>
+                                  {[0, 1, 2, 3, 4, 5, 6].map((day) => (
+                                    <Col span={3} key={day}>
+                                      <Checkbox value={day}>{DAY_NAMES[day]}</Checkbox>
+                                    </Col>
+                                  ))}
+                                </Row>
+                              </Checkbox.Group>
+                            </Form.Item>
+
+                            <Divider>משמרות</Divider>
+                            {pattern.default_shifts.map((shift, sIndex) => (
+                              <Row gutter={16} key={sIndex} align="middle" style={{ marginBottom: 8 }}>
+                                <Col span={10}>
+                                  <TimePicker
+                                    value={shift.start_time ? dayjs(shift.start_time, 'HH:mm:ss') : null}
+                                    onChange={(d) => updateShift(pIndex, sIndex, 'start_time', timeToString(d))}
+                                    format="HH:mm"
+                                    style={{ width: '100%' }}
+                                    placeholder="שעת התחלה"
+                                  />
+                                </Col>
+                                <Col span={10}>
+                                  <TimePicker
+                                    value={shift.end_time ? dayjs(shift.end_time, 'HH:mm:ss') : null}
+                                    onChange={(d) => updateShift(pIndex, sIndex, 'end_time', timeToString(d))}
+                                    format="HH:mm"
+                                    style={{ width: '100%' }}
+                                    placeholder="שעת סיום"
+                                  />
+                                </Col>
+                                <Col span={4}>
+                                  {pattern.default_shifts.length > 1 && (
+                                    <Button
+                                      type="text"
+                                      danger
+                                      icon={<DeleteOutlined />}
+                                      onClick={() => removeShift(pIndex, sIndex)}
+                                    />
+                                  )}
+                                </Col>
+                              </Row>
+                            ))}
+                            <Button type="dashed" size="small" onClick={() => addShift(pIndex)} icon={<PlusOutlined />}>
+                              הוסף משמרת
+                            </Button>
+
+                            <Divider>הפסקות</Divider>
+                            {pattern.default_breaks.map((brk, bIndex) => (
+                              <Row gutter={16} key={bIndex} align="middle" style={{ marginBottom: 8 }}>
+                                <Col span={10}>
+                                  <TimePicker
+                                    value={brk.start_time ? dayjs(brk.start_time, 'HH:mm:ss') : null}
+                                    onChange={(d) => updateBreak(pIndex, bIndex, 'start_time', timeToString(d))}
+                                    format="HH:mm"
+                                    style={{ width: '100%' }}
+                                    placeholder="תחילת הפסקה"
+                                  />
+                                </Col>
+                                <Col span={10}>
+                                  <TimePicker
+                                    value={brk.end_time ? dayjs(brk.end_time, 'HH:mm:ss') : null}
+                                    onChange={(d) => updateBreak(pIndex, bIndex, 'end_time', timeToString(d))}
+                                    format="HH:mm"
+                                    style={{ width: '100%' }}
+                                    placeholder="סיום הפסקה"
+                                  />
+                                </Col>
+                                <Col span={4}>
+                                  <Button
+                                    type="text"
+                                    danger
+                                    icon={<DeleteOutlined />}
+                                    onClick={() => removeBreak(pIndex, bIndex)}
+                                  />
+                                </Col>
+                              </Row>
+                            ))}
+                            <Button type="dashed" size="small" onClick={() => addBreak(pIndex)} icon={<PlusOutlined />}>
+                              הוסף הפסקה
+                            </Button>
+                          </>
+                        )}
                       </Card>
                     ))}
                     <Button type="dashed" onClick={addWorkPattern} icon={<PlusOutlined />} block>
@@ -977,39 +1270,40 @@ function App() {
                           </Col>
                           <Col span={5}>
                             <Form.Item label="מתאריך">
-                              <DatePicker
-                                value={tier.start ? dayjs(tier.start) : null}
-                                onChange={(d) => updateSalaryTier(index, 'start', dayjsToIso(d))}
-                                format="DD.MM.YYYY"
+                              <DateInput
+                                value={tier.start}
+                                onChange={(v) => updateSalaryTier(index, 'start', v)}
                                 style={{ width: '100%' }}
                               />
                             </Form.Item>
                           </Col>
                           <Col span={5}>
                             <Form.Item label="עד תאריך">
-                              <DatePicker
-                                value={tier.end ? dayjs(tier.end) : null}
-                                onChange={(d) => updateSalaryTier(index, 'end', dayjsToIso(d))}
-                                format="DD.MM.YYYY"
+                              <DateInput
+                                value={tier.end}
+                                onChange={(v) => updateSalaryTier(index, 'end', v)}
                                 style={{ width: '100%' }}
                               />
                             </Form.Item>
                           </Col>
                           <Col span={3} style={{ display: 'flex', alignItems: 'center', paddingTop: 30, gap: 4 }}>
-                            <Dropdown
-                              menu={{ items: getSnapMenuItems((periodIndex) => snapSalaryTierToPeriod(index, periodIndex)) }}
+                            <Popover
+                              content={renderSnapContent(
+                                tier.id,
+                                (indices) => snapSalaryTierToMultiple(index, indices),
+                                () => snapSalaryTierToAll(index)
+                              )}
+                              trigger="click"
                               placement="bottomRight"
                             >
-                              <Tooltip title="התאם תאריכים לתקופת העסקה">
+                              <Tooltip title="התאם לתקופות העסקה">
                                 <Button
                                   type="default"
                                   size="small"
-                                  icon={<AimOutlined />}
-                                >
-                                  SNAP
-                                </Button>
+                                  icon={<LinkOutlined />}
+                                />
                               </Tooltip>
-                            </Dropdown>
+                            </Popover>
                           </Col>
                           <Col span={2}>
                             <Button
@@ -1077,10 +1371,9 @@ function App() {
                     </Col>
                     <Col span={6}>
                       <Form.Item label="תאריך הגשת תביעה">
-                        <DatePicker
-                          value={formData.filing_date ? dayjs(formData.filing_date) : null}
-                          onChange={(d) => updateField('filing_date', dayjsToIso(d) || undefined)}
-                          format="DD.MM.YYYY"
+                        <DateInput
+                          value={formData.filing_date || ''}
+                          onChange={(v) => updateField('filing_date', v || undefined)}
                           style={{ width: '100%' }}
                         />
                       </Form.Item>

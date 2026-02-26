@@ -27,6 +27,58 @@ export interface TimeRange {
   end_time: string;
 }
 
+// Pattern types for Level A/B/C patterns
+export type PatternType = 'weekly_simple' | 'cyclic' | 'statistical';
+export type DayType = 'regular' | 'eve_of_rest' | 'rest_day' | 'night';
+export type CountPeriod = 'weekly' | 'monthly';
+export type NightPlacement = 'employer_favor' | 'employee_favor' | 'average';
+export type ShiftInputMode = 'time_range' | 'duration';
+export type ShiftType = 'day' | 'night';
+
+// Level C (Statistical) input structures
+export interface DayTypeInput {
+  type_id: DayType;
+  count: number;           // average days per week/month
+  count_period: CountPeriod;
+  hours: number;           // gross hours including break
+  break_minutes: number;   // 0-180, integer
+}
+
+export interface PatternLevelC {
+  day_types: DayTypeInput[];
+  night_placement: NightPlacement;
+}
+
+// Level A per-day structure
+export interface PerDayShifts {
+  shifts: TimeRange[];
+  break_minutes: number;
+  // For duration mode
+  shift_type?: ShiftType;
+  duration_hours?: number;
+}
+
+// Level B (Cyclic) structures
+export interface WeekPattern {
+  work_days: number[];
+  per_day: Record<number, PerDayShifts>;
+}
+
+export interface PatternLevelB {
+  cycle: WeekPattern[];
+  cycle_length: number;
+}
+
+// Pattern source for backend
+export interface PatternSource {
+  id: string;
+  type: PatternType;
+  start: string;
+  end: string;
+  level_c_data?: PatternLevelC;
+  level_b_data?: PatternLevelB;
+}
+
 export interface EmploymentPeriod {
   id: string;
   start: string; // YYYY-MM-DD
@@ -37,9 +89,17 @@ export interface WorkPattern {
   id: string;
   start: string;
   end: string;
-  work_days: number[]; // 0=Sunday..6=Saturday
+  pattern_type?: PatternType;     // default 'weekly_simple'
+  work_days: number[];            // 0=Sunday..6=Saturday
   default_shifts: TimeRange[];
   default_breaks: TimeRange[];
+  // Level A enhanced - per-day overrides
+  input_mode?: ShiftInputMode;    // 'time_range' or 'duration'
+  per_day?: Record<number, PerDayShifts>;
+  // Level B - cyclic patterns
+  level_b?: PatternLevelB;
+  // Level C - statistical patterns
+  level_c?: PatternLevelC;
 }
 
 export interface SalaryTier {
@@ -78,6 +138,7 @@ export interface SSOTInput {
   right_toggles: Record<string, Record<string, boolean>>;
   deductions_input: Record<string, string>;
   right_specific_inputs: Record<string, Record<string, unknown>>;
+  pattern_sources?: PatternSource[];
 }
 
 export interface ApiError {

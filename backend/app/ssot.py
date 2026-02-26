@@ -8,7 +8,10 @@ from dataclasses import dataclass, field
 from datetime import date, time, datetime
 from decimal import Decimal
 from enum import Enum
-from typing import Any
+from typing import Any, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.modules.pattern_translator import PatternSource
 
 
 # =============================================================================
@@ -184,6 +187,9 @@ class SSOTInput:
     right_toggles: dict[str, dict[str, bool]] = field(default_factory=dict)
     deductions_input: dict[str, Decimal] = field(default_factory=dict)
     right_specific_inputs: dict[str, dict[str, Any]] = field(default_factory=dict)
+
+    # Pattern sources (Level B/C patterns for translation)
+    pattern_sources: list['PatternSource'] | None = None
 
 
 # =============================================================================

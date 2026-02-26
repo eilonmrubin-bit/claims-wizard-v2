@@ -152,6 +152,7 @@ def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
             translation_result = translate_patterns(
                 work_patterns=ssot.input.work_patterns,
                 rest_day=ssot.input.rest_day,
+                pattern_sources=ssot.input.pattern_sources,
             )
             if translation_result.errors:
                 raise PipelineError(

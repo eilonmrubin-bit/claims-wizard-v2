@@ -232,6 +232,42 @@ def _reconstruct_ssot_input(data: dict[str, Any]) -> SSOTInput:
             net_or_gross=NetOrGross(d.get("net_or_gross", "gross")),
         )
 
+    def parse_pattern_source(d: dict):
+        """Parse pattern source for Level B/C patterns."""
+        from app.modules.pattern_translator import (
+            PatternSource, PatternType, PatternLevelC,
+            DayTypeInput, DayType, CountPeriod,
+            NightPlacement, LevelCMode
+        )
+
+        level_c_data = None
+        lc = d.get("level_c_data") or d.get("level_c")
+        if lc:
+            day_types = []
+            for dt in lc.get("day_types", []):
+                day_types.append(DayTypeInput(
+                    type_id=DayType(dt["type_id"]),
+                    count=Decimal(str(dt.get("count", 0))),
+                    count_period=CountPeriod(dt.get("count_period", "weekly")),
+                    hours=Decimal(str(dt.get("hours", 0))) if dt.get("hours") is not None else None,
+                    break_minutes=int(dt.get("break_minutes", 0)),
+                ))
+            level_c_data = PatternLevelC(
+                id=d.get("id", ""),
+                start=parse_date(d.get("start")),
+                end=parse_date(d.get("end")),
+                day_types=day_types,
+                night_placement=NightPlacement(lc.get("night_placement", "average")),
+            )
+
+        return PatternSource(
+            id=d.get("id", ""),
+            type=PatternType(d.get("type", d.get("pattern_type", "weekly_simple"))),
+            start=parse_date(d.get("start")),
+            end=parse_date(d.get("end")),
+            level_c_data=level_c_data,
+        )
+
     # Parse main structure
     case_meta = data.get("case_metadata", {})
     personal = data.get("personal_details", {})
@@ -282,6 +318,10 @@ def _reconstruct_ssot_input(data: dict[str, Any]) -> SSOTInput:
             k: Decimal(str(v)) for k, v in data.get("deductions_input", {}).items()
         },
         right_specific_inputs=data.get("right_specific_inputs", {}),
+        pattern_sources=[
+            parse_pattern_source(ps)
+            for ps in data.get("pattern_sources", [])
+        ] if data.get("pattern_sources") else None,
     )
 
 

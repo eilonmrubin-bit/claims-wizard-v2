@@ -350,10 +350,11 @@ class TestFullPipelineIntegration:
         assert result.success is True
         ssot = result.ssot
 
-        # Holiday threshold should not be met
+        # With only 1 month employment, seniority gate not met (requires 3 months)
+        # So no holiday entitlement
         if ssot.rights_results.holidays:
             year_result = ssot.rights_results.holidays.per_year[0]
-            assert year_result.met_threshold is False
+            assert year_result.total_entitled_days == 0
 
     def test_pipeline_net_salary_converted_to_gross(self):
         """Test pipeline converts net salary to gross."""
