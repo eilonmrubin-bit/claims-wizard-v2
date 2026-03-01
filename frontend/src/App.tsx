@@ -111,10 +111,13 @@ const breakToTimeRange = (breakMinutes: number, shiftStart: string, shiftEnd: st
 };
 
 /**
- * Check if a shift crosses midnight (end_time <= start_time means overnight).
+ * Check if a shift crosses midnight (end time earlier than start time).
  */
 const isOvernightShift = (shift: { start_time: string; end_time: string }): boolean => {
-  return shift.end_time <= shift.start_time;
+  if (!shift.start_time || !shift.end_time) return false;
+  const startMins = timeToMinutes(shift.start_time);
+  const endMins = timeToMinutes(shift.end_time);
+  return endMins < startMins;
 };
 
 /**

@@ -1719,7 +1719,7 @@ const OvertimeBreakdown: React.FC<{
 const HolidaysBreakdown: React.FC<{ holidays: HolidaysResult }> = ({ holidays }) => {
   const renderEntitlement = (entry: HolidayEntry) => {
     if (!entry.employed_on_date) {
-      return <Tag color="default">לא מועסק</Tag>;
+      return <Tag color="default">לא הועסק</Tag>;
     }
     if (entry.excluded) {
       return (
@@ -1800,9 +1800,10 @@ const HolidaysBreakdown: React.FC<{ holidays: HolidaysResult }> = ({ holidays })
   ];
 
   const yearItems = holidays.per_year.map((year) => {
-    // Check if all holidays in this year are before_seniority
-    const allBeforeSeniority = year.holidays.length > 0 &&
-      year.holidays.every((h) => h.before_seniority || !h.employed_on_date);
+    // Check if all employed holidays in this year are before_seniority
+    const employedHolidays = year.holidays.filter((h) => h.employed_on_date);
+    const allBeforeSeniority = employedHolidays.length > 0 &&
+      employedHolidays.every((h) => h.before_seniority);
     const hasEntitledDays = year.total_entitled_days > 0;
 
     return {

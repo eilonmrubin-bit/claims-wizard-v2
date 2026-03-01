@@ -42,13 +42,22 @@ const formatShiftSummary = (shift: ShiftEntry): string => {
   return `${start}-${end}`;
 };
 
+const timeToMinutes = (t: string): number => {
+  if (!t) return 0;
+  const parts = t.split(':');
+  return parseInt(parts[0], 10) * 60 + parseInt(parts[1] || '0', 10);
+};
+
 const isOvernightShift = (shift: ShiftEntry): boolean => {
   if (!shift.start_time || !shift.end_time) return false;
-  return shift.end_time <= shift.start_time;  // "22:00:00" > "10:00:00" → end < start
+  const startMins = timeToMinutes(shift.start_time);
+  const endMins = timeToMinutes(shift.end_time);
+  // Overnight = end time is earlier than start time (and not equal)
+  return endMins < startMins;
 };
 
 const isDurationOvernight = (shift: ShiftEntry): boolean => {
-  if (shift.shift_type === 'night') return true;
+  // Check by calculated times only — not by shift type
   return isOvernightShift(shift);
 };
 
@@ -214,8 +223,17 @@ export const WeekPanel: React.FC<WeekPanelProps> = ({
                       .sort((a, b) => a.start_time.localeCompare(b.start_time))
                       .map((s, i) => (
                         <div key={i} style={{ fontSize: 11 }}>
+                          {s.anchor === 'ends_here' && (
+                            <span style={{
+                              display: 'inline-block',
+                              width: 6, height: 6,
+                              borderRadius: '50%',
+                              backgroundColor: '#69c0ff',
+                              marginLeft: 4,
+                              verticalAlign: 'middle',
+                            }} />
+                          )}
                           {formatShiftSummary(s)}
-                          {s.anchor === 'ends_here' && <span style={{ fontSize: 9, color: '#69c0ff' }}> ←</span>}
                           {s.break_minutes > 0 && (
                             <span style={{ fontSize: 10, color: '#888' }}> הפ{s.break_minutes}'</span>
                           )}
