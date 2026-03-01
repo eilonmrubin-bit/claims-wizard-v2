@@ -93,6 +93,7 @@ interface PricingBreakdownItem {
 interface ShiftData {
   id: string;
   date: string;
+  assigned_day: string;
   shift_index: number;
   effective_period_id: string;
   week_id: string;
@@ -1405,27 +1406,27 @@ const WeekCollapseContent: React.FC<{
   allWeekShifts?: ShiftData[];
   currentMonth?: string;
 }> = ({ week, shifts, allWeekShifts, currentMonth }) => {
-  // Group shifts by date (current month shifts)
+  // Group shifts by assigned_day (current month shifts)
   const shiftsByDate: Record<string, ShiftData[]> = {};
   shifts.forEach((shift) => {
-    if (!shiftsByDate[shift.date]) shiftsByDate[shift.date] = [];
-    shiftsByDate[shift.date].push(shift);
+    if (!shiftsByDate[shift.assigned_day]) shiftsByDate[shift.assigned_day] = [];
+    shiftsByDate[shift.assigned_day].push(shift);
   });
 
   // Find ghost days (shifts from other months in the same week)
   const ghostDays: Record<string, { shifts: ShiftData[]; monthName: string }> = {};
   if (allWeekShifts && currentMonth) {
     allWeekShifts.forEach((shift) => {
-      const shiftDate = new Date(shift.date);
-      const shiftMonth = `${shiftDate.getFullYear()}-${(shiftDate.getMonth() + 1).toString().padStart(2, '0')}`;
+      const assignedDate = new Date(shift.assigned_day);
+      const shiftMonth = `${assignedDate.getFullYear()}-${(assignedDate.getMonth() + 1).toString().padStart(2, '0')}`;
       if (shiftMonth !== currentMonth) {
-        if (!ghostDays[shift.date]) {
-          ghostDays[shift.date] = {
+        if (!ghostDays[shift.assigned_day]) {
+          ghostDays[shift.assigned_day] = {
             shifts: [],
-            monthName: formatMonth([shiftDate.getFullYear(), shiftDate.getMonth() + 1]),
+            monthName: formatMonth([assignedDate.getFullYear(), assignedDate.getMonth() + 1]),
           };
         }
-        ghostDays[shift.date].shifts.push(shift);
+        ghostDays[shift.assigned_day].shifts.push(shift);
       }
     });
   }
@@ -1558,9 +1559,9 @@ const OvertimeDetailedTab: React.FC<{ shifts: ShiftData[]; weeks: WeekData[] }> 
   const hierarchy: Record<number, Record<string, Record<string, ShiftData[]>>> = {};
 
   shifts.forEach((shift) => {
-    const date = new Date(shift.date);
-    const year = date.getFullYear();
-    const month = `${year}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
+    const assignedDate = new Date(shift.assigned_day);
+    const year = assignedDate.getFullYear();
+    const month = `${year}-${(assignedDate.getMonth() + 1).toString().padStart(2, '0')}`;
     const weekId = shift.assigned_week || shift.week_id;
 
     if (!hierarchy[year]) hierarchy[year] = {};
