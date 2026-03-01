@@ -111,37 +111,25 @@ const breakToTimeRange = (breakMinutes: number, shiftStart: string, shiftEnd: st
 
 /**
  * Convert frontend PerDayShifts to backend DayShifts format.
- * - time_range mode: shifts as-is, convert break_minutes to TimeRange
- * - duration mode: convert shift_type+duration_hours to TimeRange, then break
+ * Each ShiftEntry has its own break_minutes which gets converted to TimeRange.
  */
 const convertPerDayForBackend = (
   perDay: Record<number, PerDayShifts>,
-  inputMode: ShiftInputMode
-): Record<string, { shifts: TimeRange[]; breaks?: TimeRange[] }> => {
-  const result: Record<string, { shifts: TimeRange[]; breaks?: TimeRange[] }> = {};
+): Record<string, { shifts: { start_time: string; end_time: string }[]; breaks?: { start_time: string; end_time: string }[] }> => {
+  const result: Record<string, { shifts: { start_time: string; end_time: string }[]; breaks?: { start_time: string; end_time: string }[] }> = {};
 
   for (const [dayStr, dayData] of Object.entries(perDay)) {
-    let shifts: TimeRange[];
+    const shifts = dayData.shifts.map(s => ({
+      start_time: s.start_time,
+      end_time: s.end_time,
+    }));
 
-    if (inputMode === 'duration' && dayData.shift_type && dayData.duration_hours) {
-      // Duration mode: convert to time range
-      const startHour = dayData.shift_type === 'night' ? 22 : 6;
-      const totalMinutes = Math.round(dayData.duration_hours * 60);
-      const endMinutes = (startHour * 60 + totalMinutes) % (24 * 60);
-      shifts = [{
-        start_time: `${String(startHour).padStart(2, '0')}:00:00`,
-        end_time: `${String(Math.floor(endMinutes / 60)).padStart(2, '0')}:${String(endMinutes % 60).padStart(2, '0')}:00`,
-      }];
-    } else {
-      // Time range mode: use shifts directly
-      shifts = dayData.shifts;
-    }
-
-    // Convert break_minutes to TimeRange (centered in shift)
-    const breaks: TimeRange[] = [];
-    if (dayData.break_minutes > 0 && shifts.length > 0) {
-      const br = breakToTimeRange(dayData.break_minutes, shifts[0].start_time, shifts[0].end_time);
-      if (br) breaks.push(br);
+    const breaks: { start_time: string; end_time: string }[] = [];
+    for (const shift of dayData.shifts) {
+      if (shift.break_minutes > 0) {
+        const br = breakToTimeRange(shift.break_minutes, shift.start_time, shift.end_time);
+        if (br) breaks.push(br);
+      }
     }
 
     result[dayStr] = {
@@ -389,7 +377,7 @@ function App() {
   // Default Level C data
   const createDefaultLevelC = (): PatternLevelC => ({
     day_types: [
-      { type_id: 'regular', count: 5, count_period: 'weekly', hours: 9, break_minutes: 30 },
+      { type_id: 'regular', count: 5, count_period: 'weekly', hours: 9, break_minutes: 0 },
       { type_id: 'eve_of_rest', count: 0, count_period: 'weekly', hours: 6, break_minutes: 0 },
       { type_id: 'rest_day', count: 0, count_period: 'weekly', hours: 0, break_minutes: 0 },
       { type_id: 'night', count: 0, count_period: 'weekly', hours: 0, break_minutes: 0 },
@@ -466,11 +454,11 @@ function App() {
 
   // Create default per_day structure for weekly_simple
   const createDefaultPerDay = (): Record<number, PerDayShifts> => ({
-    0: { shifts: [{ start_time: '07:00:00', end_time: '16:00:00' }], break_minutes: 30 },
-    1: { shifts: [{ start_time: '07:00:00', end_time: '16:00:00' }], break_minutes: 30 },
-    2: { shifts: [{ start_time: '07:00:00', end_time: '16:00:00' }], break_minutes: 30 },
-    3: { shifts: [{ start_time: '07:00:00', end_time: '16:00:00' }], break_minutes: 30 },
-    4: { shifts: [{ start_time: '07:00:00', end_time: '16:00:00' }], break_minutes: 30 },
+    0: { shifts: [{ start_time: '07:00:00', end_time: '16:00:00', break_minutes: 0 }] },
+    1: { shifts: [{ start_time: '07:00:00', end_time: '16:00:00', break_minutes: 0 }] },
+    2: { shifts: [{ start_time: '07:00:00', end_time: '16:00:00', break_minutes: 0 }] },
+    3: { shifts: [{ start_time: '07:00:00', end_time: '16:00:00', break_minutes: 0 }] },
+    4: { shifts: [{ start_time: '07:00:00', end_time: '16:00:00', break_minutes: 0 }] },
   });
 
   // Create default week for cyclic patterns
@@ -512,21 +500,36 @@ function App() {
     updateField('work_patterns', updated);
   };
 
-  // Set cycle length (add/remove weeks)
-  const setCycleLength = (patternIndex: number, length: number) => {
+  // Update week repeats in cyclic pattern
+  const updateWeekRepeats = (patternIndex: number, weekIndex: number, value: number) => {
     const updated = [...formData.work_patterns];
     const levelB = { ...updated[patternIndex].level_b! };
-    const currentLen = levelB.cycle.length;
-    let cycle = [...levelB.cycle];
-    if (length > currentLen) {
-      for (let i = currentLen; i < length; i++) {
-        cycle.push(createDefaultWeek());
-      }
-    } else if (length < currentLen) {
-      cycle = cycle.slice(0, Math.max(length, 2));
-    }
+    const cycle = [...levelB.cycle];
+    cycle[weekIndex] = { ...cycle[weekIndex], repeats: value };
     levelB.cycle = cycle;
-    levelB.cycle_length = cycle.length;
+    levelB.cycle_length = cycle.reduce((sum, w) => sum + (w.repeats || 1), 0);
+    updated[patternIndex] = { ...updated[patternIndex], level_b: levelB };
+    updateField('work_patterns', updated);
+  };
+
+  // Remove a specific week from cyclic pattern
+  const removeCycleWeek = (patternIndex: number, weekIndex: number) => {
+    const updated = [...formData.work_patterns];
+    const levelB = { ...updated[patternIndex].level_b! };
+    if (levelB.cycle.length <= 2) return;  // minimum 2 weeks
+    const cycle = levelB.cycle.filter((_, i) => i !== weekIndex);
+    levelB.cycle = cycle;
+    levelB.cycle_length = cycle.reduce((sum, w) => sum + (w.repeats || 1), 0);
+    updated[patternIndex] = { ...updated[patternIndex], level_b: levelB };
+    updateField('work_patterns', updated);
+  };
+
+  // Add a new week to cyclic pattern
+  const addCycleWeek = (patternIndex: number) => {
+    const updated = [...formData.work_patterns];
+    const levelB = { ...updated[patternIndex].level_b! };
+    levelB.cycle = [...levelB.cycle, createDefaultWeek()];
+    levelB.cycle_length = levelB.cycle.reduce((sum, w) => sum + (w.repeats || 1), 0);
     updated[patternIndex] = { ...updated[patternIndex], level_b: levelB };
     updateField('work_patterns', updated);
   };
@@ -701,16 +704,20 @@ function App() {
 
         // Convert cyclic pattern to backend format
         const level_b_data = p.pattern_type === 'cyclic' && p.level_b ? {
-          cycle_length: p.level_b.cycle_length,
-          cycle: p.level_b.cycle.map(week => ({
-            id: p.id,
-            start: p.start,
-            end: p.end,
-            work_days: week.work_days,
-            default_shifts: [],
-            default_breaks: [],
-            per_day: convertPerDayForBackend(week.per_day, p.input_mode || 'time_range'),
-          })),
+          cycle_length: p.level_b.cycle.reduce((sum, w) => sum + (w.repeats || 1), 0),
+          cycle: p.level_b.cycle.flatMap(week => {
+            const reps = week.repeats || 1;
+            const converted = {
+              id: p.id,
+              start: p.start,
+              end: p.end,
+              work_days: week.work_days,
+              default_shifts: [],
+              default_breaks: [],
+              per_day: convertPerDayForBackend(week.per_day),
+            };
+            return Array(reps).fill(converted);
+          }),
         } : undefined;
 
         return {
@@ -732,8 +739,21 @@ function App() {
 
     try {
       const patternSources = buildPatternSources();
+
+      // Convert per_day for all work patterns before sending
+      const convertedWorkPatterns = formData.work_patterns.map(wp => {
+        if (wp.per_day) {
+          return {
+            ...wp,
+            per_day: convertPerDayForBackend(wp.per_day),
+          };
+        }
+        return wp;
+      });
+
       const requestBody = {
         ...formData,
+        work_patterns: convertedWorkPatterns,
         pattern_sources: patternSources.length > 0 ? patternSources : undefined,
       };
 
@@ -1218,23 +1238,42 @@ function App() {
                         {/* Level B (Cyclic) Form */}
                         {pattern.pattern_type === 'cyclic' && pattern.level_b && (
                           <>
-                            <Form.Item label="אורך מחזור" style={{ marginBottom: 12 }}>
-                              <InputNumber
-                                value={pattern.level_b.cycle_length}
-                                onChange={(v) => setCycleLength(pIndex, v || 2)}
-                                min={2}
-                                max={52}
-                                addonAfter="שבועות"
-                                style={{ width: 180 }}
-                              />
-                            </Form.Item>
-
                             <Collapse
                               accordion
                               defaultActiveKey={['0']}
                               items={pattern.level_b.cycle.map((week, wIndex) => ({
                                 key: String(wIndex),
-                                label: `שבוע ${wIndex + 1}`,
+                                label: (
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%' }}>
+                                    <span>שבוע {wIndex + 1}</span>
+                                    <span style={{ fontSize: 12, color: '#888' }}>
+                                      ×
+                                      <InputNumber
+                                        value={week.repeats || 1}
+                                        onChange={(v) => updateWeekRepeats(pIndex, wIndex, v || 1)}
+                                        min={1}
+                                        max={20}
+                                        size="small"
+                                        style={{ width: 55, marginRight: 4, marginLeft: 4 }}
+                                        onClick={(e) => e.stopPropagation()}
+                                      />
+                                      חזרות
+                                    </span>
+                                    {pattern.level_b!.cycle.length > 2 && (
+                                      <Button
+                                        type="text"
+                                        danger
+                                        size="small"
+                                        icon={<DeleteOutlined />}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          removeCycleWeek(pIndex, wIndex);
+                                        }}
+                                        style={{ marginRight: 'auto' }}
+                                      />
+                                    )}
+                                  </div>
+                                ),
                                 children: (
                                   <WeekPanel
                                     workDays={week.work_days}
@@ -1248,27 +1287,16 @@ function App() {
                               }))}
                             />
 
-                            <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
-                              <Button
-                                type="dashed"
-                                size="small"
-                                onClick={() => setCycleLength(pIndex, pattern.level_b!.cycle_length + 1)}
-                                disabled={pattern.level_b.cycle_length >= 52}
-                                icon={<PlusOutlined />}
-                              >
-                                הוסף שבוע
-                              </Button>
-                              <Button
-                                type="dashed"
-                                size="small"
-                                danger
-                                onClick={() => setCycleLength(pIndex, pattern.level_b!.cycle_length - 1)}
-                                disabled={pattern.level_b.cycle_length <= 2}
-                                icon={<DeleteOutlined />}
-                              >
-                                הסר שבוע אחרון
-                              </Button>
-                            </div>
+                            <Button
+                              type="dashed"
+                              size="small"
+                              onClick={() => addCycleWeek(pIndex)}
+                              disabled={pattern.level_b.cycle.length >= 52}
+                              icon={<PlusOutlined />}
+                              style={{ marginTop: 12 }}
+                            >
+                              הוסף שבוע
+                            </Button>
                           </>
                         )}
                       </Card>

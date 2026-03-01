@@ -4,10 +4,10 @@
  */
 
 import React, { useState } from 'react';
-import { Checkbox, Radio, TimePicker, InputNumber, Select, Button, Row, Col, Tooltip } from 'antd';
+import { Checkbox, Radio, InputNumber, Select, Button, Row, Col, Tooltip } from 'antd';
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons';
-import dayjs from 'dayjs';
-import type { PerDayShifts, ShiftInputMode, ShiftType, RestDay, TimeRange } from '../types';
+import TimeInput from './TimeInput';
+import type { PerDayShifts, ShiftInputMode, ShiftType, RestDay, ShiftEntry } from '../types';
 
 const DAY_NAMES: Record<number, string> = {
   0: 'ראשון',
@@ -28,18 +28,15 @@ interface WeekPanelProps {
   onChange: (workDays: number[], perDay: Record<number, PerDayShifts>) => void;
 }
 
-const DEFAULT_SHIFT: PerDayShifts = {
-  shifts: [{ start_time: '07:00:00', end_time: '16:00:00' }],
-  break_minutes: 30,
+const DEFAULT_SHIFT: ShiftEntry = {
+  start_time: '07:00:00',
+  end_time: '16:00:00',
+  break_minutes: 0,
   shift_type: 'day',
   duration_hours: 9,
 };
 
-const timeToString = (d: dayjs.Dayjs | null): string => {
-  return d ? d.format('HH:mm:ss') : '';
-};
-
-const formatShiftSummary = (shift: TimeRange): string => {
+const formatShiftSummary = (shift: ShiftEntry): string => {
   const start = shift.start_time.substring(0, 5);
   const end = shift.end_time.substring(0, 5);
   return `${start}-${end}`;
@@ -76,7 +73,7 @@ export const WeekPanel: React.FC<WeekPanelProps> = ({
     if (checked) {
       newWorkDays = [...workDays, day].sort((a, b) => a - b);
       if (!newPerDay[day]) {
-        newPerDay[day] = { ...DEFAULT_SHIFT, shifts: [...DEFAULT_SHIFT.shifts] };
+        newPerDay[day] = { shifts: [{ ...DEFAULT_SHIFT }] };
       }
     } else {
       newWorkDays = workDays.filter(d => d !== day);
@@ -88,65 +85,61 @@ export const WeekPanel: React.FC<WeekPanelProps> = ({
 
   const updateDayShift = (day: number, shiftIndex: number, field: 'start_time' | 'end_time', value: string) => {
     const newPerDay = { ...perDay };
-    const dayData = newPerDay[day] || { ...DEFAULT_SHIFT };
-    const newShifts = [...dayData.shifts];
-    newShifts[shiftIndex] = { ...newShifts[shiftIndex], [field]: value };
-    newPerDay[day] = { ...dayData, shifts: newShifts };
+    const shifts = [...(newPerDay[day]?.shifts || [])];
+    shifts[shiftIndex] = { ...shifts[shiftIndex], [field]: value };
+    newPerDay[day] = { shifts };
     onChange(workDays, newPerDay);
   };
 
-  const updateDayBreak = (day: number, value: number) => {
+  const updateDayBreak = (day: number, shiftIndex: number, value: number) => {
     const newPerDay = { ...perDay };
-    const dayData = newPerDay[day] || { ...DEFAULT_SHIFT };
-    newPerDay[day] = { ...dayData, break_minutes: value };
+    const shifts = [...(newPerDay[day]?.shifts || [])];
+    shifts[shiftIndex] = { ...shifts[shiftIndex], break_minutes: value };
+    newPerDay[day] = { shifts };
     onChange(workDays, newPerDay);
   };
 
-  const updateDayDuration = (day: number, field: 'shift_type' | 'duration_hours', value: ShiftType | number) => {
+  const updateDayDuration = (day: number, shiftIndex: number, field: 'shift_type' | 'duration_hours', value: ShiftType | number) => {
     const newPerDay = { ...perDay };
-    const dayData = newPerDay[day] || { ...DEFAULT_SHIFT };
-    newPerDay[day] = { ...dayData, [field]: value };
+    const shifts = [...(newPerDay[day]?.shifts || [{ ...DEFAULT_SHIFT }])];
+    const shift = { ...shifts[shiftIndex] };
 
-    // Also update the shifts array based on duration mode values
-    if (field === 'shift_type' || field === 'duration_hours') {
-      const shiftType = field === 'shift_type' ? value as ShiftType : (dayData.shift_type || 'day');
-      const hours = field === 'duration_hours' ? value as number : (dayData.duration_hours || 9);
-      const startHour = shiftType === 'night' ? 22 : 6;
-      const totalMinutes = Math.round(hours * 60);
-      const endMinutes = (startHour * 60 + totalMinutes) % (24 * 60);
+    if (field === 'shift_type') shift.shift_type = value as ShiftType;
+    else shift.duration_hours = value as number;
 
-      const startTime = `${String(startHour).padStart(2, '0')}:00:00`;
-      const endTime = `${String(Math.floor(endMinutes / 60)).padStart(2, '0')}:${String(endMinutes % 60).padStart(2, '0')}:00`;
+    // Recalculate time range for this shift only
+    const shiftType = shift.shift_type || 'day';
+    const hours = shift.duration_hours || 9;
+    const startHour = shiftType === 'night' ? 22 : 6;
+    const totalMinutes = Math.round(hours * 60);
+    const endMinutes = (startHour * 60 + totalMinutes) % (24 * 60);
+    shift.start_time = `${String(startHour).padStart(2, '0')}:00:00`;
+    shift.end_time = `${String(Math.floor(endMinutes / 60)).padStart(2, '0')}:${String(endMinutes % 60).padStart(2, '0')}:00`;
 
-      newPerDay[day] = {
-        ...newPerDay[day],
-        shifts: [{ start_time: startTime, end_time: endTime }],
-        shift_type: shiftType,
-        duration_hours: hours,
-      };
-    }
-
+    shifts[shiftIndex] = shift;
+    newPerDay[day] = { shifts };
     onChange(workDays, newPerDay);
   };
 
   const addShiftToDay = (day: number) => {
     const newPerDay = { ...perDay };
-    const dayData = newPerDay[day] || { ...DEFAULT_SHIFT };
-    newPerDay[day] = {
-      ...dayData,
-      shifts: [...dayData.shifts, { start_time: '18:00:00', end_time: '22:00:00' }],
-    };
+    const shifts = [...(newPerDay[day]?.shifts || [])];
+    shifts.push({
+      start_time: '18:00:00',
+      end_time: '22:00:00',
+      break_minutes: 0,
+      shift_type: 'day',
+      duration_hours: 4,
+    });
+    newPerDay[day] = { shifts };
     onChange(workDays, newPerDay);
   };
 
   const removeShiftFromDay = (day: number, shiftIndex: number) => {
     const newPerDay = { ...perDay };
-    const dayData = newPerDay[day];
-    if (dayData && dayData.shifts.length > 1) {
-      newPerDay[day] = {
-        ...dayData,
-        shifts: dayData.shifts.filter((_, i) => i !== shiftIndex),
-      };
+    const shifts = newPerDay[day]?.shifts || [];
+    if (shifts.length > 1) {
+      newPerDay[day] = { shifts: shifts.filter((_, i) => i !== shiftIndex) };
       onChange(workDays, newPerDay);
     }
   };
@@ -156,7 +149,7 @@ export const WeekPanel: React.FC<WeekPanelProps> = ({
   };
 
   const isWorkDay = (day: number) => workDays.includes(day);
-  const dayData = (day: number) => perDay[day] || DEFAULT_SHIFT;
+  const dayData = (day: number): PerDayShifts => perDay[day] || { shifts: [{ ...DEFAULT_SHIFT }] };
 
   return (
     <div className="week-panel">
@@ -199,16 +192,14 @@ export const WeekPanel: React.FC<WeekPanelProps> = ({
                 )}
                 {active ? (
                   <>
-                    <div style={{ fontSize: 11 }}>
-                      {data.shifts.map((s, i) => (
-                        <div key={i}>{formatShiftSummary(s)}</div>
-                      ))}
-                    </div>
-                    {data.break_minutes > 0 && (
-                      <div style={{ fontSize: 10, color: '#888' }}>
-                        הפ {data.break_minutes}'
+                    {data.shifts.map((s, i) => (
+                      <div key={i} style={{ fontSize: 11 }}>
+                        {formatShiftSummary(s)}
+                        {s.break_minutes > 0 && (
+                          <span style={{ fontSize: 10, color: '#888' }}> הפ{s.break_minutes}'</span>
+                        )}
                       </div>
-                    )}
+                    ))}
                   </>
                 ) : (
                   <div style={{ fontSize: 18, color: '#555' }}>—</div>
@@ -263,42 +254,38 @@ export const WeekPanel: React.FC<WeekPanelProps> = ({
                 <>
                   {dayData(selectedDay).shifts.map((shift, sIndex) => (
                     <Row gutter={8} key={sIndex} align="middle" style={{ marginBottom: 8 }}>
-                      <Col span={2}>
+                      <Col>
                         <span style={{ fontSize: 12 }}>משמרת {sIndex + 1}:</span>
                       </Col>
-                      <Col span={6}>
-                        <TimePicker
-                          value={shift.start_time ? dayjs(shift.start_time, 'HH:mm:ss') : null}
-                          onChange={(d) => updateDayShift(selectedDay, sIndex, 'start_time', timeToString(d))}
-                          format="HH:mm"
+                      <Col>
+                        <TimeInput
+                          value={shift.start_time}
+                          onChange={(v) => updateDayShift(selectedDay, sIndex, 'start_time', v)}
                           size="small"
-                          style={{ width: '100%' }}
                         />
                       </Col>
-                      <Col span={1} style={{ textAlign: 'center' }}>-</Col>
-                      <Col span={6}>
-                        <TimePicker
-                          value={shift.end_time ? dayjs(shift.end_time, 'HH:mm:ss') : null}
-                          onChange={(d) => updateDayShift(selectedDay, sIndex, 'end_time', timeToString(d))}
-                          format="HH:mm"
+                      <Col style={{ textAlign: 'center' }}>-</Col>
+                      <Col>
+                        <TimeInput
+                          value={shift.end_time}
+                          onChange={(v) => updateDayShift(selectedDay, sIndex, 'end_time', v)}
                           size="small"
-                          style={{ width: '100%' }}
                         />
                       </Col>
-                      <Col span={6}>
+                      <Col>
                         <InputNumber
-                          value={dayData(selectedDay).break_minutes}
-                          onChange={(v) => updateDayBreak(selectedDay, v || 0)}
+                          value={shift.break_minutes}
+                          onChange={(v) => updateDayBreak(selectedDay, sIndex, v ?? 0)}
                           min={0}
                           max={180}
                           precision={0}
                           size="small"
-                          style={{ width: '100%' }}
-                          addonBefore="הפסקה"
+                          style={{ width: 100 }}
+                          addonBefore="הפ"
                           addonAfter="דק'"
                         />
                       </Col>
-                      <Col span={2}>
+                      <Col>
                         {dayData(selectedDay).shifts.length > 1 && (
                           <Button
                             type="text"
@@ -323,49 +310,49 @@ export const WeekPanel: React.FC<WeekPanelProps> = ({
               ) : (
                 // Duration mode
                 <>
-                  {dayData(selectedDay).shifts.map((_, sIndex) => (
+                  {dayData(selectedDay).shifts.map((shift, sIndex) => (
                     <Row gutter={8} key={sIndex} align="middle" style={{ marginBottom: 8 }}>
-                      <Col span={3}>
+                      <Col>
                         <span style={{ fontSize: 12 }}>משמרת {sIndex + 1}:</span>
                       </Col>
-                      <Col span={5}>
+                      <Col>
                         <Select
-                          value={dayData(selectedDay).shift_type || 'day'}
-                          onChange={(v) => updateDayDuration(selectedDay, 'shift_type', v)}
+                          value={shift.shift_type || 'day'}
+                          onChange={(v) => updateDayDuration(selectedDay, sIndex, 'shift_type', v)}
                           size="small"
-                          style={{ width: '100%' }}
+                          style={{ width: 80 }}
                         >
                           <Select.Option value="day">יום</Select.Option>
                           <Select.Option value="night">לילה</Select.Option>
                         </Select>
                       </Col>
-                      <Col span={6}>
+                      <Col>
                         <InputNumber
-                          value={dayData(selectedDay).duration_hours || 9}
-                          onChange={(v) => updateDayDuration(selectedDay, 'duration_hours', v || 9)}
+                          value={shift.duration_hours || 9}
+                          onChange={(v) => updateDayDuration(selectedDay, sIndex, 'duration_hours', v || 9)}
                           min={0.5}
-                          max={dayData(selectedDay).shift_type === 'night' ? 12 : 14}
+                          max={(shift.shift_type || 'day') === 'night' ? 12 : 14}
                           precision={1}
                           step={0.5}
                           size="small"
-                          style={{ width: '100%' }}
+                          style={{ width: 80 }}
                           addonAfter="שעות"
                         />
                       </Col>
-                      <Col span={6}>
+                      <Col>
                         <InputNumber
-                          value={dayData(selectedDay).break_minutes}
-                          onChange={(v) => updateDayBreak(selectedDay, v || 0)}
+                          value={shift.break_minutes}
+                          onChange={(v) => updateDayBreak(selectedDay, sIndex, v ?? 0)}
                           min={0}
                           max={180}
                           precision={0}
                           size="small"
-                          style={{ width: '100%' }}
-                          addonBefore="הפסקה"
+                          style={{ width: 100 }}
+                          addonBefore="הפ"
                           addonAfter="דק'"
                         />
                       </Col>
-                      <Col span={2}>
+                      <Col>
                         {dayData(selectedDay).shifts.length > 1 && (
                           <Button
                             type="text"

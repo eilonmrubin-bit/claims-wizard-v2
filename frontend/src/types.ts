@@ -52,19 +52,26 @@ export interface PatternLevelC {
   input_mode?: ShiftInputMode;  // 'time_range' | 'duration' — default 'duration'
 }
 
+// Shift entry with per-shift break
+export interface ShiftEntry {
+  start_time: string;
+  end_time: string;
+  break_minutes: number;        // 0 = no break
+  // Duration mode fields (optional)
+  shift_type?: ShiftType;       // 'day' | 'night'
+  duration_hours?: number;      // gross hours
+}
+
 // Level A per-day structure
 export interface PerDayShifts {
-  shifts: TimeRange[];
-  break_minutes: number;
-  // For duration mode
-  shift_type?: ShiftType;
-  duration_hours?: number;
+  shifts: ShiftEntry[];
 }
 
 // Level B (Cyclic) structures
 export interface WeekPattern {
   work_days: number[];
   per_day: Record<number, PerDayShifts>;
+  repeats?: number;  // default 1, min 1 — number of times this week appears in cycle
 }
 
 export interface PatternLevelB {
