@@ -393,13 +393,13 @@ function isRestDay(day_of_week, rest_day):
   return day_of_week == REST_DAY_MAP[rest_day]
 
 function isWorkDay(day_of_week, effective_period, day, is_rest_day):
-  // יום מנוחה גובר — גם אם הדפוס כולל אותו
-  if is_rest_day:
-    return false
+  // יום מנוחה לא דורס את הדפוס!
+  // אם הדפוס כולל את יום המנוחה, שני הדגלים דולקים.
+  // צינור שע"נ יחיל תעריפי מנוחה (150%/200%).
   return day_of_week in effective_period.pattern_work_days
 ```
 
-**הערה חשובה:** `is_work_day` מתייחס לדפוס הרגיל בלבד — "האם ביום הזה של השבוע העובד אמור לעבוד?". זה **לא** מביא בחשבון חגים, חופשות, מחלה, או היעדרויות. אלה מטופלים בזכויות הספציפיות (חגים, חופשה) ולא ברמת ה-daily_record.
+**הערה חשובה:** `is_work_day` מתייחס לדפוס השבועי בלבד — "האם ביום הזה של השבוע העובד אמור לעבוד?". זה **לא** מביא בחשבון חגים, חופשות, מחלה, או היעדרויות. אלה מטופלים בזכויות הספציפיות (חגים, חופשה) ולא ברמת ה-daily_record.
 
 ### 3.3 תבניות משמרות — גמישות מלאה
 
@@ -665,8 +665,9 @@ EMP_B: 2023-07-01 → 2023-12-31
 ```
 work_days: [0,1,2,3,4,5,6]  (א'-שבת)
 rest_day: saturday
-→ שבת: is_work_day=false (יום מנוחה גובר), is_rest_day=true, shift_templates=[]
-→ אזהרה (warning, לא error): "דפוס עבודה WP1 כולל את יום המנוחה (שבת)"
+→ שבת: is_work_day=true, is_rest_day=true, shift_templates מהדפוס (כרגיל)
+→ שני הדגלים דולקים — העובד עובד ביום המנוחה שלו
+→ צינור שע"נ יחיל תעריפי יום מנוחה (150%/200%) דרך חלון המנוחה
 ```
 
 ### 5. תקופת העסקה של יום אחד
@@ -757,4 +758,6 @@ WP1: shifts = [{06:00-14:00}, {16:00-22:00}]
 7. **DO NOT** מניחים שצירים ממויינים. תמיד למיין לפני עיבוד.
 8. **DO NOT** טוענים שעות שבת או מחשבים day_segments. זו אחריות OT stage 3.5.
 9. **DO NOT** משאירים Duration ריק. המארג מחשב ערכים מספריים (days, months_decimal, years_decimal). שדה `display` נוצר בפאזה 4.
-10. **DO NOT** מניחים דפוס אחיד לכל ימי השבוע. work_pattern יכול להכיל per_day ו-daily_overrides.
+10. **DO NOT** מזריקים הפסקות שהמשתמש לא הזין. `break_templates` ב-daily record מגיע אך ורק מ-per_day.breaks או default_breaks שהמשתמש הגדיר. אם שניהם ריקים — הרשומה תכיל `break_templates: []`. אין הפסקה אוטומטית של "חובת 30 דקות".
+11. **DO NOT** מניחים דפוס אחיד לכל ימי השבוע. work_pattern יכול להכיל per_day ו-daily_overrides.
+12. **DO NOT** חוסמים עבודה ביום מנוחה. אם הדפוס כולל את יום המנוחה ב-work_days, ה-daily record חייב להכיל `is_work_day=true` **וגם** `is_rest_day=true` עם shift_templates מלאים. צינור שע"נ יחיל תעריפי מנוחה (150%/200%). יום מנוחה לא דורס את הדפוס.

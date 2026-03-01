@@ -112,10 +112,11 @@ def test_is_work_day_not_in_pattern():
     assert is_work_day(5, [0, 1, 2, 3, 4], rest=False) is False
 
 
-def test_is_work_day_rest_overrides_pattern():
-    """Test rest day overrides pattern."""
-    # Saturday (6) even if in pattern, rest=True means not work day
-    assert is_work_day(6, [0, 1, 2, 3, 4, 5, 6], rest=True) is False
+def test_is_work_day_rest_does_not_override_pattern():
+    """Test rest day does NOT override pattern - both flags can be True."""
+    # Saturday (6) in pattern with rest=True still means work day
+    # The OT pipeline applies rest-day rates (150%/200%)
+    assert is_work_day(6, [0, 1, 2, 3, 4, 5, 6], rest=True) is True
 
 
 # =============================================================================
@@ -256,8 +257,9 @@ def test_day_segments_null_initially():
 
 
 def test_pattern_includes_rest_day():
-    """Test pattern including rest day - rest day overrides (edge case from skill)."""
-    # Pattern includes Saturday (6) but rest_day is Saturday
+    """Test pattern including rest day - both flags True, shifts loaded."""
+    # Pattern includes Saturday (6) and rest_day is Saturday
+    # Worker works on their rest day - entitled to 150%/200% rates
     ep = make_ep(
         "EP1",
         date(2024, 1, 6),
@@ -267,10 +269,11 @@ def test_pattern_includes_rest_day():
 
     records = generate_daily_records([ep], "saturday")
 
-    # Even though 6 is in work_days, is_rest_day=True so is_work_day=False
-    assert records[0].is_work_day is False
+    # Both is_work_day AND is_rest_day are True
+    # Shift templates are loaded (OT pipeline applies rest-day rates)
+    assert records[0].is_work_day is True
     assert records[0].is_rest_day is True
-    assert records[0].shift_templates == []
+    assert len(records[0].shift_templates) == 1  # Shifts loaded, not empty
 
 
 def test_two_shifts_per_day():
@@ -288,3 +291,35 @@ def test_two_shifts_per_day():
     records = generate_daily_records([ep], "saturday")
 
     assert len(records[0].shift_templates) == 2
+
+
+def test_rest_day_in_pattern_with_per_day_shifts():
+    """Test rest day work with per_day shifts - full scenario."""
+    # Pattern: work_days=[0,1,2,3,4,5,6], rest_day=saturday
+    # Saturday has specific per_day shifts
+    per_day = {
+        6: DayShifts(
+            shifts=[TimeRange(time(6, 30), time(18, 0))],
+            breaks=[TimeRange(time(12, 0), time(12, 30))]
+        )
+    }
+
+    ep = make_ep(
+        "EP1",
+        date(2024, 1, 6),
+        date(2024, 1, 6),  # Just Saturday
+        work_days=[0, 1, 2, 3, 4, 5, 6],  # All days including Saturday
+        per_day=per_day,
+    )
+
+    records = generate_daily_records([ep], "saturday")
+
+    # Saturday with rest_day=saturday but pattern includes it
+    assert records[0].is_work_day is True
+    assert records[0].is_rest_day is True
+    # Shift templates from per_day, not empty
+    assert len(records[0].shift_templates) == 1
+    assert records[0].shift_templates[0].start_time == time(6, 30)
+    assert records[0].shift_templates[0].end_time == time(18, 0)
+    # Break templates loaded
+    assert len(records[0].break_templates) == 1

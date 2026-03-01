@@ -248,7 +248,8 @@ def test_consecutive_eps_no_gap():
 
 def test_pattern_includes_rest_day():
     """Test pattern including rest day (edge case #4 from skill)."""
-    # Pattern includes Saturday but rest_day is Saturday
+    # Pattern includes Saturday and rest_day is Saturday
+    # Worker works on their rest day - entitled to 150%/200% rates
     eps = [make_ep("EP1", date(2024, 1, 6), date(2024, 1, 6))]  # Just Saturday
     wps = [make_wp("WP1", date(2024, 1, 6), date(2024, 1, 6), work_days=[0, 1, 2, 3, 4, 5, 6])]
     sts = [make_st("ST1", date(2024, 1, 6), date(2024, 1, 6))]
@@ -260,10 +261,11 @@ def test_pattern_includes_rest_day():
     assert len(result.warnings) == 1
     assert result.warnings[0].type == "pattern_includes_rest_day"
 
-    # Daily record should show Saturday as non-work day
+    # Daily record should show Saturday as BOTH work day AND rest day
+    # OT pipeline will apply rest-day rates (150%/200%)
     assert len(result.daily_records) == 1
-    assert result.daily_records[0].is_work_day is False
-    assert result.daily_records[0].is_rest_day is True
+    assert result.daily_records[0].is_work_day is True  # Pattern includes it
+    assert result.daily_records[0].is_rest_day is True  # It's the rest day
 
 
 def test_per_day_shifts():

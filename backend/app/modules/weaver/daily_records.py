@@ -43,10 +43,10 @@ def day_of_week(d: date) -> int:
 def is_work_day(dow: int, pattern_work_days: list[int], rest: bool) -> bool:
     """Check if the given day is a work day.
 
-    Rest day overrides pattern - even if pattern includes rest day.
+    If the pattern includes the rest day, both is_work_day and is_rest_day
+    will be True. The OT pipeline will apply rest-day rates (150%/200%).
+    Rest day does NOT override the pattern.
     """
-    if rest:
-        return False
     return dow in pattern_work_days
 
 
