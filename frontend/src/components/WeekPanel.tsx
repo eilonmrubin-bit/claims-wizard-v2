@@ -42,6 +42,16 @@ const formatShiftSummary = (shift: ShiftEntry): string => {
   return `${start}-${end}`;
 };
 
+const isOvernightShift = (shift: ShiftEntry): boolean => {
+  if (!shift.start_time || !shift.end_time) return false;
+  return shift.end_time <= shift.start_time;  // "22:00:00" > "10:00:00" → end < start
+};
+
+const isDurationOvernight = (shift: ShiftEntry): boolean => {
+  if (shift.shift_type === 'night') return true;
+  return isOvernightShift(shift);
+};
+
 const getStatusTag = (day: number, restDay: RestDay): string | null => {
   if (restDay === 'saturday') {
     if (day === 6) return 'מנוחה';
@@ -95,6 +105,14 @@ export const WeekPanel: React.FC<WeekPanelProps> = ({
     const newPerDay = { ...perDay };
     const shifts = [...(newPerDay[day]?.shifts || [])];
     shifts[shiftIndex] = { ...shifts[shiftIndex], break_minutes: value };
+    newPerDay[day] = { shifts };
+    onChange(workDays, newPerDay);
+  };
+
+  const updateShiftAnchor = (day: number, shiftIndex: number, anchor: 'starts_here' | 'ends_here') => {
+    const newPerDay = { ...perDay };
+    const shifts = [...(newPerDay[day]?.shifts || [])];
+    shifts[shiftIndex] = { ...shifts[shiftIndex], anchor };
     newPerDay[day] = { shifts };
     onChange(workDays, newPerDay);
   };
@@ -192,14 +210,17 @@ export const WeekPanel: React.FC<WeekPanelProps> = ({
                 )}
                 {active ? (
                   <>
-                    {data.shifts.map((s, i) => (
-                      <div key={i} style={{ fontSize: 11 }}>
-                        {formatShiftSummary(s)}
-                        {s.break_minutes > 0 && (
-                          <span style={{ fontSize: 10, color: '#888' }}> הפ{s.break_minutes}'</span>
-                        )}
-                      </div>
-                    ))}
+                    {[...data.shifts]
+                      .sort((a, b) => a.start_time.localeCompare(b.start_time))
+                      .map((s, i) => (
+                        <div key={i} style={{ fontSize: 11 }}>
+                          {formatShiftSummary(s)}
+                          {s.anchor === 'ends_here' && <span style={{ fontSize: 9, color: '#69c0ff' }}> ←</span>}
+                          {s.break_minutes > 0 && (
+                            <span style={{ fontSize: 10, color: '#888' }}> הפ{s.break_minutes}'</span>
+                          )}
+                        </div>
+                      ))}
                   </>
                 ) : (
                   <div style={{ fontSize: 18, color: '#555' }}>—</div>
@@ -253,50 +274,66 @@ export const WeekPanel: React.FC<WeekPanelProps> = ({
                 // Time range mode
                 <>
                   {dayData(selectedDay).shifts.map((shift, sIndex) => (
-                    <Row gutter={8} key={sIndex} align="middle" style={{ marginBottom: 8 }}>
-                      <Col>
-                        <span style={{ fontSize: 12 }}>משמרת {sIndex + 1}:</span>
-                      </Col>
-                      <Col>
-                        <TimeInput
-                          value={shift.start_time}
-                          onChange={(v) => updateDayShift(selectedDay, sIndex, 'start_time', v)}
-                          size="small"
-                        />
-                      </Col>
-                      <Col style={{ textAlign: 'center' }}>-</Col>
-                      <Col>
-                        <TimeInput
-                          value={shift.end_time}
-                          onChange={(v) => updateDayShift(selectedDay, sIndex, 'end_time', v)}
-                          size="small"
-                        />
-                      </Col>
-                      <Col>
-                        <InputNumber
-                          value={shift.break_minutes}
-                          onChange={(v) => updateDayBreak(selectedDay, sIndex, v ?? 0)}
-                          min={0}
-                          max={180}
-                          precision={0}
-                          size="small"
-                          style={{ width: 100 }}
-                          addonBefore="הפ"
-                          addonAfter="דק'"
-                        />
-                      </Col>
-                      <Col>
-                        {dayData(selectedDay).shifts.length > 1 && (
-                          <Button
-                            type="text"
-                            danger
+                    <React.Fragment key={sIndex}>
+                      <Row gutter={8} align="middle" style={{ marginBottom: 8 }}>
+                        <Col>
+                          <span style={{ fontSize: 12 }}>משמרת {sIndex + 1}:</span>
+                        </Col>
+                        <Col>
+                          <TimeInput
+                            value={shift.start_time}
+                            onChange={(v) => updateDayShift(selectedDay, sIndex, 'start_time', v)}
                             size="small"
-                            icon={<DeleteOutlined />}
-                            onClick={() => removeShiftFromDay(selectedDay, sIndex)}
                           />
-                        )}
-                      </Col>
-                    </Row>
+                        </Col>
+                        <Col style={{ textAlign: 'center' }}>-</Col>
+                        <Col>
+                          <TimeInput
+                            value={shift.end_time}
+                            onChange={(v) => updateDayShift(selectedDay, sIndex, 'end_time', v)}
+                            size="small"
+                          />
+                        </Col>
+                        <Col>
+                          <InputNumber
+                            value={shift.break_minutes}
+                            onChange={(v) => updateDayBreak(selectedDay, sIndex, v ?? 0)}
+                            min={0}
+                            max={180}
+                            precision={0}
+                            size="small"
+                            style={{ width: 100 }}
+                            addonBefore="הפ"
+                            addonAfter="דק'"
+                          />
+                        </Col>
+                        <Col>
+                          {dayData(selectedDay).shifts.length > 1 && (
+                            <Button
+                              type="text"
+                              danger
+                              size="small"
+                              icon={<DeleteOutlined />}
+                              onClick={() => removeShiftFromDay(selectedDay, sIndex)}
+                            />
+                          )}
+                        </Col>
+                      </Row>
+                      {isOvernightShift(shift) && (
+                        <Row style={{ marginBottom: 8, marginTop: -4 }}>
+                          <Col offset={1}>
+                            <Radio.Group
+                              value={shift.anchor || 'starts_here'}
+                              onChange={(e) => updateShiftAnchor(selectedDay, sIndex, e.target.value)}
+                              size="small"
+                            >
+                              <Radio value="starts_here">מתחילה ביום הזה</Radio>
+                              <Radio value="ends_here">מסתיימת ביום הזה</Radio>
+                            </Radio.Group>
+                          </Col>
+                        </Row>
+                      )}
+                    </React.Fragment>
                   ))}
                   <Button
                     type="dashed"
@@ -311,59 +348,75 @@ export const WeekPanel: React.FC<WeekPanelProps> = ({
                 // Duration mode
                 <>
                   {dayData(selectedDay).shifts.map((shift, sIndex) => (
-                    <Row gutter={8} key={sIndex} align="middle" style={{ marginBottom: 8 }}>
-                      <Col>
-                        <span style={{ fontSize: 12 }}>משמרת {sIndex + 1}:</span>
-                      </Col>
-                      <Col>
-                        <Select
-                          value={shift.shift_type || 'day'}
-                          onChange={(v) => updateDayDuration(selectedDay, sIndex, 'shift_type', v)}
-                          size="small"
-                          style={{ width: 80 }}
-                        >
-                          <Select.Option value="day">יום</Select.Option>
-                          <Select.Option value="night">לילה</Select.Option>
-                        </Select>
-                      </Col>
-                      <Col>
-                        <InputNumber
-                          value={shift.duration_hours || 9}
-                          onChange={(v) => updateDayDuration(selectedDay, sIndex, 'duration_hours', v || 9)}
-                          min={0.5}
-                          max={(shift.shift_type || 'day') === 'night' ? 12 : 14}
-                          precision={1}
-                          step={0.5}
-                          size="small"
-                          style={{ width: 80 }}
-                          addonAfter="שעות"
-                        />
-                      </Col>
-                      <Col>
-                        <InputNumber
-                          value={shift.break_minutes}
-                          onChange={(v) => updateDayBreak(selectedDay, sIndex, v ?? 0)}
-                          min={0}
-                          max={180}
-                          precision={0}
-                          size="small"
-                          style={{ width: 100 }}
-                          addonBefore="הפ"
-                          addonAfter="דק'"
-                        />
-                      </Col>
-                      <Col>
-                        {dayData(selectedDay).shifts.length > 1 && (
-                          <Button
-                            type="text"
-                            danger
+                    <React.Fragment key={sIndex}>
+                      <Row gutter={8} align="middle" style={{ marginBottom: 8 }}>
+                        <Col>
+                          <span style={{ fontSize: 12 }}>משמרת {sIndex + 1}:</span>
+                        </Col>
+                        <Col>
+                          <Select
+                            value={shift.shift_type || 'day'}
+                            onChange={(v) => updateDayDuration(selectedDay, sIndex, 'shift_type', v)}
                             size="small"
-                            icon={<DeleteOutlined />}
-                            onClick={() => removeShiftFromDay(selectedDay, sIndex)}
+                            style={{ width: 80 }}
+                          >
+                            <Select.Option value="day">יום</Select.Option>
+                            <Select.Option value="night">לילה</Select.Option>
+                          </Select>
+                        </Col>
+                        <Col>
+                          <InputNumber
+                            value={shift.duration_hours || 9}
+                            onChange={(v) => updateDayDuration(selectedDay, sIndex, 'duration_hours', v || 9)}
+                            min={0.5}
+                            max={(shift.shift_type || 'day') === 'night' ? 24 : 18}
+                            precision={1}
+                            step={0.5}
+                            size="small"
+                            style={{ width: 80 }}
+                            addonAfter="שעות"
                           />
-                        )}
-                      </Col>
-                    </Row>
+                        </Col>
+                        <Col>
+                          <InputNumber
+                            value={shift.break_minutes}
+                            onChange={(v) => updateDayBreak(selectedDay, sIndex, v ?? 0)}
+                            min={0}
+                            max={180}
+                            precision={0}
+                            size="small"
+                            style={{ width: 100 }}
+                            addonBefore="הפ"
+                            addonAfter="דק'"
+                          />
+                        </Col>
+                        <Col>
+                          {dayData(selectedDay).shifts.length > 1 && (
+                            <Button
+                              type="text"
+                              danger
+                              size="small"
+                              icon={<DeleteOutlined />}
+                              onClick={() => removeShiftFromDay(selectedDay, sIndex)}
+                            />
+                          )}
+                        </Col>
+                      </Row>
+                      {isDurationOvernight(shift) && (
+                        <Row style={{ marginBottom: 8, marginTop: -4 }}>
+                          <Col offset={1}>
+                            <Radio.Group
+                              value={shift.anchor || 'starts_here'}
+                              onChange={(e) => updateShiftAnchor(selectedDay, sIndex, e.target.value)}
+                              size="small"
+                            >
+                              <Radio value="starts_here">מתחילה ביום הזה</Radio>
+                              <Radio value="ends_here">מסתיימת ביום הזה</Radio>
+                            </Radio.Group>
+                          </Col>
+                        </Row>
+                      )}
+                    </React.Fragment>
                   ))}
                   <Button
                     type="dashed"

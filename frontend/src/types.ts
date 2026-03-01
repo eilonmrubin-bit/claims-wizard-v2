@@ -60,6 +60,7 @@ export interface ShiftEntry {
   // Duration mode fields (optional)
   shift_type?: ShiftType;       // 'day' | 'night'
   duration_hours?: number;      // gross hours
+  anchor?: 'starts_here' | 'ends_here';  // for overnight shifts — default 'starts_here'
 }
 
 // Level A per-day structure

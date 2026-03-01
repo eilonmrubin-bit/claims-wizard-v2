@@ -69,6 +69,7 @@ import type {
   NightPlacement,
   PerDayShifts,
   ShiftInputMode,
+  ShiftEntry,
   WeekPattern,
   PatternLevelB,
 } from './types';
@@ -110,15 +111,45 @@ const breakToTimeRange = (breakMinutes: number, shiftStart: string, shiftEnd: st
 };
 
 /**
+ * Check if a shift crosses midnight (end_time <= start_time means overnight).
+ */
+const isOvernightShift = (shift: { start_time: string; end_time: string }): boolean => {
+  return shift.end_time <= shift.start_time;
+};
+
+/**
  * Convert frontend PerDayShifts to backend DayShifts format.
  * Each ShiftEntry has its own break_minutes which gets converted to TimeRange.
+ * Handles anchor='ends_here' by moving overnight shifts to the previous day.
  */
 const convertPerDayForBackend = (
   perDay: Record<number, PerDayShifts>,
 ): Record<string, { shifts: { start_time: string; end_time: string }[]; breaks?: { start_time: string; end_time: string }[] }> => {
+  // First pass: collect all shifts, handling anchor moves
+  const adjustedPerDay: Record<number, { shifts: ShiftEntry[] }> = {};
+
+  // Initialize from original
+  for (const [dayStr, dayData] of Object.entries(perDay)) {
+    const day = parseInt(dayStr);
+    adjustedPerDay[day] = { shifts: [] };
+    for (const shift of dayData.shifts) {
+      if (shift.anchor === 'ends_here' && isOvernightShift(shift)) {
+        // Move to previous day (0=Sunday → 6=Saturday wraps)
+        const prevDay = (day - 1 + 7) % 7;
+        if (!adjustedPerDay[prevDay]) adjustedPerDay[prevDay] = { shifts: [] };
+        adjustedPerDay[prevDay].shifts.push({ ...shift, anchor: 'starts_here' });
+      } else {
+        adjustedPerDay[day].shifts.push(shift);
+      }
+    }
+  }
+
+  // Second pass: convert to backend format
   const result: Record<string, { shifts: { start_time: string; end_time: string }[]; breaks?: { start_time: string; end_time: string }[] }> = {};
 
-  for (const [dayStr, dayData] of Object.entries(perDay)) {
+  for (const [dayStr, dayData] of Object.entries(adjustedPerDay)) {
+    if (dayData.shifts.length === 0) continue;
+
     const shifts = dayData.shifts.map(s => ({
       start_time: s.start_time,
       end_time: s.end_time,
@@ -1092,7 +1123,7 @@ function App() {
                             onChange={(e) => switchPatternType(pIndex, e.target.value as PatternType)}
                           >
                             <Radio value="statistical">סטטיסטי</Radio>
-                            <Radio value="weekly_simple">שבועי ידני</Radio>
+                            <Radio value="weekly_simple">דפוס שבועי</Radio>
                             <Radio value="cyclic">מחזורי</Radio>
                           </Radio.Group>
                         </Form.Item>

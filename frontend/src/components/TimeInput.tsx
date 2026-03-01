@@ -65,7 +65,25 @@ const TimeInput: React.FC<TimeInputProps> = ({ value, onChange, placeholder, sty
       onChange('');
       return;
     }
-    const parsed = parseTimeValue(display);
+
+    let normalized = display;
+
+    // Auto-complete partial input
+    const digits = display.replace(/\D/g, '');
+    if (digits.length === 1) {
+      // "8" → "08:00"
+      normalized = `0${digits}:00`;
+    } else if (digits.length === 2) {
+      // "08" or "20" → "08:00" or "20:00"
+      normalized = `${digits}:00`;
+    } else if (digits.length === 3) {
+      // "830" → "08:30"
+      normalized = `0${digits[0]}:${digits[1]}${digits[2]}`;
+    }
+    // 4 digits already handled by formatTimeInput → "08:30"
+
+    setDisplay(normalized);
+    const parsed = parseTimeValue(normalized);
     if (parsed) {
       setIsValid(true);
       onChange(parsed);
