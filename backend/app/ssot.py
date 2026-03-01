@@ -402,6 +402,9 @@ class PeriodMonthRecord:
     total_ot_hours: Decimal = Decimal("0")
     avg_regular_hours_per_day: Decimal = Decimal("0")
     avg_regular_hours_per_shift: Decimal = Decimal("0")
+    # Total hours (regular + OT) for salary conversion
+    avg_total_hours_per_day: Decimal = Decimal("0")
+    avg_total_hours_per_shift: Decimal = Decimal("0")
 
     # Salary - from Salary Conversion
     salary_input_amount: Decimal = Decimal("0")

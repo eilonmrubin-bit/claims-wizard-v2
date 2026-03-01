@@ -150,9 +150,8 @@ def convert_salary(
     input_amount: Decimal,
     input_type: SalaryType,
     input_net_or_gross: NetOrGross,
-    avg_regular_hours_per_day: Decimal,
-    avg_regular_hours_per_month: Decimal,
-    avg_regular_hours_per_shift: Decimal | None,
+    avg_total_hours_per_day: Decimal,
+    avg_total_hours_per_shift: Decimal | None,
     target_date: date,
     week_type: WeekType = WeekType.FIVE_DAY,
     full_time_hours_base: Decimal = DEFAULT_FULL_TIME_HOURS_BASE,
@@ -164,9 +163,9 @@ def convert_salary(
         input_amount: The raw salary amount
         input_type: Type of input (hourly/daily/monthly/per_shift)
         input_net_or_gross: Whether input is net or gross
-        avg_regular_hours_per_day: Average regular hours per work day
-        avg_regular_hours_per_month: Total regular hours in the month
-        avg_regular_hours_per_shift: Average regular hours per shift (for per_shift only)
+        avg_total_hours_per_day: Average TOTAL hours (regular + OT) per work day.
+            A daily wage covers the entire shift including OT hours.
+        avg_total_hours_per_shift: Average TOTAL hours per shift (for per_shift only)
         target_date: Date for minimum wage lookup
         week_type: 5-day or 6-day work week
         data_path: Optional path to minimum wage CSV
@@ -194,28 +193,30 @@ def convert_salary(
         minimum_gap = Decimal("0")
 
     # Step 3: Convert to all types (through hourly pivot)
+    # IMPORTANT: daily↔hourly uses TOTAL hours (regular + OT) because
+    # a daily wage covers the entire shift, not just regular hours.
     if input_type == SalaryType.HOURLY:
         hourly = effective_amount
     elif input_type == SalaryType.DAILY:
-        if avg_regular_hours_per_day == 0:
+        if avg_total_hours_per_day == 0:
             hourly = Decimal("0")
         else:
-            hourly = effective_amount / avg_regular_hours_per_day
+            hourly = effective_amount / avg_total_hours_per_day
     elif input_type == SalaryType.MONTHLY:
         if full_time_hours_base == 0:
             hourly = Decimal("0")
         else:
             hourly = effective_amount / full_time_hours_base
     elif input_type == SalaryType.PER_SHIFT:
-        if avg_regular_hours_per_shift is None or avg_regular_hours_per_shift == 0:
+        if avg_total_hours_per_shift is None or avg_total_hours_per_shift == 0:
             hourly = Decimal("0")
         else:
-            hourly = effective_amount / avg_regular_hours_per_shift
+            hourly = effective_amount / avg_total_hours_per_shift
     else:
         raise ValueError(f"Unknown salary type: {input_type}")
 
     # Convert hourly to other types
-    daily = hourly * avg_regular_hours_per_day
+    daily = hourly * avg_total_hours_per_day
     monthly = hourly * full_time_hours_base
 
     return SalaryConversionResult(
@@ -251,11 +252,6 @@ def process_period_month_record(
     Returns:
         Updated PeriodMonthRecord with salary fields filled
     """
-    # Calculate avg_regular_hours_per_shift if needed
-    avg_per_shift = None
-    if input_type == SalaryType.PER_SHIFT and pmr.shifts_count > 0:
-        avg_per_shift = pmr.total_regular_hours / Decimal(pmr.shifts_count)
-
     # Use first day of month for minimum wage lookup
     year, month = pmr.month
     target_date = date(year, month, 1)
@@ -270,9 +266,8 @@ def process_period_month_record(
         input_amount=input_amount,
         input_type=input_type,
         input_net_or_gross=input_net_or_gross,
-        avg_regular_hours_per_day=pmr.avg_regular_hours_per_day,
-        avg_regular_hours_per_month=pmr.total_regular_hours,
-        avg_regular_hours_per_shift=avg_per_shift,
+        avg_total_hours_per_day=pmr.avg_total_hours_per_day,
+        avg_total_hours_per_shift=pmr.avg_total_hours_per_shift,
         target_date=target_date,
         week_type=week_type,
         full_time_hours_base=DEFAULT_FULL_TIME_HOURS_BASE,

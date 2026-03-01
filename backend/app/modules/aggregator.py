@@ -64,6 +64,12 @@ def _aggregate_by_period_month(shifts: list[Shift]) -> list[PeriodMonthRecord]:
         avg_per_day = total_regular / Decimal(work_days) if work_days > 0 else Decimal("0")
         avg_per_shift = total_regular / Decimal(shifts_count) if shifts_count > 0 else Decimal("0")
 
+        # Total hours (regular + OT) for salary conversion
+        # A daily wage covers the entire shift, not just regular hours
+        total_hours = total_regular + total_ot
+        avg_total_per_day = total_hours / Decimal(work_days) if work_days > 0 else Decimal("0")
+        avg_total_per_shift = total_hours / Decimal(shifts_count) if shifts_count > 0 else Decimal("0")
+
         result.append(PeriodMonthRecord(
             effective_period_id=ep_id,
             month=(year, month),
@@ -73,6 +79,8 @@ def _aggregate_by_period_month(shifts: list[Shift]) -> list[PeriodMonthRecord]:
             total_ot_hours=total_ot,
             avg_regular_hours_per_day=avg_per_day,
             avg_regular_hours_per_shift=avg_per_shift,
+            avg_total_hours_per_day=avg_total_per_day,
+            avg_total_hours_per_shift=avg_total_per_shift,
         ))
 
     # Sort by period_id, then by month for consistent output

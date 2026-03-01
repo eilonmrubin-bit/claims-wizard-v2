@@ -12,7 +12,7 @@ description: |
 ## CRITICAL WARNINGS
 
 1. **All conversions go through hourly.** Hourly is the pivot. Convert input → hourly first, then hourly → other types.
-2. **"Regular hours" come from the SSOT, not recalculated.** Every conversion uses regular hours (Tier 0) as determined by the overtime pipeline.
+2. **"Total shift hours" come from the SSOT, not recalculated.** Daily↔hourly conversion uses avg total hours per day (all tiers: regular + OT), because a daily wage pays for the entire shift. Per-shift conversion uses avg total hours per shift.
 3. **Minimum wage comparison uses the same salary type as the input.** Input is hourly → compare to hourly minimum. Input is daily → compare to daily minimum. Input is monthly → compare to monthly minimum. Input is per-shift → compare to **daily** minimum (per-shift has no legal minimum of its own).
 4. **Net → Gross is always ×1.12.** No tax brackets, no exceptions.
 5. **Never invent minimum wage values.** Use the historical table. If a date is not covered, ASK.
@@ -111,28 +111,29 @@ else:
 
 ## Step 3: Conversion to All Types
 
-All conversions use **regular hours data from the SSOT** for hourly↔daily conversion. The overtime pipeline (stages 1–6) writes each shift's regular hours (Tier 0) to the SSOT. The salary conversion module aggregates this data per month:
+All conversions use **total shift hours data from the SSOT** for hourly↔daily conversion. The overtime pipeline (stages 1–6) writes each shift's hours per tier to the SSOT. The salary conversion module aggregates this data per month:
 
-- **avg_regular_hours_per_day**: total regular hours in month ÷ number of work days in month
-- **avg_regular_hours_per_shift**: total regular hours in month ÷ number of shifts in month (for per-shift input)
+- **avg_total_hours_per_day**: total shift hours in month (all tiers) ÷ number of work days in month
+- **avg_total_hours_per_shift**: total shift hours in month (all tiers) ÷ number of shifts in month (for per-shift input)
 - **full_time_hours_base**: 182 hours (from system settings, configurable). Used for hourly↔monthly conversion.
 
-**DO NOT** recalculate regular hours independently. Read them from the SSOT.
+**DO NOT** recalculate hours independently. Read them from the SSOT.
+**DO NOT** use only regular (Tier 0) hours for daily↔hourly. A daily wage covers the entire shift.
 
-**CRITICAL:** Monthly salary is always `hourly × full_time_hours_base (182)`. It does NOT use actual regular hours worked in a given month. The variable `avg_regular_hours_per_month` is used ONLY for daily↔hourly conversion context, NOT for monthly calculation.
+**CRITICAL:** Monthly salary is always `hourly × full_time_hours_base (182)`. It does NOT use actual hours worked in a given month. The adjustment for actual hours is done via job_scope (היקף משרה), not via salary_monthly.
 
 ### From Hourly (שעתי):
 
 ```
 hourly = effective
-daily = hourly × avg_regular_hours_per_day
-monthly = hourly × full_time_hours_base            // 182, NOT avg_regular_hours_per_month
+daily = hourly × avg_total_hours_per_day
+monthly = hourly × full_time_hours_base            // 182, NOT actual monthly hours
 ```
 
 ### From Daily (יומי):
 
 ```
-hourly = effective / avg_regular_hours_per_day
+hourly = effective / avg_total_hours_per_day
 daily = effective
 monthly = hourly × full_time_hours_base            // 182
 ```
@@ -140,16 +141,16 @@ monthly = hourly × full_time_hours_base            // 182
 ### From Monthly (חודשי):
 
 ```
-hourly = effective / full_time_hours_base           // 182, NOT avg_regular_hours_per_month
+hourly = effective / full_time_hours_base           // 182, NOT actual monthly hours
 monthly = effective
-daily = hourly × avg_regular_hours_per_day
+daily = hourly × avg_total_hours_per_day
 ```
 
 ### From Per-Shift (לפי משמרת):
 
 ```
-hourly = effective / avg_regular_hours_per_shift
-daily = hourly × avg_regular_hours_per_day
+hourly = effective / avg_total_hours_per_shift
+daily = hourly × avg_total_hours_per_day
 monthly = hourly × full_time_hours_base            // 182
 ```
 
@@ -160,10 +161,10 @@ monthly = hourly × full_time_hours_base            // 182
 ## Per-Month Calculation
 
 Conversions are calculated **per calendar month separately**, because:
-- Regular hours per **day** vary (different number of work days per month → different avg_regular_hours_per_day)
+- Total hours per **day** vary (different number of work days per month → different avg_total_hours_per_day)
 - Minimum wage may change mid-period (rate changes on a specific date)
 
-For a tier spanning Jan–Jun, the system produces 6 separate monthly records. The hourly and daily values may vary slightly between months (due to different avg_regular_hours_per_day). The monthly value stays constant as long as the hourly rate doesn't change (since monthly = hourly × 182, and 182 is constant).
+For a tier spanning Jan–Jun, the system produces 6 separate monthly records. The hourly and daily values may vary slightly between months (due to different avg_total_hours_per_day). The monthly value stays constant as long as the hourly rate doesn't change (since monthly = hourly × 182, and 182 is constant).
 
 ---
 
@@ -182,9 +183,9 @@ SalaryData {
     monthly_records: List<{
       month: (year, month)
 
-      // Regular hours (written by overtime pipeline)
-      avg_regular_hours_per_day: decimal
-      avg_regular_hours_per_shift: decimal?   // only if input is per-shift
+      // Hours from overtime pipeline (all tiers summed)
+      avg_total_hours_per_day: decimal
+      avg_total_hours_per_shift: decimal?   // only if input is per-shift
 
       // Minimum wage check
       minimum_wage_value: decimal        // the minimum for comparison type
@@ -265,7 +266,7 @@ effective_date,hourly,daily_5day,daily_6day,monthly
 
 1. **Minimum wage changes mid-tier** — the tier is split into monthly records. Each month uses the minimum wage effective for that month's date.
 
-2. **Per-shift input, varying shift lengths** — average regular hours per shift is aggregated from shift data in the SSOT per month. If shifts are inconsistent, the average captures this.
+2. **Per-shift input, varying shift lengths** — average total hours per shift is aggregated from shift data in the SSOT per month. If shifts are inconsistent, the average captures this.
 
 3. **Net input below minimum even after ×1.12** — the system applies minimum AFTER gross normalization. So: net ₪4,800 → gross ₪5,376 → still below ₪5,571.75 → use ₪5,571.75.
 
@@ -277,10 +278,11 @@ effective_date,hourly,daily_5day,daily_6day,monthly
 
 ## Anti-Patterns (DO NOT DO)
 
-1. **DO NOT** use actual monthly hours (avg_regular_hours_per_month) for monthly salary calculation. Monthly salary = hourly × full_time_hours_base (182). The adjustment for actual hours is via job_scope.
+1. **DO NOT** use actual monthly hours for monthly salary calculation. Monthly salary = hourly × full_time_hours_base (182). The adjustment for actual hours is via job_scope.
 2. **DO NOT** convert directly between non-hourly types (e.g., daily→monthly without going through hourly). Hourly is always the pivot.
 3. **DO NOT** compare per-shift input to hourly minimum. Use daily minimum for per-shift.
 4. **DO NOT** apply minimum wage before gross normalization. Net→gross first, then minimum check.
 5. **DO NOT** hardcode minimum wage values. Use the historical table.
 6. **DO NOT** use a single conversion for an entire tier. Calculate per month separately.
 7. **DO NOT** hardcode 182 inline. Read full_time_hours_base from system settings (DEFAULT_FULL_TIME_HOURS_BASE).
+8. **DO NOT** use only regular hours (Tier 0) for daily↔hourly conversion. A daily wage covers the entire shift including OT hours. Use total shift hours (all tiers).
