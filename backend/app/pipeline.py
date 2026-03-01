@@ -314,21 +314,18 @@ def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
 
         # Step 4: Salary Conversion
         if ssot.period_month_records and ssot.effective_periods:
-            # Build lookup for salary tier by effective_period_id
-            ep_salary_lookup = {
-                ep.id: (ep.salary_amount, ep.salary_type, ep.salary_net_or_gross)
-                for ep in ssot.effective_periods
-            }
+            # Build lookup for effective_period by id
+            ep_lookup = {ep.id: ep for ep in ssot.effective_periods}
 
             for pmr in ssot.period_month_records:
-                salary_info = ep_salary_lookup.get(pmr.effective_period_id)
-                if salary_info:
-                    amount, stype, net_or_gross = salary_info
+                ep = ep_lookup.get(pmr.effective_period_id)
+                if ep:
                     process_period_month_record(
                         pmr=pmr,
-                        input_amount=amount,
-                        input_type=stype,
-                        input_net_or_gross=net_or_gross,
+                        ep=ep,
+                        input_amount=ep.salary_amount,
+                        input_type=ep.salary_type,
+                        input_net_or_gross=ep.salary_net_or_gross,
                         week_type=WeekType.FIVE_DAY,  # Default
                     )
 

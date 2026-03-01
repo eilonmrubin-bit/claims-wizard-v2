@@ -4,7 +4,7 @@ Test cases from docs/skills/salary-conversion/SKILL.md.
 """
 
 import pytest
-from datetime import date
+from datetime import date, time
 from decimal import Decimal
 from pathlib import Path
 import tempfile
@@ -15,9 +15,17 @@ from app.modules.salary_conversion import (
     get_minimum_wage,
     process_period_month_record,
     _clear_minimum_wage_cache,
+    _compute_pattern_avg_hours,
     NET_TO_GROSS_MULTIPLIER,
 )
-from app.ssot import PeriodMonthRecord, SalaryType, NetOrGross, WeekType
+from app.ssot import (
+    PeriodMonthRecord,
+    EffectivePeriod,
+    TimeRange,
+    SalaryType,
+    NetOrGross,
+    WeekType,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -91,8 +99,8 @@ class TestGrossNormalization:
             input_amount=Decimal("4800"),
             input_type=SalaryType.MONTHLY,
             input_net_or_gross=NetOrGross.NET,
-            avg_total_hours_per_day=Decimal("8"),
-            avg_total_hours_per_shift=None,
+            pattern_avg_hours_per_day=Decimal("8"),
+            pattern_avg_hours_per_shift=None,
             target_date=date(2024, 6, 1),
             week_type=WeekType.FIVE_DAY,
             data_path=test_data_path,
@@ -108,8 +116,8 @@ class TestGrossNormalization:
             input_amount=Decimal("6000"),
             input_type=SalaryType.MONTHLY,
             input_net_or_gross=NetOrGross.GROSS,
-            avg_total_hours_per_day=Decimal("8"),
-            avg_total_hours_per_shift=None,
+            pattern_avg_hours_per_day=Decimal("8"),
+            pattern_avg_hours_per_shift=None,
             target_date=date(2024, 6, 1),
             week_type=WeekType.FIVE_DAY,
             data_path=test_data_path,
@@ -129,8 +137,8 @@ class TestMinimumWageCheck:
             input_amount=Decimal("25"),  # Below 32.30
             input_type=SalaryType.HOURLY,
             input_net_or_gross=NetOrGross.GROSS,
-            avg_total_hours_per_day=Decimal("8"),
-            avg_total_hours_per_shift=None,
+            pattern_avg_hours_per_day=Decimal("8"),
+            pattern_avg_hours_per_shift=None,
             target_date=date(2024, 6, 1),
             week_type=WeekType.FIVE_DAY,
             data_path=test_data_path,
@@ -149,8 +157,8 @@ class TestMinimumWageCheck:
             input_amount=Decimal("45"),
             input_type=SalaryType.HOURLY,
             input_net_or_gross=NetOrGross.GROSS,
-            avg_total_hours_per_day=Decimal("8"),
-            avg_total_hours_per_shift=None,
+            pattern_avg_hours_per_day=Decimal("8"),
+            pattern_avg_hours_per_shift=None,
             target_date=date(2024, 6, 1),
             week_type=WeekType.FIVE_DAY,
             data_path=test_data_path,
@@ -167,8 +175,8 @@ class TestMinimumWageCheck:
             input_amount=Decimal("200"),  # Below 271.38
             input_type=SalaryType.DAILY,
             input_net_or_gross=NetOrGross.GROSS,
-            avg_total_hours_per_day=Decimal("8.4"),
-            avg_total_hours_per_shift=None,
+            pattern_avg_hours_per_day=Decimal("8.4"),
+            pattern_avg_hours_per_shift=None,
             target_date=date(2024, 6, 1),
             week_type=WeekType.FIVE_DAY,
             data_path=test_data_path,
@@ -184,8 +192,8 @@ class TestMinimumWageCheck:
             input_amount=Decimal("200"),  # Below 235.20
             input_type=SalaryType.DAILY,
             input_net_or_gross=NetOrGross.GROSS,
-            avg_total_hours_per_day=Decimal("7"),
-            avg_total_hours_per_shift=None,
+            pattern_avg_hours_per_day=Decimal("7"),
+            pattern_avg_hours_per_shift=None,
             target_date=date(2024, 6, 1),
             week_type=WeekType.SIX_DAY,
             data_path=test_data_path,
@@ -201,8 +209,8 @@ class TestMinimumWageCheck:
             input_amount=Decimal("200"),  # Below daily minimum
             input_type=SalaryType.PER_SHIFT,
             input_net_or_gross=NetOrGross.GROSS,
-            avg_total_hours_per_day=Decimal("8"),
-            avg_total_hours_per_shift=Decimal("8"),
+            pattern_avg_hours_per_day=Decimal("8"),
+            pattern_avg_hours_per_shift=Decimal("8"),
             target_date=date(2024, 6, 1),
             week_type=WeekType.FIVE_DAY,
             data_path=test_data_path,
@@ -222,8 +230,8 @@ class TestConversions:
             input_amount=Decimal("45"),
             input_type=SalaryType.HOURLY,
             input_net_or_gross=NetOrGross.GROSS,
-            avg_total_hours_per_day=Decimal("8.4"),
-            avg_total_hours_per_shift=None,
+            pattern_avg_hours_per_day=Decimal("8.4"),
+            pattern_avg_hours_per_shift=None,
             target_date=date(2024, 6, 1),
             week_type=WeekType.FIVE_DAY,
             data_path=test_data_path,
@@ -239,8 +247,8 @@ class TestConversions:
             input_amount=Decimal("378"),
             input_type=SalaryType.DAILY,
             input_net_or_gross=NetOrGross.GROSS,
-            avg_total_hours_per_day=Decimal("8.4"),
-            avg_total_hours_per_shift=None,
+            pattern_avg_hours_per_day=Decimal("8.4"),
+            pattern_avg_hours_per_shift=None,
             target_date=date(2024, 6, 1),
             week_type=WeekType.FIVE_DAY,
             data_path=test_data_path,
@@ -258,8 +266,8 @@ class TestConversions:
             input_amount=Decimal("8190"),
             input_type=SalaryType.MONTHLY,
             input_net_or_gross=NetOrGross.GROSS,
-            avg_total_hours_per_day=Decimal("8.4"),
-            avg_total_hours_per_shift=None,
+            pattern_avg_hours_per_day=Decimal("8.4"),
+            pattern_avg_hours_per_shift=None,
             target_date=date(2024, 6, 1),
             week_type=WeekType.FIVE_DAY,
             data_path=test_data_path,
@@ -277,8 +285,8 @@ class TestConversions:
             input_amount=Decimal("360"),  # Per shift
             input_type=SalaryType.PER_SHIFT,
             input_net_or_gross=NetOrGross.GROSS,
-            avg_total_hours_per_day=Decimal("8"),
-            avg_total_hours_per_shift=Decimal("8"),
+            pattern_avg_hours_per_day=Decimal("8"),
+            pattern_avg_hours_per_shift=Decimal("8"),
             target_date=date(2024, 6, 1),
             week_type=WeekType.FIVE_DAY,
             data_path=test_data_path,
@@ -302,8 +310,8 @@ class TestEdgeCases:
             input_amount=Decimal("25"),
             input_type=SalaryType.HOURLY,
             input_net_or_gross=NetOrGross.GROSS,
-            avg_total_hours_per_day=Decimal("8"),
-            avg_total_hours_per_shift=None,
+            pattern_avg_hours_per_day=Decimal("8"),
+            pattern_avg_hours_per_shift=None,
             target_date=date(2024, 3, 1),
             week_type=WeekType.FIVE_DAY,
             data_path=test_data_path,
@@ -314,8 +322,8 @@ class TestEdgeCases:
             input_amount=Decimal("25"),
             input_type=SalaryType.HOURLY,
             input_net_or_gross=NetOrGross.GROSS,
-            avg_total_hours_per_day=Decimal("8"),
-            avg_total_hours_per_shift=None,
+            pattern_avg_hours_per_day=Decimal("8"),
+            pattern_avg_hours_per_shift=None,
             target_date=date(2024, 4, 1),
             week_type=WeekType.FIVE_DAY,
             data_path=test_data_path,
@@ -331,8 +339,8 @@ class TestEdgeCases:
             input_amount=Decimal("4800"),
             input_type=SalaryType.MONTHLY,
             input_net_or_gross=NetOrGross.NET,
-            avg_total_hours_per_day=Decimal("8"),
-            avg_total_hours_per_shift=None,
+            pattern_avg_hours_per_day=Decimal("8"),
+            pattern_avg_hours_per_shift=None,
             target_date=date(2024, 6, 1),
             week_type=WeekType.FIVE_DAY,
             data_path=test_data_path,
@@ -349,8 +357,8 @@ class TestEdgeCases:
             input_amount=Decimal("0"),
             input_type=SalaryType.HOURLY,
             input_net_or_gross=NetOrGross.GROSS,
-            avg_total_hours_per_day=Decimal("8"),
-            avg_total_hours_per_shift=None,
+            pattern_avg_hours_per_day=Decimal("8"),
+            pattern_avg_hours_per_shift=None,
             target_date=date(2024, 6, 1),
             week_type=WeekType.FIVE_DAY,
             data_path=test_data_path,
@@ -367,8 +375,8 @@ class TestEdgeCases:
             input_amount=Decimal("300"),
             input_type=SalaryType.PER_SHIFT,
             input_net_or_gross=NetOrGross.GROSS,
-            avg_total_hours_per_day=Decimal("8"),
-            avg_total_hours_per_shift=Decimal("7.5"),
+            pattern_avg_hours_per_day=Decimal("8"),
+            pattern_avg_hours_per_shift=Decimal("7.5"),
             target_date=date(2024, 6, 1),
             week_type=WeekType.FIVE_DAY,
             data_path=test_data_path,
@@ -388,8 +396,8 @@ class TestAntiPatterns:
             input_amount=Decimal("45"),
             input_type=SalaryType.HOURLY,
             input_net_or_gross=NetOrGross.GROSS,
-            avg_total_hours_per_day=Decimal("8"),
-            avg_total_hours_per_shift=None,
+            pattern_avg_hours_per_day=Decimal("8"),
+            pattern_avg_hours_per_shift=None,
             target_date=date(2024, 6, 1),
             week_type=WeekType.FIVE_DAY,
             data_path=test_data_path,
@@ -405,8 +413,8 @@ class TestAntiPatterns:
             input_amount=Decimal("336"),  # Daily
             input_type=SalaryType.DAILY,
             input_net_or_gross=NetOrGross.GROSS,
-            avg_total_hours_per_day=Decimal("8"),
-            avg_total_hours_per_shift=None,
+            pattern_avg_hours_per_day=Decimal("8"),
+            pattern_avg_hours_per_shift=None,
             target_date=date(2024, 6, 1),
             week_type=WeekType.FIVE_DAY,
             data_path=test_data_path,
@@ -424,8 +432,8 @@ class TestAntiPatterns:
             input_amount=Decimal("30"),
             input_type=SalaryType.HOURLY,
             input_net_or_gross=NetOrGross.NET,
-            avg_total_hours_per_day=Decimal("8"),
-            avg_total_hours_per_shift=None,
+            pattern_avg_hours_per_day=Decimal("8"),
+            pattern_avg_hours_per_shift=None,
             target_date=date(2024, 6, 1),
             week_type=WeekType.FIVE_DAY,
             data_path=test_data_path,
@@ -441,6 +449,21 @@ class TestPeriodMonthRecordProcessing:
 
     def test_process_record(self, test_data_path):
         """Process a period month record fills all salary fields."""
+        # Create EP with 5-day, 8-hour pattern
+        ep = EffectivePeriod(
+            id="ep1",
+            start=date(2024, 6, 1),
+            end=date(2024, 6, 30),
+            pattern_work_days=[0, 1, 2, 3, 4],  # Sun-Thu
+            pattern_default_shifts=[
+                TimeRange(start_time=time(8, 0), end_time=time(16, 0))
+            ],
+            pattern_default_breaks=[],
+            salary_amount=Decimal("45"),
+            salary_type=SalaryType.HOURLY,
+            salary_net_or_gross=NetOrGross.GROSS,
+        )
+
         pmr = PeriodMonthRecord(
             effective_period_id="ep1",
             month=(2024, 6),
@@ -448,12 +471,11 @@ class TestPeriodMonthRecordProcessing:
             shifts_count=22,
             total_regular_hours=Decimal("176"),
             total_ot_hours=Decimal("10"),
-            avg_total_hours_per_day=Decimal("8"),
-            avg_total_hours_per_shift=Decimal("8"),
         )
 
         result = process_period_month_record(
             pmr=pmr,
+            ep=ep,
             input_amount=Decimal("45"),
             input_type=SalaryType.HOURLY,
             input_net_or_gross=NetOrGross.GROSS,
@@ -467,29 +489,99 @@ class TestPeriodMonthRecordProcessing:
         assert result.salary_gross_amount == Decimal("45")
         assert result.minimum_applied is False
         assert result.salary_hourly == Decimal("45")
-        assert result.salary_daily == Decimal("360")
+        assert result.salary_daily == Decimal("360")  # 45 * 8 hours
         # 45 * 182 = 8190 (always uses full_time_hours_base)
         assert result.salary_monthly == Decimal("8190")
 
 
-class TestTotalHoursConversion:
-    """Test that daily↔hourly uses TOTAL hours (regular + OT), not just regular."""
+class TestPatternAvgHoursComputation:
+    """Test that pattern average hours are computed correctly from EP."""
 
-    def test_daily_net_650_with_ot(self, test_data_path):
-        """650 net daily, 10.33 avg total hours → ~70.47 hourly.
+    def test_compute_pattern_avg_hours_6day(self):
+        """6-day pattern: Sun-Thu 10.5h, Fri 9.5h → avg 10.3333h/day."""
+        from app.ssot import DayShifts
 
-        Example: Worker paid 650 NIS/day net, works 06:30-17:00 (10.5 hours).
-        - Wrong (regular only): 728 ÷ 7.13 = 102.06 ₪/hour
-        - Correct (total hours): 728 ÷ 10.33 = 70.47 ₪/hour
+        ep = EffectivePeriod(
+            id="EP1",
+            start=date(2024, 8, 7),
+            end=date(2024, 12, 31),
+            pattern_work_days=[0, 1, 2, 3, 4, 5],  # Sun-Fri
+            pattern_default_shifts=[],
+            pattern_default_breaks=[],
+            pattern_per_day={
+                0: DayShifts(shifts=[TimeRange(start_time=time(6, 30), end_time=time(17, 0))]),
+                1: DayShifts(shifts=[TimeRange(start_time=time(6, 30), end_time=time(17, 0))]),
+                2: DayShifts(shifts=[TimeRange(start_time=time(6, 30), end_time=time(17, 0))]),
+                3: DayShifts(shifts=[TimeRange(start_time=time(6, 30), end_time=time(17, 0))]),
+                4: DayShifts(shifts=[TimeRange(start_time=time(6, 30), end_time=time(17, 0))]),
+                5: DayShifts(shifts=[TimeRange(start_time=time(6, 30), end_time=time(16, 0))]),
+            },
+        )
 
-        A daily wage covers the entire shift, not just regular hours.
+        avg_day, avg_shift = _compute_pattern_avg_hours(ep)
+
+        # (10.5 * 5 + 9.5) / 6 = 62/6 = 10.3333...
+        assert avg_day == Decimal("62") / Decimal("6")
+        assert avg_shift == Decimal("62") / Decimal("6")  # 1 shift per day
+
+    def test_pattern_avg_constant_across_months(self, test_data_path):
+        """Same pattern, different months → same hourly rate.
+
+        The pattern average is constant per EP, not computed from monthly actuals.
+        """
+        from app.ssot import DayShifts
+
+        ep = EffectivePeriod(
+            id="EP1",
+            start=date(2024, 8, 7),
+            end=date(2024, 12, 31),
+            pattern_work_days=[0, 1, 2, 3, 4, 5],  # Sun-Fri (6 days)
+            pattern_default_shifts=[],
+            pattern_default_breaks=[],
+            pattern_per_day={
+                0: DayShifts(shifts=[TimeRange(start_time=time(6, 30), end_time=time(17, 0))]),
+                1: DayShifts(shifts=[TimeRange(start_time=time(6, 30), end_time=time(17, 0))]),
+                2: DayShifts(shifts=[TimeRange(start_time=time(6, 30), end_time=time(17, 0))]),
+                3: DayShifts(shifts=[TimeRange(start_time=time(6, 30), end_time=time(17, 0))]),
+                4: DayShifts(shifts=[TimeRange(start_time=time(6, 30), end_time=time(17, 0))]),
+                5: DayShifts(shifts=[TimeRange(start_time=time(6, 30), end_time=time(16, 0))]),
+            },
+        )
+
+        avg_day, _ = _compute_pattern_avg_hours(ep)
+
+        # Daily 650 net → gross 728
+        result = convert_salary(
+            input_amount=Decimal("650"),
+            input_type=SalaryType.DAILY,
+            input_net_or_gross=NetOrGross.NET,
+            pattern_avg_hours_per_day=avg_day,
+            pattern_avg_hours_per_shift=None,
+            target_date=date(2024, 8, 1),
+            week_type=WeekType.SIX_DAY,
+            data_path=test_data_path,
+        )
+
+        # Hourly = 728 / (62/6) = 728 * 6 / 62 ≈ 70.45
+        expected_hourly = Decimal("728") / (Decimal("62") / Decimal("6"))
+        assert abs(result.salary_hourly - expected_hourly) < Decimal("0.01")
+
+
+class TestPatternHoursConversion:
+    """Test that daily↔hourly uses pattern average hours (constant per EP)."""
+
+    def test_daily_net_650_pattern_avg(self, test_data_path):
+        """650 net daily, 10.33 avg pattern hours → ~70.47 hourly.
+
+        Example: Worker paid 650 NIS/day net, pattern 06:30-17:00 (10.5 hours avg).
+        A daily wage covers the entire shift as defined by the pattern.
         """
         result = convert_salary(
             input_amount=Decimal("650"),
             input_type=SalaryType.DAILY,
             input_net_or_gross=NetOrGross.NET,
-            avg_total_hours_per_day=Decimal("10.3333"),
-            avg_total_hours_per_shift=None,
+            pattern_avg_hours_per_day=Decimal("10.3333"),
+            pattern_avg_hours_per_shift=None,
             target_date=date(2024, 8, 1),
             week_type=WeekType.SIX_DAY,
             data_path=test_data_path,

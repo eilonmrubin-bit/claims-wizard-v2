@@ -8,13 +8,14 @@ See docs/skills/salary-conversion/SKILL.md for complete documentation.
 
 import csv
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, time
 from decimal import Decimal
 from pathlib import Path
 from typing import Literal
 
 from app.ssot import (
     PeriodMonthRecord,
+    EffectivePeriod,
     SalaryType,
     NetOrGross,
     WeekType,
@@ -24,6 +25,56 @@ from app.modules.job_scope import DEFAULT_FULL_TIME_HOURS_BASE
 
 # Net to gross multiplier
 NET_TO_GROSS_MULTIPLIER = Decimal("1.12")
+
+
+def _time_diff_hours(start: time, end: time) -> Decimal:
+    """Hours between two times. Handles overnight (end < start)."""
+    start_min = start.hour * 60 + start.minute
+    end_min = end.hour * 60 + end.minute
+    diff = end_min - start_min
+    if diff <= 0:
+        diff += 24 * 60  # overnight
+    return Decimal(diff) / Decimal(60)
+
+
+def _compute_pattern_avg_hours(ep: EffectivePeriod) -> tuple[Decimal, Decimal]:
+    """Compute avg hours per day and per shift from the EP's weekly pattern.
+
+    Returns (avg_hours_per_day, avg_hours_per_shift).
+    Both are constant for the entire EP.
+    """
+    total_hours = Decimal("0")
+    total_shifts = 0
+
+    for day in ep.pattern_work_days:
+        # Priority: per_day > default
+        if ep.pattern_per_day and day in ep.pattern_per_day:
+            day_data = ep.pattern_per_day[day]
+            shifts = day_data.shifts
+            breaks = day_data.breaks or []
+        else:
+            shifts = ep.pattern_default_shifts
+            breaks = ep.pattern_default_breaks
+
+        # Sum gross shift hours
+        day_gross = Decimal("0")
+        for shift in shifts:
+            gross = _time_diff_hours(shift.start_time, shift.end_time)
+            day_gross += gross
+            total_shifts += 1
+
+        # Subtract breaks
+        day_breaks = Decimal("0")
+        for brk in breaks:
+            day_breaks += _time_diff_hours(brk.start_time, brk.end_time)
+
+        total_hours += day_gross - day_breaks
+
+    work_days_count = len(ep.pattern_work_days)
+    avg_per_day = total_hours / Decimal(work_days_count) if work_days_count > 0 else Decimal("0")
+    avg_per_shift = total_hours / Decimal(total_shifts) if total_shifts > 0 else Decimal("0")
+
+    return avg_per_day, avg_per_shift
 
 
 @dataclass
@@ -150,8 +201,8 @@ def convert_salary(
     input_amount: Decimal,
     input_type: SalaryType,
     input_net_or_gross: NetOrGross,
-    avg_total_hours_per_day: Decimal,
-    avg_total_hours_per_shift: Decimal | None,
+    pattern_avg_hours_per_day: Decimal,
+    pattern_avg_hours_per_shift: Decimal | None,
     target_date: date,
     week_type: WeekType = WeekType.FIVE_DAY,
     full_time_hours_base: Decimal = DEFAULT_FULL_TIME_HOURS_BASE,
@@ -163,9 +214,10 @@ def convert_salary(
         input_amount: The raw salary amount
         input_type: Type of input (hourly/daily/monthly/per_shift)
         input_net_or_gross: Whether input is net or gross
-        avg_total_hours_per_day: Average TOTAL hours (regular + OT) per work day.
-            A daily wage covers the entire shift including OT hours.
-        avg_total_hours_per_shift: Average TOTAL hours per shift (for per_shift only)
+        pattern_avg_hours_per_day: Average hours per day from weekly pattern.
+            Constant per EffectivePeriod, not computed from monthly actuals.
+        pattern_avg_hours_per_shift: Average hours per shift from weekly pattern
+            (for per_shift only)
         target_date: Date for minimum wage lookup
         week_type: 5-day or 6-day work week
         data_path: Optional path to minimum wage CSV
@@ -193,30 +245,30 @@ def convert_salary(
         minimum_gap = Decimal("0")
 
     # Step 3: Convert to all types (through hourly pivot)
-    # IMPORTANT: daily↔hourly uses TOTAL hours (regular + OT) because
-    # a daily wage covers the entire shift, not just regular hours.
+    # IMPORTANT: daily↔hourly uses pattern average hours (constant per EP),
+    # not computed from monthly actuals.
     if input_type == SalaryType.HOURLY:
         hourly = effective_amount
     elif input_type == SalaryType.DAILY:
-        if avg_total_hours_per_day == 0:
+        if pattern_avg_hours_per_day == 0:
             hourly = Decimal("0")
         else:
-            hourly = effective_amount / avg_total_hours_per_day
+            hourly = effective_amount / pattern_avg_hours_per_day
     elif input_type == SalaryType.MONTHLY:
         if full_time_hours_base == 0:
             hourly = Decimal("0")
         else:
             hourly = effective_amount / full_time_hours_base
     elif input_type == SalaryType.PER_SHIFT:
-        if avg_total_hours_per_shift is None or avg_total_hours_per_shift == 0:
+        if pattern_avg_hours_per_shift is None or pattern_avg_hours_per_shift == 0:
             hourly = Decimal("0")
         else:
-            hourly = effective_amount / avg_total_hours_per_shift
+            hourly = effective_amount / pattern_avg_hours_per_shift
     else:
         raise ValueError(f"Unknown salary type: {input_type}")
 
     # Convert hourly to other types
-    daily = hourly * avg_total_hours_per_day
+    daily = hourly * pattern_avg_hours_per_day
     monthly = hourly * full_time_hours_base
 
     return SalaryConversionResult(
@@ -233,6 +285,7 @@ def convert_salary(
 
 def process_period_month_record(
     pmr: PeriodMonthRecord,
+    ep: EffectivePeriod,
     input_amount: Decimal,
     input_type: SalaryType,
     input_net_or_gross: NetOrGross,
@@ -243,6 +296,7 @@ def process_period_month_record(
 
     Args:
         pmr: The period month record with hours data filled
+        ep: The EffectivePeriod to compute pattern average hours from
         input_amount: Raw salary input amount
         input_type: Type of salary input
         input_net_or_gross: Net or gross
@@ -262,12 +316,15 @@ def process_period_month_record(
     else:
         gross_amount = input_amount
 
+    # Compute pattern average hours (constant per EP)
+    avg_per_day, avg_per_shift = _compute_pattern_avg_hours(ep)
+
     result = convert_salary(
         input_amount=input_amount,
         input_type=input_type,
         input_net_or_gross=input_net_or_gross,
-        avg_total_hours_per_day=pmr.avg_total_hours_per_day,
-        avg_total_hours_per_shift=pmr.avg_total_hours_per_shift,
+        pattern_avg_hours_per_day=avg_per_day,
+        pattern_avg_hours_per_shift=avg_per_shift if input_type == SalaryType.PER_SHIFT else None,
         target_date=target_date,
         week_type=week_type,
         full_time_hours_base=DEFAULT_FULL_TIME_HOURS_BASE,
