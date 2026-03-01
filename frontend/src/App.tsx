@@ -1677,18 +1677,6 @@ function App() {
                           />
                           <span style={{ fontWeight: 500 }}>שעות נוספות</span>
                         </Space>
-                        {formData.right_toggles.overtime?.enabled !== false && (
-                          <div style={{ marginTop: 8, marginRight: 32 }}>
-                            <Checkbox
-                              checked={formData.right_toggles.overtime?.employer_paid_rest_premium || false}
-                              onChange={(e) =>
-                                updateRightToggle('overtime', 'employer_paid_rest_premium', e.target.checked)
-                              }
-                            >
-                              המעסיק שילם פרמיית מנוחה שבועית
-                            </Checkbox>
-                          </div>
-                        )}
                       </div>
                     </Col>
                     <Col span={8}>
@@ -1700,18 +1688,6 @@ function App() {
                           />
                           <span style={{ fontWeight: 500 }}>חגים</span>
                         </Space>
-                        {formData.right_toggles.holidays?.enabled !== false && (
-                          <div style={{ marginTop: 8, marginRight: 32 }}>
-                            <Checkbox
-                              checked={formData.right_toggles.holidays?.include_election_day || false}
-                              onChange={(e) =>
-                                updateRightToggle('holidays', 'include_election_day', e.target.checked)
-                              }
-                            >
-                              כלול יום בחירות
-                            </Checkbox>
-                          </div>
-                        )}
                       </div>
                     </Col>
                     <Col span={8}>
