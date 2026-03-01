@@ -448,7 +448,7 @@ function App() {
       pattern_type: 'statistical', // Default to statistical (Level C)
       work_days: [0, 1, 2, 3, 4], // Default: Sunday-Thursday
       default_shifts: [{ start_time: '08:00:00', end_time: '17:00:00' }],
-      default_breaks: [{ start_time: '12:00:00', end_time: '12:30:00' }],
+      default_breaks: [],  // No phantom breaks - user configures via per_day/level_c
       level_c: createDefaultLevelC(),
     };
     updateField('work_patterns', [...formData.work_patterns, newPattern]);
