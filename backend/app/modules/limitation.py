@@ -97,6 +97,14 @@ DEFAULT_WAR_FREEZE = FreezePeriod(
 )
 
 
+# Special limitation type for no limitation (severance PATH A/B)
+NONE_LIMITATION = LimitationType(
+    id="none",
+    name="ללא התיישנות",
+    compute_base_window_start=lambda filing_date: date(1900, 1, 1),  # Effectively no limit
+)
+
+
 # =============================================================================
 # Core algorithm
 # =============================================================================
@@ -336,6 +344,58 @@ def filter_period_by_window(
         claimable_amount=claimable_amount,
         excluded_amount=excluded_amount,
         fraction=fraction,
+    )
+
+
+def get_limitation_type_for_right(
+    right_id: str,
+    right_limitation_mapping: dict[str, str],
+    rights_results: dict[str, any] | None = None,
+) -> str:
+    """Get the limitation type for a right, resolving 'dynamic' if needed.
+
+    Args:
+        right_id: The right ID (e.g., "severance", "overtime")
+        right_limitation_mapping: Mapping from right_id to limitation type
+        rights_results: Optional dict of rights results for dynamic resolution
+
+    Returns:
+        The limitation type ID ("general", "vacation", "none", etc.)
+    """
+    limitation_type = right_limitation_mapping.get(right_id, "general")
+
+    if limitation_type == "dynamic":
+        # For dynamic limitation, read from the right's result
+        if rights_results and right_id in rights_results:
+            right_result = rights_results[right_id]
+            if hasattr(right_result, "limitation_type"):
+                # Get the limitation_type value - it may be an enum
+                lt = right_result.limitation_type
+                if hasattr(lt, "value"):
+                    return lt.value
+                return str(lt)
+        # Fallback to general if dynamic can't be resolved
+        return "general"
+
+    return limitation_type
+
+
+def filter_with_none_limitation(
+    full_amount: Decimal,
+) -> FilteredAmount:
+    """Filter amount with 'none' limitation (everything is claimable).
+
+    Args:
+        full_amount: The full calculated amount
+
+    Returns:
+        FilteredAmount where everything is claimable
+    """
+    return FilteredAmount(
+        full_amount=full_amount,
+        claimable_amount=full_amount,
+        excluded_amount=Decimal("0"),
+        fraction=Decimal("1"),
     )
 
 

@@ -29,19 +29,26 @@ def apply_deduction(
     right_id: str,
     calculated_amount: Decimal,
     deduction_amount: Decimal,
+    deduction_override: Decimal | None = None,
 ) -> DeductionResult:
     """Apply employer deduction to a calculated right amount.
 
     Args:
         right_id: The ID of the right (e.g., "pension", "severance")
         calculated_amount: The full calculated amount before deduction
-        deduction_amount: The employer-paid amount to deduct
+        deduction_amount: The employer-paid amount to deduct (from deductions_input)
+        deduction_override: If not None, use this value instead of deduction_amount.
+                           This allows rights (like severance PATH A) to override
+                           the standard deduction behavior.
 
     Returns:
         DeductionResult with net amount and display flags
     """
+    # Apply override if provided
+    effective_deduction = deduction_override if deduction_override is not None else deduction_amount
+
     # No deduction case
-    if deduction_amount == Decimal("0"):
+    if effective_deduction == Decimal("0"):
         return DeductionResult(
             right_id=right_id,
             calculated_amount=calculated_amount,
@@ -53,18 +60,18 @@ def apply_deduction(
         )
 
     # Calculate net amount
-    net_amount = calculated_amount - deduction_amount
+    net_amount = calculated_amount - effective_deduction
 
     # Deduction exceeds or equals calculated amount
     if net_amount <= Decimal("0"):
         logger.warning(
-            f"Deduction for {right_id} (₪{deduction_amount}) "
+            f"Deduction for {right_id} (₪{effective_deduction}) "
             f"exceeds calculated amount (₪{calculated_amount})"
         )
         return DeductionResult(
             right_id=right_id,
             calculated_amount=calculated_amount,
-            deduction_amount=deduction_amount,
+            deduction_amount=effective_deduction,
             net_amount=Decimal("0"),
             show_deduction=True,
             show_right=False,
@@ -75,7 +82,7 @@ def apply_deduction(
     return DeductionResult(
         right_id=right_id,
         calculated_amount=calculated_amount,
-        deduction_amount=deduction_amount,
+        deduction_amount=effective_deduction,
         net_amount=net_amount,
         show_deduction=True,
         show_right=True,
@@ -86,25 +93,32 @@ def apply_deduction(
 def apply_all_deductions(
     rights_amounts: dict[str, Decimal],
     deductions: dict[str, Decimal],
+    deduction_overrides: dict[str, Decimal | None] | None = None,
 ) -> dict[str, DeductionResult]:
     """Apply deductions to multiple rights.
 
     Args:
         rights_amounts: Map of right_id -> calculated amount
         deductions: Map of right_id -> deduction amount
+        deduction_overrides: Optional map of right_id -> override value.
+                            If a right has an override, that value is used
+                            instead of the value from deductions.
 
     Returns:
         Map of right_id -> DeductionResult
     """
     results = {}
+    overrides = deduction_overrides or {}
 
     for right_id, calculated_amount in rights_amounts.items():
         deduction_amount = deductions.get(right_id, Decimal("0"))
+        override = overrides.get(right_id)
 
         results[right_id] = apply_deduction(
             right_id=right_id,
             calculated_amount=calculated_amount,
             deduction_amount=deduction_amount,
+            deduction_override=override,
         )
 
     return results

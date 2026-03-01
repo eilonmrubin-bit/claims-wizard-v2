@@ -21,6 +21,7 @@ from .ssot import (
     TimelineWorkPeriod,
     TimelineSummary,
     WeekType,
+    SeveranceLimitationType,
 )
 from .errors import PipelineError, PipelineResult, ValidationError
 
@@ -52,6 +53,11 @@ from .modules.limitation import (
 )
 from .modules.deductions import apply_all_deductions
 from .modules.summary import compute_summary
+from .modules.severance import compute_severance
+from .modules.limitation import (
+    get_limitation_type_for_right,
+    filter_with_none_limitation,
+)
 
 
 def _format_duration_display(days: int) -> str:
@@ -440,6 +446,28 @@ def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
 
             ssot.rights_results.holidays = holidays_result
 
+        # Severance
+        if ssot.input.termination_reason and ssot.period_month_records and ssot.effective_periods:
+            # Compute total employment months
+            total_employment_months = ssot.total_employment.worked_duration.months_decimal
+
+            # Get actual deposits from deductions_input
+            actual_deposits = ssot.input.deductions_input.get("severance", Decimal("0"))
+
+            severance_result = compute_severance(
+                termination_reason=ssot.input.termination_reason,
+                industry=ssot.input.industry,
+                period_month_records=ssot.period_month_records,
+                month_aggregates=ssot.month_aggregates,
+                effective_periods=ssot.effective_periods,
+                total_employment_months=total_employment_months,
+                actual_deposits=actual_deposits,
+                shifts=ssot.shifts,
+                recreation_annual_value=None,  # Future: from recreation module
+            )
+
+            ssot.rights_results.severance = severance_result
+
         # =====================================================================
         # Phase 3 - Post-processing
         # =====================================================================
@@ -611,6 +639,39 @@ def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
                     excluded_duration=excluded_dur,
                 )
 
+            # Severance - limitation type depends on the path
+            if ssot.rights_results.severance and ssot.rights_results.severance.eligible:
+                severance = ssot.rights_results.severance
+                full_amount = severance.total_claim
+
+                if severance.limitation_type == SeveranceLimitationType.NONE:
+                    # PATH A/B: No limitation - everything is claimable
+                    claimable_amount = full_amount
+                    excluded_amount = Decimal("0")
+                    limitation_type_id = "none"
+                else:
+                    # PATH C (resigned): General limitation
+                    sev_monthly = {
+                        mb.month: mb.claim_amount
+                        for mb in severance.monthly_breakdown
+                    }
+                    claimable_amount, excluded_amount, _ = filter_monthly_results(
+                        sev_monthly,
+                        general_window.effective_window_start,
+                        ssot.input.filing_date,
+                    )
+                    limitation_type_id = "general"
+
+                claimable_dur, excluded_dur = compute_right_durations(limitation_type_id)
+                per_right_results["severance"] = RightLimitationResult(
+                    limitation_type_id=limitation_type_id,
+                    full_amount=full_amount,
+                    claimable_amount=claimable_amount,
+                    excluded_amount=excluded_amount,
+                    claimable_duration=claimable_dur,
+                    excluded_duration=excluded_dur,
+                )
+
             ssot.limitation_results.per_right = per_right_results
 
             # Fill timeline_data
@@ -674,9 +735,17 @@ def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
         for right_id, limitation_result in ssot.limitation_results.per_right.items():
             rights_amounts[right_id] = limitation_result.claimable_amount
 
+        # Build deduction overrides from rights that specify them
+        deduction_overrides = {}
+        if ssot.rights_results.severance and ssot.rights_results.severance.eligible:
+            # Severance may have deduction_override (e.g., 0 for PATH A)
+            if ssot.rights_results.severance.deduction_override is not None:
+                deduction_overrides["severance"] = ssot.rights_results.severance.deduction_override
+
         deduction_results = apply_all_deductions(
             rights_amounts=rights_amounts,
             deductions=ssot.input.deductions_input,
+            deduction_overrides=deduction_overrides if deduction_overrides else None,
         )
         ssot.deduction_results = deduction_results
 

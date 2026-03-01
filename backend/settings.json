@@ -34,11 +34,49 @@
       "overtime": "general",
       "holidays": "general",
       "vacation": "vacation",
-      "severance": "general",
+      "severance": "dynamic",
       "pension": "general",
       "recreation": "general",
       "salary_completion": "general",
       "travel": "general"
+    }
+  },
+  "severance_config": {
+    "industries": {
+      "general": {
+        "name": "כללי",
+        "severance_rate": 0.08333,
+        "contribution_rate": 0.06,
+        "ot_addition": false,
+        "recreation_addition": false,
+        "min_months": 12
+      },
+      "construction": {
+        "name": "בניין",
+        "severance_rate": 0.08333,
+        "contribution_rate": 0.08333,
+        "ot_addition": false,
+        "recreation_addition": false,
+        "min_months": 0
+      },
+      "cleaning": {
+        "name": "נקיון",
+        "severance_rate": 0.08333,
+        "contribution_rate": 0.08333,
+        "ot_addition": true,
+        "ot_addition_rate": 0.06,
+        "recreation_addition": true,
+        "recreation_addition_rate": 0.08333,
+        "min_months": 0
+      },
+      "agriculture": {
+        "name": "חקלאות",
+        "severance_rate": 0.08333,
+        "contribution_rate": 0.06,
+        "ot_addition": false,
+        "recreation_addition": false,
+        "min_months": 6
+      }
     }
   }
 }

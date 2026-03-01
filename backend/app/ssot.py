@@ -50,6 +50,33 @@ class SeniorityMethod(str, Enum):
     MATASH_PDF = "matash_pdf"
 
 
+class TerminationReason(str, Enum):
+    FIRED = "fired"  # פוטר
+    RESIGNED_AS_FIRED = "resigned_as_fired"  # התפטר בדין מפוטר
+    RESIGNED = "resigned"  # התפטר
+
+
+class SeverancePath(str, Enum):
+    SECTION_14_HOLDS = "section_14_holds"  # PATH A
+    SECTION_14_FALLS = "section_14_falls"  # PATH B
+    CONTRIBUTIONS = "contributions"  # PATH C (resigned)
+
+
+class Section14Status(str, Enum):
+    HOLDS = "holds"
+    FALLS = "falls"
+
+
+class LastSalaryMethod(str, Enum):
+    LAST_PMR = "last_pmr"
+    AVG_12_MONTHS = "avg_12_months"
+
+
+class SeveranceLimitationType(str, Enum):
+    NONE = "none"
+    GENERAL = "general"
+
+
 class DaySegmentType(str, Enum):
     REGULAR = "regular"
     EVE_OF_REST = "eve_of_rest"
@@ -179,6 +206,7 @@ class SSOTInput:
     district: District = District.TEL_AVIV
     industry: str = "general"
     filing_date: date | None = None
+    termination_reason: TerminationReason | None = None  # Required for severance
 
     # Seniority
     seniority_input: SeniorityInput = field(default_factory=SeniorityInput)
@@ -455,6 +483,176 @@ class SeniorityTotals:
 # Layer 5 - Rights results (Phase 2)
 # =============================================================================
 
+# -----------------------------------------------------------------------------
+# Severance Data Structures
+# -----------------------------------------------------------------------------
+
+@dataclass
+class LastSalaryPMRUsed:
+    """PMR entry used in last salary calculation."""
+    month: tuple[int, int] = (0, 0)
+    salary_monthly: Decimal = Decimal("0")
+
+
+@dataclass
+class LastSalaryInfo:
+    """Information about last salary determination."""
+    last_salary: Decimal = Decimal("0")
+    method: LastSalaryMethod = LastSalaryMethod.LAST_PMR
+    salary_changed_in_last_year: bool = False
+    pmrs_used: list[LastSalaryPMRUsed] = field(default_factory=list)
+
+
+@dataclass
+class SeveranceMonthlyDetail:
+    """Monthly detail for severance base calculation."""
+    month: tuple[int, int] = (0, 0)
+    effective_period_id: str = ""
+    calendar_days_employed: int = 0
+    total_calendar_days: int = 0
+    partial_fraction: Decimal = Decimal("0")
+    job_scope: Decimal = Decimal("0")
+    salary_used: Decimal = Decimal("0")
+    amount: Decimal = Decimal("0")
+
+
+@dataclass
+class SeverancePeriodSummary:
+    """Period summary for severance calculation."""
+    effective_period_id: str = ""
+    start: date | None = None
+    end: date | None = None
+    months_count: Decimal = Decimal("0")
+    avg_job_scope: Decimal = Decimal("0")
+    avg_salary_monthly: Decimal | None = None  # Only for required contributions
+    subtotal: Decimal = Decimal("0")
+
+
+@dataclass
+class FullSeveranceData:
+    """Full severance calculation data."""
+    base_total: Decimal = Decimal("0")
+    ot_total: Decimal = Decimal("0")  # 0 if not cleaning
+    recreation_total: Decimal = Decimal("0")  # 0 if not cleaning or pending
+    recreation_pending: bool = False
+    grand_total: Decimal = Decimal("0")
+    base_monthly_detail: list[SeveranceMonthlyDetail] = field(default_factory=list)
+    period_summaries: list[SeverancePeriodSummary] = field(default_factory=list)
+
+
+@dataclass
+class RequiredContributionsData:
+    """Required contributions calculation data."""
+    base_total: Decimal = Decimal("0")
+    ot_total: Decimal = Decimal("0")  # same as full_severance.ot_total
+    recreation_total: Decimal = Decimal("0")  # same as full_severance.recreation_total
+    grand_total: Decimal = Decimal("0")
+    base_monthly_detail: list[SeveranceMonthlyDetail] = field(default_factory=list)
+    period_summaries: list[SeverancePeriodSummary] = field(default_factory=list)
+
+
+@dataclass
+class OTAdditionMonthlyDetail:
+    """Monthly OT addition detail (cleaning industry)."""
+    month: tuple[int, int] = (0, 0)
+    effective_period_id: str = ""
+    full_ot_monthly_pay: Decimal = Decimal("0")
+    job_scope: Decimal = Decimal("0")
+    amount: Decimal = Decimal("0")
+
+
+@dataclass
+class OTAdditionData:
+    """OT addition data for cleaning industry."""
+    rate: Decimal = Decimal("0.06")
+    total: Decimal = Decimal("0")
+    monthly_detail: list[OTAdditionMonthlyDetail] = field(default_factory=list)
+
+
+@dataclass
+class RecreationAdditionMonthlyDetail:
+    """Monthly recreation addition detail (cleaning industry)."""
+    month: tuple[int, int] = (0, 0)
+    annual_recreation_value: Decimal = Decimal("0")
+    monthly_value: Decimal = Decimal("0")
+    partial_fraction: Decimal = Decimal("0")
+    amount: Decimal = Decimal("0")
+
+
+@dataclass
+class RecreationAdditionData:
+    """Recreation addition data for cleaning industry."""
+    rate: Decimal = Decimal("0.08333")
+    total: Decimal = Decimal("0")
+    recreation_pending: bool = True
+    monthly_detail: list[RecreationAdditionMonthlyDetail] = field(default_factory=list)
+
+
+@dataclass
+class Section14Comparison:
+    """Section 14 comparison data."""
+    actual_deposits: Decimal = Decimal("0")
+    required_contributions_total: Decimal = Decimal("0")
+    difference: Decimal = Decimal("0")  # actual - required
+    status: Section14Status | None = None
+
+
+@dataclass
+class SeveranceMonthlyBreakdown:
+    """Monthly breakdown for limitation module."""
+    month: tuple[int, int] = (0, 0)
+    claim_amount: Decimal = Decimal("0")
+
+
+@dataclass
+class SeveranceData:
+    """Complete severance calculation result."""
+    # Eligibility
+    eligible: bool = False
+    ineligible_reason: str | None = None
+
+    # Path & Status
+    termination_reason: TerminationReason | None = None
+    industry: str = ""
+    path: SeverancePath | None = None
+    section_14_status: Section14Status | None = None
+    limitation_type: SeveranceLimitationType = SeveranceLimitationType.NONE
+
+    # Rates
+    severance_rate: Decimal = Decimal("0.08333")
+    contribution_rate: Decimal = Decimal("0")
+    ot_addition_rate: Decimal | None = None  # 0.06 for cleaning
+    recreation_addition_rate: Decimal | None = None  # 0.08333 for cleaning
+
+    # Last Salary
+    last_salary_info: LastSalaryInfo = field(default_factory=LastSalaryInfo)
+
+    # Full Severance
+    full_severance: FullSeveranceData = field(default_factory=FullSeveranceData)
+
+    # Required Contributions
+    required_contributions: RequiredContributionsData = field(default_factory=RequiredContributionsData)
+
+    # Cleaning Additions (shared between full and required)
+    ot_addition: OTAdditionData | None = None
+    recreation_addition: RecreationAdditionData | None = None
+
+    # Section 14 Comparison
+    section_14_comparison: Section14Comparison | None = None
+
+    # Final Claim
+    claim_before_deductions: Decimal = Decimal("0")
+    deduction_override: Decimal | None = None  # 0 for path A, null for B/C
+    total_claim: Decimal = Decimal("0")
+
+    # Monthly Breakdown (for limitation module)
+    monthly_breakdown: list[SeveranceMonthlyBreakdown] = field(default_factory=list)
+
+
+# -----------------------------------------------------------------------------
+# Other Rights Data Structures
+# -----------------------------------------------------------------------------
+
 @dataclass
 class OvertimeMonthlyBreakdown:
     month: tuple[int, int] = (0, 0)
@@ -512,7 +710,7 @@ class RightsResults:
     overtime: OvertimeResult | None = None
     holidays: HolidaysResult | None = None
     vacation: Any | None = None  # Not yet defined
-    severance: Any | None = None  # Not yet defined
+    severance: SeveranceData | None = None
     pension: Any | None = None  # Not yet defined
     recreation: Any | None = None  # Not yet defined
     salary_completion: Any | None = None  # Not yet defined
