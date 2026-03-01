@@ -132,6 +132,7 @@ def _reconstruct_ssot_input(data: dict[str, Any]) -> SSOTInput:
         District,
         SeniorityMethod,
         Duration,
+        TerminationReason,
     )
 
     def parse_date(val: Any) -> date | None:
@@ -327,6 +328,7 @@ def _reconstruct_ssot_input(data: dict[str, Any]) -> SSOTInput:
         district=District(data.get("district", "tel_aviv")),
         industry=data.get("industry", "general"),
         filing_date=parse_date(data.get("filing_date")),
+        termination_reason=TerminationReason(data["termination_reason"]) if data.get("termination_reason") else None,
         seniority_input=SeniorityInput(
             method=SeniorityMethod(seniority.get("method", "prior_plus_pattern")),
             prior_months=seniority.get("prior_months"),
