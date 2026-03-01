@@ -223,17 +223,13 @@ export const WeekPanel: React.FC<WeekPanelProps> = ({
                       .sort((a, b) => a.start_time.localeCompare(b.start_time))
                       .map((s, i) => (
                         <div key={i} style={{ fontSize: 11 }}>
-                          {s.anchor === 'ends_here' && (
-                            <span style={{
-                              display: 'inline-block',
-                              width: 6, height: 6,
-                              borderRadius: '50%',
-                              backgroundColor: '#69c0ff',
-                              marginLeft: 4,
-                              verticalAlign: 'middle',
-                            }} />
+                          {isOvernightShift(s) && (s.anchor || 'starts_here') === 'starts_here' && (
+                            <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', backgroundColor: '#69c0ff', marginLeft: 4, verticalAlign: 'middle' }} />
                           )}
                           {formatShiftSummary(s)}
+                          {isOvernightShift(s) && s.anchor === 'ends_here' && (
+                            <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', backgroundColor: '#69c0ff', marginRight: 4, verticalAlign: 'middle' }} />
+                          )}
                           {s.break_minutes > 0 && (
                             <span style={{ fontSize: 10, color: '#888' }}> הפ{s.break_minutes}'</span>
                           )}
