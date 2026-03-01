@@ -220,7 +220,11 @@ export const WeekPanel: React.FC<WeekPanelProps> = ({
                 {active ? (
                   <>
                     {[...data.shifts]
-                      .sort((a, b) => a.start_time.localeCompare(b.start_time))
+                      .sort((a, b) => {
+                        const aKey = a.anchor === 'ends_here' ? '00:00:00' : a.start_time;
+                        const bKey = b.anchor === 'ends_here' ? '00:00:00' : b.start_time;
+                        return aKey.localeCompare(bKey);
+                      })
                       .map((s, i) => (
                         <div key={i} style={{ fontSize: 11 }}>
                           {isOvernightShift(s) && (s.anchor || 'starts_here') === 'starts_here' && (
@@ -317,7 +321,7 @@ export const WeekPanel: React.FC<WeekPanelProps> = ({
                             precision={0}
                             size="small"
                             style={{ width: 100 }}
-                            addonBefore="הפ"
+                            addonBefore="הפ'"
                             addonAfter="דק'"
                           />
                         </Col>
@@ -400,7 +404,7 @@ export const WeekPanel: React.FC<WeekPanelProps> = ({
                             precision={0}
                             size="small"
                             style={{ width: 100 }}
-                            addonBefore="הפ"
+                            addonBefore="הפ'"
                             addonAfter="דק'"
                           />
                         </Col>
