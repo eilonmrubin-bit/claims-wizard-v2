@@ -18,6 +18,7 @@ import {
   Space,
   Alert,
   Button,
+  Descriptions,
 } from 'antd';
 import {
   ClockCircleOutlined,
@@ -31,6 +32,7 @@ import {
   DollarOutlined,
   PercentageOutlined,
   DownloadOutlined,
+  SafetyOutlined,
 } from '@ant-design/icons';
 
 const { Title, Text } = Typography;
@@ -171,6 +173,66 @@ interface HolidaysResult {
   grand_total_claim: number;
 }
 
+interface SeverancePeriodSummary {
+  effective_period_id: string;
+  start: string;
+  end: string;
+  months_count: number;
+  avg_job_scope: number;
+  avg_salary_monthly: number | null;
+  subtotal: number;
+}
+
+interface SeveranceMonthlyDetail {
+  month: [number, number];
+  effective_period_id: string;
+  calendar_days_employed: number;
+  total_calendar_days: number;
+  partial_fraction: number;
+  job_scope: number;
+  salary_used: number;
+  amount: number;
+}
+
+interface SeveranceSectionData {
+  base_total: number;
+  ot_total: number;
+  recreation_total: number;
+  grand_total: number;
+  base_monthly_detail: SeveranceMonthlyDetail[];
+  period_summaries: SeverancePeriodSummary[];
+}
+
+interface Section14Comparison {
+  actual_deposits: number;
+  required_contributions_total: number;
+  difference: number;
+  status: string; // "holds" | "falls"
+}
+
+interface SeveranceResult {
+  eligible: boolean;
+  ineligible_reason: string | null;
+  termination_reason: string;
+  industry: string;
+  path: string; // "contributions" | "section_14_holds" | "section_14_falls"
+  section_14_status: string | null;
+  limitation_type: string;
+  severance_rate: number;
+  contribution_rate: number;
+  last_salary_info: {
+    last_salary: number;
+    method: string;
+    salary_changed_in_last_year: boolean;
+  };
+  full_severance: SeveranceSectionData;
+  required_contributions: SeveranceSectionData;
+  section_14_comparison: Section14Comparison | null;
+  claim_before_deductions: number;
+  deduction_override: number | null;
+  total_claim: number;
+}
+
 interface FreezePeriodApplied {
   name: string;
   start_date: string;
@@ -277,6 +339,7 @@ interface ResultsViewProps {
     rights_results?: {
       overtime?: OvertimeResult;
       holidays?: HolidaysResult;
+      severance?: SeveranceResult;
     };
     limitation_results?: LimitationResults;
     total_employment?: TotalEmployment;
@@ -1881,7 +1944,256 @@ const HolidaysBreakdown: React.FC<{ holidays: HolidaysResult }> = ({ holidays })
 };
 
 // ============================================================================
-// ה. LimitationTimeline - התיישנות
+// ה. SeveranceBreakdown - פירוט פיצויי פיטורין
+// ============================================================================
+
+const SeveranceBreakdown: React.FC<{ severance: SeveranceResult }> = ({ severance }) => {
+  // Translate path to Hebrew
+  const pathLabels: Record<string, string> = {
+    contributions: 'הפרשות נדרשות (התפטרות)',
+    section_14_holds: 'סעיף 14 עומד',
+    section_14_falls: 'סעיף 14 נופל',
+  };
+
+  // Translate termination reason
+  const terminationLabels: Record<string, string> = {
+    fired: 'פוטר',
+    resigned: 'התפטר',
+    resigned_as_fired: 'התפטר בדין מפוטר',
+  };
+
+  // Translate industry
+  const industryLabels: Record<string, string> = {
+    construction: 'בנייה',
+    general: 'כללי',
+  };
+
+  // Translate salary method
+  const salaryMethodLabels: Record<string, string> = {
+    avg_12_months: 'ממוצע 12 חודשים אחרונים',
+    last_month: 'חודש אחרון',
+  };
+
+  const pathLabel = pathLabels[severance.path] || severance.path;
+  const isContributionsPath = severance.path === 'contributions';
+  const hasOT = severance.full_severance.ot_total > 0 || severance.required_contributions.ot_total > 0;
+
+  // Group monthly details by effective_period_id
+  const detailByPeriod: Record<string, SeveranceMonthlyDetail[]> = {};
+  severance.full_severance.base_monthly_detail.forEach((d) => {
+    if (!detailByPeriod[d.effective_period_id]) {
+      detailByPeriod[d.effective_period_id] = [];
+    }
+    detailByPeriod[d.effective_period_id].push(d);
+  });
+
+  // Build period collapse items
+  const periodItems = severance.full_severance.period_summaries.map((ps) => {
+    const periodDetails = detailByPeriod[ps.effective_period_id] || [];
+    const sortedDetails = [...periodDetails].sort((a, b) => {
+      if (a.month[0] !== b.month[0]) return a.month[0] - b.month[0];
+      return a.month[1] - b.month[1];
+    });
+
+    const detailColumns = [
+      {
+        title: <span style={{ color: '#88D8E0' }}>חודש</span>,
+        key: 'month',
+        render: (_: unknown, record: SeveranceMonthlyDetail) => (
+          <span style={{ color: '#E8F4F8' }}>{formatMonth(record.month)}</span>
+        ),
+      },
+      {
+        title: <span style={{ color: '#88D8E0' }}>ימים</span>,
+        key: 'days',
+        render: (_: unknown, record: SeveranceMonthlyDetail) => (
+          <span style={{ color: '#E8F4F8' }}>
+            {record.calendar_days_employed}/{record.total_calendar_days}
+          </span>
+        ),
+      },
+      {
+        title: <span style={{ color: '#88D8E0' }}>חלקיות</span>,
+        key: 'partial',
+        render: (_: unknown, record: SeveranceMonthlyDetail) => (
+          <span style={{ color: '#E8F4F8' }}>
+            {(record.partial_fraction * 100).toFixed(1)}%
+          </span>
+        ),
+      },
+      {
+        title: <span style={{ color: '#88D8E0' }}>היקף משרה</span>,
+        key: 'scope',
+        render: (_: unknown, record: SeveranceMonthlyDetail) => (
+          <span style={{ color: record.job_scope < 1 ? '#FF6B6B' : '#E8F4F8' }}>
+            {(record.job_scope * 100).toFixed(1)}%
+          </span>
+        ),
+      },
+      {
+        title: <span style={{ color: '#88D8E0' }}>שכר קובע</span>,
+        key: 'salary',
+        render: (_: unknown, record: SeveranceMonthlyDetail) => (
+          <span className="ltr-number" style={{ color: '#E8F4F8' }}>
+            {formatCurrency(record.salary_used)}
+          </span>
+        ),
+      },
+      {
+        title: <span style={{ color: '#88D8E0' }}>סכום</span>,
+        key: 'amount',
+        render: (_: unknown, record: SeveranceMonthlyDetail) => (
+          <span className="ltr-number" style={{ color: '#4ECDC4', fontWeight: 'bold' }}>
+            {formatCurrency(record.amount)}
+          </span>
+        ),
+      },
+    ];
+
+    return {
+      key: ps.effective_period_id,
+      label: (
+        <Space>
+          <span>{ps.effective_period_id}: {formatDate(ps.start)} - {formatDate(ps.end)}</span>
+          <Tag>{ps.months_count.toFixed(1)} חודשים</Tag>
+          <Tag>היקף {(ps.avg_job_scope * 100).toFixed(1)}%</Tag>
+          <Tag color="cyan">{formatCurrency(ps.subtotal)}</Tag>
+        </Space>
+      ),
+      children: (
+        <Table
+          dataSource={sortedDetails}
+          columns={detailColumns}
+          rowKey={(record) => `${record.month[0]}-${record.month[1]}`}
+          pagination={false}
+          size="small"
+        />
+      ),
+    };
+  });
+
+  // Summary table columns
+  const summaryColumns = [
+    {
+      title: '',
+      dataIndex: 'label',
+      key: 'label',
+      render: (v: string) => <span style={{ color: '#E8F4F8' }}>{v}</span>,
+    },
+    {
+      title: <span style={{ color: '#88D8E0' }}>פיצויים מלאים</span>,
+      dataIndex: 'full',
+      key: 'full',
+      render: (v: number) => <span className="ltr-number" style={{ color: '#E8F4F8' }}>{formatCurrency(v)}</span>,
+    },
+    {
+      title: <span style={{ color: '#88D8E0' }}>הפרשות נדרשות</span>,
+      dataIndex: 'required',
+      key: 'required',
+      render: (v: number) => <span className="ltr-number" style={{ color: '#E8F4F8' }}>{formatCurrency(v)}</span>,
+    },
+    ...(isContributionsPath ? [{
+      title: <span style={{ color: '#88D8E0' }}>תביעה</span>,
+      dataIndex: 'claim',
+      key: 'claim',
+      render: (v: number | undefined) => v !== undefined ? (
+        <span className="ltr-number" style={{ color: '#4ECDC4', fontWeight: 'bold' }}>{formatCurrency(v)}</span>
+      ) : <span>—</span>,
+    }] : []),
+  ];
+
+  const summaryData = [
+    {
+      key: 'base',
+      label: 'בסיס',
+      full: severance.full_severance.base_total,
+      required: severance.required_contributions.base_total,
+      claim: isContributionsPath ? severance.claim_before_deductions : undefined,
+    },
+    ...(hasOT ? [{
+      key: 'ot',
+      label: 'שע"נ',
+      full: severance.full_severance.ot_total,
+      required: severance.required_contributions.ot_total,
+      claim: undefined,
+    }] : []),
+    {
+      key: 'total',
+      label: 'סה"כ',
+      full: severance.full_severance.grand_total,
+      required: severance.required_contributions.grand_total,
+      claim: isContributionsPath ? severance.total_claim : undefined,
+    },
+  ];
+
+  return (
+    <Card
+      title={
+        <Space>
+          <SafetyOutlined />
+          <span>פיצויי פיטורין — {pathLabel}</span>
+          <Tag color="cyan" style={{ fontSize: '1em' }}>{formatCurrency(severance.total_claim)}</Tag>
+        </Space>
+      }
+      className="results-card"
+    >
+      {/* Basic details */}
+      <Descriptions
+        column={5}
+        size="small"
+        style={{ marginBottom: 16 }}
+        labelStyle={{ color: '#88D8E0' }}
+        contentStyle={{ color: '#E8F4F8' }}
+      >
+        <Descriptions.Item label="סיבת סיום">
+          {terminationLabels[severance.termination_reason] || severance.termination_reason}
+        </Descriptions.Item>
+        <Descriptions.Item label="ענף">
+          {industryLabels[severance.industry] || severance.industry}
+        </Descriptions.Item>
+        <Descriptions.Item label="שיעור פיצויים">
+          {(severance.severance_rate * 100).toFixed(1)}%
+        </Descriptions.Item>
+        <Descriptions.Item label="שכר קובע">
+          <span className="ltr-number">{formatCurrency(severance.last_salary_info.last_salary)}</span>
+        </Descriptions.Item>
+        <Descriptions.Item label="שיטת חישוב שכר">
+          {salaryMethodLabels[severance.last_salary_info.method] || severance.last_salary_info.method}
+        </Descriptions.Item>
+      </Descriptions>
+
+      {/* Section 14 comparison alert */}
+      {severance.section_14_comparison && (
+        <Alert
+          type={severance.section_14_comparison.status === 'holds' ? 'success' : 'error'}
+          showIcon
+          style={{ marginBottom: 16 }}
+          message={
+            severance.section_14_comparison.status === 'holds'
+              ? `סעיף 14 עומד — הפרשות בפועל (${formatCurrency(severance.section_14_comparison.actual_deposits)}) ≥ הפרשות נדרשות (${formatCurrency(severance.section_14_comparison.required_contributions_total)})`
+              : `סעיף 14 נופל — הפרשות בפועל (${formatCurrency(severance.section_14_comparison.actual_deposits)}) < הפרשות נדרשות (${formatCurrency(severance.section_14_comparison.required_contributions_total)}). הפרש: ${formatCurrency(severance.section_14_comparison.difference)}`
+          }
+        />
+      )}
+
+      {/* Period details */}
+      <Collapse items={periodItems} style={{ marginBottom: 16 }} />
+
+      {/* Summary table */}
+      <Table
+        dataSource={summaryData}
+        columns={summaryColumns}
+        pagination={false}
+        size="small"
+        rowClassName={(record) => record.key === 'total' ? 'summary-total-row' : ''}
+        style={{ background: 'rgba(78, 205, 196, 0.05)' }}
+      />
+    </Card>
+  );
+};
+
+// ============================================================================
+// ו. LimitationTimeline - התיישנות
 // ============================================================================
 
 const LimitationTimeline: React.FC<{ limitation: LimitationResults }> = ({ limitation }) => {
@@ -2145,17 +2457,22 @@ const ResultsView: React.FC<ResultsViewProps> = ({ ssot }) => {
         <div style={{ marginBottom: 24 }}><HolidaysBreakdown holidays={rights_results.holidays} /></div>
       )}
 
-      {/* ו. Limitation Timeline */}
+      {/* ו. Severance Breakdown */}
+      {rights_results?.severance?.eligible && (
+        <div style={{ marginBottom: 24 }}><SeveranceBreakdown severance={rights_results.severance} /></div>
+      )}
+
+      {/* ז. Limitation Timeline */}
       {limitation_results && limitation_results.windows?.length > 0 && (
         <div style={{ marginBottom: 24 }}><LimitationTimeline limitation={limitation_results} /></div>
       )}
 
-      {/* ז. Employment Details */}
+      {/* ח. Employment Details */}
       {(total_employment || seniority_totals) && (
         <div style={{ marginBottom: 24 }}><EmploymentDetails employment={total_employment} seniority={seniority_totals} /></div>
       )}
 
-      {/* ז. Raw JSON for debugging */}
+      {/* ט. Raw JSON for debugging */}
       <Collapse
         items={[
           {
