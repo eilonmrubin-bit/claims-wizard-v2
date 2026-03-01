@@ -206,7 +206,7 @@ const createEmptyInput = (): SSOTInput => ({
   district: 'tel_aviv',
   industry: 'general',
   filing_date: getEndOfCurrentMonth(),
-  termination_reason: undefined,
+  termination_reason: 'fired',
   seniority_input: { method: 'prior_plus_pattern', prior_months: 0 },
   right_toggles: {
     overtime: { enabled: true },
@@ -1740,7 +1740,7 @@ function App() {
                           onChange={(v) => updateDeduction('severance', String(v || 0))}
                           min={0}
                           style={{ width: '100%' }}
-                          placeholder="סכום כולל בש״ח"
+                          placeholder="סכום בש״ח"
                           addonAfter="₪"
                         />
                       </Form.Item>
