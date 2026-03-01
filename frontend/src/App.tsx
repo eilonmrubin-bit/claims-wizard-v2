@@ -1289,7 +1289,7 @@ function App() {
                         {pattern.pattern_type === 'cyclic' && pattern.level_b && (
                           <>
                             <Collapse
-                              defaultActiveKey={['0']}
+                              defaultActiveKey={pattern.level_b.cycle.map((_, i) => String(i))}
                               items={pattern.level_b.cycle.map((week, wIndex) => ({
                                 key: String(wIndex),
                                 label: (
