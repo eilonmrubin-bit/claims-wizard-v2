@@ -19,12 +19,15 @@ from app.ssot import (
     SalaryType,
     NetOrGross,
     Duration,
+    Shift,
+    PricingBreakdown,
 )
 from app.modules.severance import (
     compute_severance,
     load_industry_config,
     IndustryConfig,
 )
+from datetime import datetime
 
 
 def make_pmr(
@@ -238,17 +241,63 @@ class TestFixture4ConstructionFiredSection14Holds:
         assert abs(result.total_claim) < Decimal("1")
 
 
+def make_shift_with_ot(
+    shift_date: date,
+    tier1_hours: Decimal,
+    tier2_hours: Decimal,
+    hourly_wage: Decimal,
+) -> Shift:
+    """Create a shift with OT pricing breakdown for testing."""
+    pricing = []
+    if tier1_hours > 0:
+        pricing.append(PricingBreakdown(
+            hours=tier1_hours,
+            tier=1,
+            rate_multiplier=Decimal("1.25"),
+            hourly_wage=hourly_wage,
+            claim_amount=tier1_hours * Decimal("0.25") * hourly_wage,
+        ))
+    if tier2_hours > 0:
+        pricing.append(PricingBreakdown(
+            hours=tier2_hours,
+            tier=2,
+            rate_multiplier=Decimal("1.50"),
+            hourly_wage=hourly_wage,
+            claim_amount=tier2_hours * Decimal("0.50") * hourly_wage,
+        ))
+
+    return Shift(
+        id=f"shift_{shift_date.isoformat()}",
+        date=shift_date,
+        assigned_day=shift_date,
+        pricing_breakdown=pricing,
+    )
+
+
 class TestFixture5CleaningFiredWithOT:
     """Fixture 5: Cleaning, fired, with OT, Section 14 falls."""
 
     def test_cleaning_with_ot(self):
-        """Test cleaning industry with OT addition."""
+        """Test cleaning industry with OT addition - full calculation."""
         start = date(2023, 1, 1)
         end = date(2023, 12, 31)
         pmrs, mas, eps = generate_monthly_data(start, end, Decimal("6000"))
 
-        # Note: We don't have shift data in this test, so OT will be 0
-        # This tests the structure, not the OT calculation
+        # Create shifts with OT for each month
+        # Per fixture: 20 hours tier1 at 1.25 × 35/hr + 5 hours tier2 at 1.50 × 35/hr
+        # full_ot_monthly_pay = (20 × 1.25 × 35) + (5 × 1.50 × 35) = 875 + 262.50 = 1,137.50
+        shifts = []
+        hourly_wage = Decimal("35")
+        for month in range(1, 13):
+            # Create one shift per month with the specified OT
+            shift_date = date(2023, month, 15)
+            shifts.append(make_shift_with_ot(
+                shift_date=shift_date,
+                tier1_hours=Decimal("20"),
+                tier2_hours=Decimal("5"),
+                hourly_wage=hourly_wage,
+            ))
+
         result = compute_severance(
             termination_reason=TerminationReason.FIRED,
             industry="cleaning",
@@ -257,7 +306,7 @@ class TestFixture5CleaningFiredWithOT:
             effective_periods=eps,
             total_employment_months=Decimal("12"),
             actual_deposits=Decimal("5000"),
-            shifts=None,  # No shifts, so OT = 0
+            shifts=shifts,
         )
 
         assert result.eligible is True
@@ -269,6 +318,43 @@ class TestFixture5CleaningFiredWithOT:
         # full_base = 6,000 × 0.08333 × 12 = 5,999.76
         expected_base = Decimal("6000") * Decimal("0.08333") * 12
         assert abs(result.full_severance.base_total - expected_base) < Decimal("1")
+
+        # OT addition: 1,137.50 × 0.06 × 12 = 819.00
+        # full_ot_monthly = (20 × 1.25 × 35) + (5 × 1.50 × 35) = 1137.50
+        expected_full_ot_monthly = (Decimal("20") * Decimal("1.25") * hourly_wage +
+                                    Decimal("5") * Decimal("1.50") * hourly_wage)
+        assert abs(expected_full_ot_monthly - Decimal("1137.50")) < Decimal("0.01")
+
+        expected_ot_total = expected_full_ot_monthly * Decimal("0.06") * 12
+        assert abs(result.ot_addition.total - expected_ot_total) < Decimal("1")
+        assert abs(result.full_severance.ot_total - expected_ot_total) < Decimal("1")
+
+        # total_claim = base 5,999.76 + OT 819.00 = 6,818.76
+        expected_total = expected_base + expected_ot_total
+        assert abs(result.total_claim - expected_total) < Decimal("1")
+
+    def test_cleaning_structure_without_shifts(self):
+        """Test cleaning industry structure without shift data."""
+        start = date(2023, 1, 1)
+        end = date(2023, 12, 31)
+        pmrs, mas, eps = generate_monthly_data(start, end, Decimal("6000"))
+
+        result = compute_severance(
+            termination_reason=TerminationReason.FIRED,
+            industry="cleaning",
+            period_month_records=pmrs,
+            month_aggregates=mas,
+            effective_periods=eps,
+            total_employment_months=Decimal("12"),
+            actual_deposits=Decimal("5000"),
+            shifts=None,
+        )
+
+        assert result.eligible is True
+        assert result.ot_addition_rate == Decimal("0.06")
+        assert result.recreation_addition_rate == Decimal("0.08333")
+        # No shifts means OT total is 0
+        assert result.full_severance.ot_total == Decimal("0")
 
 
 class TestFixture6SalaryChangedInLastYear:
@@ -502,3 +588,235 @@ class TestDeductionOverride:
 
         assert result.path == SeverancePath.CONTRIBUTIONS
         assert result.deduction_override is None
+
+
+class TestPartialMonths:
+    """Test 4a: Partial months are correctly calculated."""
+
+    def test_partial_months_calculation(self):
+        """Worker started Jan 15 and ended Mar 10 — partial fractions."""
+        start = date(2024, 1, 15)
+        end = date(2024, 3, 10)
+
+        # January: 15-31 = 17 days out of 31 → 17/31
+        # February: full month = 29 days (2024 is leap year) → 29/29 = 1.0
+        # March: 1-10 = 10 days out of 31 → 10/31
+
+        pmrs = [
+            make_pmr((2024, 1), "ep1", Decimal("10000")),
+            make_pmr((2024, 2), "ep1", Decimal("10000")),
+            make_pmr((2024, 3), "ep1", Decimal("10000")),
+        ]
+        mas = [
+            make_month_aggregate((2024, 1)),
+            make_month_aggregate((2024, 2)),
+            make_month_aggregate((2024, 3)),
+        ]
+        eps = [make_effective_period("ep1", start, end)]
+
+        result = compute_severance(
+            termination_reason=TerminationReason.FIRED,
+            industry="construction",  # min_months = 0
+            period_month_records=pmrs,
+            month_aggregates=mas,
+            effective_periods=eps,
+            total_employment_months=Decimal("2"),
+            actual_deposits=Decimal("2000"),
+        )
+
+        assert result.eligible is True
+
+        # Check monthly details have correct partial_fractions
+        jan_detail = next(d for d in result.full_severance.base_monthly_detail if d.month == (2024, 1))
+        feb_detail = next(d for d in result.full_severance.base_monthly_detail if d.month == (2024, 2))
+        mar_detail = next(d for d in result.full_severance.base_monthly_detail if d.month == (2024, 3))
+
+        assert jan_detail.calendar_days_employed == 17
+        assert jan_detail.total_calendar_days == 31
+        assert abs(jan_detail.partial_fraction - Decimal("17") / Decimal("31")) < Decimal("0.001")
+
+        assert feb_detail.calendar_days_employed == 29
+        assert feb_detail.total_calendar_days == 29
+        assert abs(feb_detail.partial_fraction - Decimal("1")) < Decimal("0.001")
+
+        assert mar_detail.calendar_days_employed == 10
+        assert mar_detail.total_calendar_days == 31
+        assert abs(mar_detail.partial_fraction - Decimal("10") / Decimal("31")) < Decimal("0.001")
+
+        # Period summary months_count should be sum of fractions, not 3
+        summary = result.full_severance.period_summaries[0]
+        expected_months = Decimal("17") / Decimal("31") + Decimal("1") + Decimal("10") / Decimal("31")
+        assert abs(summary.months_count - expected_months) < Decimal("0.01")
+
+
+class TestVaryingJobScope:
+    """Test 4b: Varying job scope is calculated per month."""
+
+    def test_varying_job_scope(self):
+        """Job scope 0.5 for first 6 months, 1.0 for last 6 months."""
+        start = date(2023, 1, 1)
+        end = date(2023, 12, 31)
+
+        pmrs = []
+        mas = []
+
+        # First 6 months: job_scope = 0.5
+        for month in range(1, 7):
+            pmrs.append(make_pmr((2023, month), "ep1", Decimal("10000")))
+            mas.append(make_month_aggregate((2023, month), Decimal("0.5")))
+
+        # Last 6 months: job_scope = 1.0
+        for month in range(7, 13):
+            pmrs.append(make_pmr((2023, month), "ep1", Decimal("10000")))
+            mas.append(make_month_aggregate((2023, month), Decimal("1.0")))
+
+        eps = [make_effective_period("ep1", start, end)]
+
+        result = compute_severance(
+            termination_reason=TerminationReason.FIRED,
+            industry="general",
+            period_month_records=pmrs,
+            month_aggregates=mas,
+            effective_periods=eps,
+            total_employment_months=Decimal("12"),
+            actual_deposits=Decimal("10000"),
+        )
+
+        assert result.eligible is True
+
+        # Check that each month used correct job_scope
+        for detail in result.full_severance.base_monthly_detail:
+            month_num = detail.month[1]
+            if month_num <= 6:
+                assert detail.job_scope == Decimal("0.5")
+            else:
+                assert detail.job_scope == Decimal("1.0")
+
+        # Full severance should be:
+        # 6 months × 10,000 × 0.08333 × 0.5 + 6 months × 10,000 × 0.08333 × 1.0
+        # = 6 × 833.30 × 0.5 + 6 × 833.30 × 1.0
+        # = 2,499.90 + 4,999.80 = 7,499.70
+        expected = Decimal("10000") * Decimal("0.08333") * 6 * Decimal("0.5") + \
+                   Decimal("10000") * Decimal("0.08333") * 6 * Decimal("1.0")
+        assert abs(result.full_severance.base_total - expected) < Decimal("1")
+
+
+class TestTwoEffectivePeriodsWithDifferentSalaries:
+    """Test 4c: Two effective periods with different salaries."""
+
+    def test_two_eps_different_salaries(self):
+        """EP1: 12 months at 8,000. EP2: 12 months at 10,000."""
+        ep1_start = date(2022, 1, 1)
+        ep1_end = date(2022, 12, 31)
+        ep2_start = date(2023, 1, 1)
+        ep2_end = date(2023, 12, 31)
+
+        pmrs = []
+        mas = []
+
+        # EP1: 2022, salary 8,000
+        for month in range(1, 13):
+            pmrs.append(make_pmr((2022, month), "ep1", Decimal("8000")))
+            mas.append(make_month_aggregate((2022, month)))
+
+        # EP2: 2023, salary 10,000
+        for month in range(1, 13):
+            pmrs.append(make_pmr((2023, month), "ep2", Decimal("10000")))
+            mas.append(make_month_aggregate((2023, month)))
+
+        eps = [
+            make_effective_period("ep1", ep1_start, ep1_end),
+            make_effective_period("ep2", ep2_start, ep2_end),
+        ]
+
+        result = compute_severance(
+            termination_reason=TerminationReason.FIRED,
+            industry="general",
+            period_month_records=pmrs,
+            month_aggregates=mas,
+            effective_periods=eps,
+            total_employment_months=Decimal("24"),
+            actual_deposits=Decimal("15000"),
+        )
+
+        assert result.eligible is True
+
+        # Last salary should be 10,000 (no change in last 12 months)
+        assert result.last_salary_info.last_salary == Decimal("10000")
+        assert result.last_salary_info.salary_changed_in_last_year is False
+
+        # Full severance uses last_salary for ALL months
+        for detail in result.full_severance.base_monthly_detail:
+            assert detail.salary_used == Decimal("10000")
+
+        # Required contributions uses actual salary_monthly of each month
+        for detail in result.required_contributions.base_monthly_detail:
+            year = detail.month[0]
+            if year == 2022:
+                assert detail.salary_used == Decimal("8000")
+            else:
+                assert detail.salary_used == Decimal("10000")
+
+        # Period summaries should be split correctly
+        assert len(result.full_severance.period_summaries) == 2
+        assert len(result.required_contributions.period_summaries) == 2
+
+        ep1_full_summary = next(s for s in result.full_severance.period_summaries if s.effective_period_id == "ep1")
+        ep2_full_summary = next(s for s in result.full_severance.period_summaries if s.effective_period_id == "ep2")
+
+        assert abs(ep1_full_summary.months_count - Decimal("12")) < Decimal("0.01")
+        assert abs(ep2_full_summary.months_count - Decimal("12")) < Decimal("0.01")
+
+
+class TestPathCWithSalaryChange:
+    """Test 4d: PATH C (resigned) with salary change."""
+
+    def test_resigned_uses_actual_salary_per_month(self):
+        """Resigned: required_contributions uses salary_monthly per month, not last_salary."""
+        start = date(2022, 1, 1)
+        end = date(2023, 12, 31)
+
+        pmrs = []
+        mas = []
+
+        # First 12 months: salary 8,000
+        for month in range(1, 13):
+            pmrs.append(make_pmr((2022, month), "ep1", Decimal("8000")))
+            mas.append(make_month_aggregate((2022, month)))
+
+        # Last 12 months: salary 10,000
+        for month in range(1, 13):
+            pmrs.append(make_pmr((2023, month), "ep1", Decimal("10000")))
+            mas.append(make_month_aggregate((2023, month)))
+
+        eps = [make_effective_period("ep1", start, end)]
+
+        result = compute_severance(
+            termination_reason=TerminationReason.RESIGNED,
+            industry="general",
+            period_month_records=pmrs,
+            month_aggregates=mas,
+            effective_periods=eps,
+            total_employment_months=Decimal("24"),
+            actual_deposits=Decimal("8000"),
+        )
+
+        assert result.eligible is True
+        assert result.path == SeverancePath.CONTRIBUTIONS
+
+        # Required contributions should use actual salary per month
+        # 12 months × 8,000 × 0.06 + 12 months × 10,000 × 0.06
+        # = 5,760 + 7,200 = 12,960
+        expected_req = Decimal("8000") * Decimal("0.06") * 12 + Decimal("10000") * Decimal("0.06") * 12
+        assert abs(result.required_contributions.base_total - expected_req) < Decimal("1")
+
+        # Claim = required_contributions
+        assert abs(result.total_claim - expected_req) < Decimal("1")
+
+        # Verify each month uses correct salary
+        for detail in result.required_contributions.base_monthly_detail:
+            year = detail.month[0]
+            if year == 2022:
+                assert detail.salary_used == Decimal("8000")
+            else:
+                assert detail.salary_used == Decimal("10000")

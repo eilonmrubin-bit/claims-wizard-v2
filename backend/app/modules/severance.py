@@ -163,26 +163,15 @@ def _determine_last_salary(
     last_month = sorted_pmrs[0].month
     last_year, last_mon = last_month
 
-    # Calculate 12 months ago
-    twelve_months_ago_year = last_year - 1 if last_mon == 1 else last_year
-    twelve_months_ago_mon = 12 if last_mon == 1 else last_mon
-    if last_mon > 1:
-        twelve_months_ago_mon = last_mon
-        twelve_months_ago_year = last_year - 1
-
-    # Actually: 12 months back means subtract 11 from current
-    # e.g., if last month is 2024-06, then 12 months ago starts at 2023-07
-    if last_mon >= 12:
-        twelve_months_ago = (last_year - 1, last_mon - 11)
+    # Calculate 12 months ago (start of the 12-month window)
+    # If last month is Dec 2023, we want Jan 2023 (same year, month 1)
+    # If last month is Jun 2024, we want Jul 2023 (prev year, month 7)
+    target_mon = last_mon - 11
+    if target_mon <= 0:
+        target_mon += 12
+        twelve_months_ago = (last_year - 1, target_mon)
     else:
-        # Wrap around year
-        months_back = 11
-        target_mon = last_mon - months_back
-        if target_mon <= 0:
-            target_mon += 12
-            twelve_months_ago = (last_year - 1, target_mon)
-        else:
-            twelve_months_ago = (last_year, target_mon)
+        twelve_months_ago = (last_year, target_mon)
 
     # Filter PMRs to last 12 months
     recent_pmrs = [
@@ -362,8 +351,14 @@ def compute_severance(
             continue
 
         subtotal = sum(d.amount for d in details)
-        months_count = Decimal(len(details))
-        avg_job_scope = sum(d.job_scope for d in details) / len(details) if details else Decimal("0")
+        # months_count = sum of partial_fractions (not count of PMRs)
+        months_count = sum(d.partial_fraction for d in details)
+        # avg_job_scope = weighted average by calendar_days_employed
+        total_days = sum(d.calendar_days_employed for d in details)
+        if total_days > 0:
+            avg_job_scope = sum(d.job_scope * d.calendar_days_employed for d in details) / Decimal(total_days)
+        else:
+            avg_job_scope = Decimal("0")
 
         full_period_summaries.append(SeverancePeriodSummary(
             effective_period_id=ep.id,
@@ -422,9 +417,19 @@ def compute_severance(
             continue
 
         subtotal = sum(d.amount for d in details)
-        months_count = Decimal(len(details))
-        avg_job_scope = sum(d.job_scope for d in details) / len(details) if details else Decimal("0")
-        avg_salary = sum(d.salary_used for d in details) / len(details) if details else Decimal("0")
+        # months_count = sum of partial_fractions (not count of PMRs)
+        months_count = sum(d.partial_fraction for d in details)
+        # avg_job_scope = weighted average by calendar_days_employed
+        total_days = sum(d.calendar_days_employed for d in details)
+        if total_days > 0:
+            avg_job_scope = sum(d.job_scope * d.calendar_days_employed for d in details) / Decimal(total_days)
+        else:
+            avg_job_scope = Decimal("0")
+        # avg_salary = weighted average by calendar_days_employed
+        if total_days > 0:
+            avg_salary = sum(d.salary_used * d.calendar_days_employed for d in details) / Decimal(total_days)
+        else:
+            avg_salary = Decimal("0")
 
         req_period_summaries.append(SeverancePeriodSummary(
             effective_period_id=ep.id,
