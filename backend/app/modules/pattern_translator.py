@@ -507,11 +507,14 @@ def validate_level_c(pattern: PatternLevelC, rest_day: RestDay) -> list[Validati
 # =============================================================================
 
 def translate_level_a(pattern: WorkPattern, rest_day: RestDay) -> WorkPattern:
-    """Translate Level A pattern (identity - just validate and return)."""
-    # Level A is already in the target format
-    # Just ensure rest_day is not in work_days
-    rest_day_int = rest_day_to_int(rest_day)
-    work_days = [d for d in pattern.work_days if d != rest_day_int]
+    """Translate Level A pattern (identity - just validate and return).
+
+    Note: We do NOT filter rest_day from work_days. If the pattern includes
+    the rest day, both is_work_day and is_rest_day will be True in daily_records.
+    The OT pipeline will apply rest-day rates (150%/200%).
+    """
+    # Level A is already in the target format - pass through as-is
+    work_days = list(pattern.work_days)
 
     return WorkPattern(
         id=pattern.id,
@@ -527,15 +530,17 @@ def translate_level_a(pattern: WorkPattern, rest_day: RestDay) -> WorkPattern:
 
 
 def translate_level_b(pattern: PatternLevelB, rest_day: RestDay) -> WorkPattern:
-    """Translate Level B (cyclic) pattern to Level A with daily_overrides."""
-    rest_day_int = rest_day_to_int(rest_day)
+    """Translate Level B (cyclic) pattern to Level A with daily_overrides.
 
-    # Collect all work days across the cycle
+    Note: We do NOT filter rest_day from work_days. If the pattern includes
+    the rest day, both is_work_day and is_rest_day will be True in daily_records.
+    The OT pipeline will apply rest-day rates (150%/200%).
+    """
+    # Collect all work days across the cycle (no filtering)
     all_work_days = set()
     for week_pattern in pattern.cycle:
         for d in week_pattern.work_days:
-            if d != rest_day_int:
-                all_work_days.add(d)
+            all_work_days.add(d)
 
     # Use first week's defaults
     first_week = pattern.cycle[0] if pattern.cycle else None
@@ -565,7 +570,7 @@ def translate_level_b(pattern: PatternLevelB, rest_day: RestDay) -> WorkPattern:
         # Get day of week (0=Sunday)
         dow = (current.weekday() + 1) % 7
 
-        if dow != rest_day_int and dow in week_pattern.work_days:
+        if dow in week_pattern.work_days:
             # Determine shifts for this day
             if week_pattern.daily_overrides and current in week_pattern.daily_overrides:
                 shifts_data = week_pattern.daily_overrides[current]

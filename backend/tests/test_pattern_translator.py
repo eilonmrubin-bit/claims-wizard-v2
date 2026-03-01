@@ -68,8 +68,12 @@ class TestNormalPath:
         assert result.work_patterns[0].work_days == [SUNDAY, MONDAY, TUESDAY, WEDNESDAY, THURSDAY]
         assert SATURDAY not in result.work_patterns[0].work_days
 
-    def test_level_a_removes_rest_day_from_work_days(self):
-        """Level A: Rest day is removed from work_days if present."""
+    def test_level_a_rest_day_in_work_days_preserved(self):
+        """Level A: Rest day in work_days should NOT be filtered out.
+
+        If pattern includes rest day, both is_work_day and is_rest_day will be True.
+        The OT pipeline will apply rest-day rates (150%/200%).
+        """
         pattern = WorkPattern(
             id="WP1",
             start=date(2024, 1, 1),
@@ -80,7 +84,9 @@ class TestNormalPath:
 
         result = translate([pattern], RestDay.SATURDAY)
 
-        assert SATURDAY not in result.work_patterns[0].work_days
+        # Saturday (rest day) should REMAIN in work_days - not filtered out
+        assert SATURDAY in result.work_patterns[0].work_days
+        assert result.work_patterns[0].work_days == [SUNDAY, MONDAY, TUESDAY, WEDNESDAY, THURSDAY, FRIDAY, SATURDAY]
 
 
 # =============================================================================
