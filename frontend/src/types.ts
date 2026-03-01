@@ -134,6 +134,8 @@ export type RestDay = 'saturday' | 'friday' | 'sunday';
 
 export type District = 'jerusalem' | 'tel_aviv' | 'haifa' | 'south' | 'galil';
 
+export type TerminationReason = 'fired' | 'resigned_as_fired' | 'resigned';
+
 export interface SSOTInput {
   case_metadata: CaseMetadata;
   personal_details: PersonalDetails;
@@ -145,6 +147,7 @@ export interface SSOTInput {
   district: District;
   industry: string;
   filing_date?: string;
+  termination_reason?: TerminationReason;
   seniority_input: SeniorityInput;
   right_toggles: Record<string, Record<string, boolean>>;
   deductions_input: Record<string, string>;

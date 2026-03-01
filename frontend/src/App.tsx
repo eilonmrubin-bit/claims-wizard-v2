@@ -22,6 +22,7 @@ import {
   Popover,
   Dropdown,
   Tabs,
+  Switch,
 } from 'antd';
 import {
   PlusOutlined,
@@ -72,6 +73,7 @@ import type {
   ShiftEntry,
   WeekPattern,
   PatternLevelB,
+  TerminationReason,
 } from './types';
 
 dayjs.locale('he');
@@ -204,8 +206,13 @@ const createEmptyInput = (): SSOTInput => ({
   district: 'tel_aviv',
   industry: 'general',
   filing_date: getEndOfCurrentMonth(),
+  termination_reason: undefined,
   seniority_input: { method: 'prior_plus_pattern', prior_months: 0 },
-  right_toggles: {},
+  right_toggles: {
+    overtime: { enabled: true },
+    holidays: { enabled: true },
+    severance: { enabled: true },
+  },
   deductions_input: {},
   right_specific_inputs: {},
 });
@@ -268,9 +275,10 @@ const EXAMPLE_JSON_INPUT = {
   district: "tel_aviv",
   industry: "general",
   filing_date: "2025-12-31",
+  termination_reason: "fired",
   seniority_input: { method: "prior_plus_pattern", prior_months: 0 },
   right_toggles: {},
-  deductions_input: { overtime: "0", holidays: "0" },
+  deductions_input: { overtime: "0", holidays: "0", severance: "15000" },
   right_specific_inputs: {}
 };
 
@@ -1459,59 +1467,78 @@ function App() {
                 key: 'settings',
                 label: 'הגדרות כלליות',
                 children: (
-                  <Row gutter={16}>
-                    <Col span={6}>
-                      <Form.Item label="יום מנוחה">
-                        <Select
-                          value={formData.rest_day}
-                          onChange={(v: RestDay) => updateField('rest_day', v)}
-                          style={{ width: '100%' }}
-                        >
-                          <Select.Option value="saturday">שבת</Select.Option>
-                          <Select.Option value="friday">שישי</Select.Option>
-                          <Select.Option value="sunday">ראשון</Select.Option>
-                        </Select>
-                      </Form.Item>
-                    </Col>
-                    <Col span={6}>
-                      <Form.Item label="מחוז">
-                        <Select
-                          value={formData.district}
-                          onChange={(v: District) => updateField('district', v)}
-                          style={{ width: '100%' }}
-                        >
-                          <Select.Option value="tel_aviv">תל אביב</Select.Option>
-                          <Select.Option value="jerusalem">ירושלים</Select.Option>
-                          <Select.Option value="haifa">חיפה</Select.Option>
-                          <Select.Option value="south">דרום</Select.Option>
-                          <Select.Option value="galil">גליל</Select.Option>
-                        </Select>
-                      </Form.Item>
-                    </Col>
-                    <Col span={6}>
-                      <Form.Item label="ענף">
-                        <Select
-                          value={formData.industry}
-                          onChange={(v) => updateField('industry', v)}
-                          style={{ width: '100%' }}
-                        >
-                          <Select.Option value="general">כללי</Select.Option>
-                          <Select.Option value="construction">בנייה</Select.Option>
-                          <Select.Option value="cleaning">ניקיון</Select.Option>
-                          <Select.Option value="security">אבטחה</Select.Option>
-                        </Select>
-                      </Form.Item>
-                    </Col>
-                    <Col span={6}>
-                      <Form.Item label="תאריך הגשת תביעה">
-                        <DateInput
-                          value={formData.filing_date || ''}
-                          onChange={(v) => updateField('filing_date', v || undefined)}
-                          style={{ width: '100%' }}
-                        />
-                      </Form.Item>
-                    </Col>
-                  </Row>
+                  <>
+                    <Row gutter={16}>
+                      <Col span={6}>
+                        <Form.Item label="יום מנוחה">
+                          <Select
+                            value={formData.rest_day}
+                            onChange={(v: RestDay) => updateField('rest_day', v)}
+                            style={{ width: '100%' }}
+                          >
+                            <Select.Option value="saturday">שבת</Select.Option>
+                            <Select.Option value="friday">שישי</Select.Option>
+                            <Select.Option value="sunday">ראשון</Select.Option>
+                          </Select>
+                        </Form.Item>
+                      </Col>
+                      <Col span={6}>
+                        <Form.Item label="מחוז">
+                          <Select
+                            value={formData.district}
+                            onChange={(v: District) => updateField('district', v)}
+                            style={{ width: '100%' }}
+                          >
+                            <Select.Option value="tel_aviv">תל אביב</Select.Option>
+                            <Select.Option value="jerusalem">ירושלים</Select.Option>
+                            <Select.Option value="haifa">חיפה</Select.Option>
+                            <Select.Option value="south">דרום</Select.Option>
+                            <Select.Option value="galil">גליל</Select.Option>
+                          </Select>
+                        </Form.Item>
+                      </Col>
+                      <Col span={6}>
+                        <Form.Item label="ענף">
+                          <Select
+                            value={formData.industry}
+                            onChange={(v) => updateField('industry', v)}
+                            style={{ width: '100%' }}
+                          >
+                            <Select.Option value="general">כללי</Select.Option>
+                            <Select.Option value="construction">בנייה</Select.Option>
+                            <Select.Option value="cleaning">ניקיון</Select.Option>
+                            <Select.Option value="agriculture">חקלאות</Select.Option>
+                          </Select>
+                        </Form.Item>
+                      </Col>
+                      <Col span={6}>
+                        <Form.Item label="תאריך הגשת תביעה">
+                          <DateInput
+                            value={formData.filing_date || ''}
+                            onChange={(v) => updateField('filing_date', v || undefined)}
+                            style={{ width: '100%' }}
+                          />
+                        </Form.Item>
+                      </Col>
+                    </Row>
+                    <Row gutter={16}>
+                      <Col span={6}>
+                        <Form.Item label="סיבת סיום העסקה">
+                          <Select
+                            value={formData.termination_reason}
+                            onChange={(v: TerminationReason) => updateField('termination_reason', v)}
+                            style={{ width: '100%' }}
+                            placeholder="בחר סיבה"
+                            allowClear
+                          >
+                            <Select.Option value="fired">פוטר</Select.Option>
+                            <Select.Option value="resigned_as_fired">התפטר בדין מפוטר</Select.Option>
+                            <Select.Option value="resigned">התפטר</Select.Option>
+                          </Select>
+                        </Form.Item>
+                      </Col>
+                    </Row>
+                  </>
                 ),
               },
               {
@@ -1638,32 +1665,65 @@ function App() {
               },
               {
                 key: 'toggles',
-                label: 'אפשרויות זכויות',
+                label: 'זכויות נתבעות',
                 children: (
-                  <Row gutter={16}>
-                    <Col span={12}>
-                      <Card title="שעות נוספות" size="small">
-                        <Checkbox
-                          checked={formData.right_toggles.overtime?.employer_paid_rest_premium || false}
-                          onChange={(e) =>
-                            updateRightToggle('overtime', 'employer_paid_rest_premium', e.target.checked)
-                          }
-                        >
-                          המעסיק שילם פרמיית מנוחה שבועית
-                        </Checkbox>
-                      </Card>
+                  <Row gutter={24}>
+                    <Col span={8}>
+                      <div style={{ marginBottom: 16 }}>
+                        <Space>
+                          <Switch
+                            checked={formData.right_toggles.overtime?.enabled !== false}
+                            onChange={(checked) => updateRightToggle('overtime', 'enabled', checked)}
+                          />
+                          <span style={{ fontWeight: 500 }}>שעות נוספות</span>
+                        </Space>
+                        {formData.right_toggles.overtime?.enabled !== false && (
+                          <div style={{ marginTop: 8, marginRight: 32 }}>
+                            <Checkbox
+                              checked={formData.right_toggles.overtime?.employer_paid_rest_premium || false}
+                              onChange={(e) =>
+                                updateRightToggle('overtime', 'employer_paid_rest_premium', e.target.checked)
+                              }
+                            >
+                              המעסיק שילם פרמיית מנוחה שבועית
+                            </Checkbox>
+                          </div>
+                        )}
+                      </div>
                     </Col>
-                    <Col span={12}>
-                      <Card title="חגים" size="small">
-                        <Checkbox
-                          checked={formData.right_toggles.holidays?.include_election_day || false}
-                          onChange={(e) =>
-                            updateRightToggle('holidays', 'include_election_day', e.target.checked)
-                          }
-                        >
-                          כלול יום בחירות
-                        </Checkbox>
-                      </Card>
+                    <Col span={8}>
+                      <div style={{ marginBottom: 16 }}>
+                        <Space>
+                          <Switch
+                            checked={formData.right_toggles.holidays?.enabled !== false}
+                            onChange={(checked) => updateRightToggle('holidays', 'enabled', checked)}
+                          />
+                          <span style={{ fontWeight: 500 }}>חגים</span>
+                        </Space>
+                        {formData.right_toggles.holidays?.enabled !== false && (
+                          <div style={{ marginTop: 8, marginRight: 32 }}>
+                            <Checkbox
+                              checked={formData.right_toggles.holidays?.include_election_day || false}
+                              onChange={(e) =>
+                                updateRightToggle('holidays', 'include_election_day', e.target.checked)
+                              }
+                            >
+                              כלול יום בחירות
+                            </Checkbox>
+                          </div>
+                        )}
+                      </div>
+                    </Col>
+                    <Col span={8}>
+                      <div style={{ marginBottom: 16 }}>
+                        <Space>
+                          <Switch
+                            checked={formData.right_toggles.severance?.enabled !== false}
+                            onChange={(checked) => updateRightToggle('severance', 'enabled', checked)}
+                          />
+                          <span style={{ fontWeight: 500 }}>פיצויי פיטורין</span>
+                        </Space>
+                      </div>
                     </Col>
                   </Row>
                 ),
@@ -1698,13 +1758,13 @@ function App() {
                       </Form.Item>
                     </Col>
                     <Col span={8}>
-                      <Form.Item label="ניכוי מדמי הבראה">
+                      <Form.Item label="הפרשות בפועל לפיצויים">
                         <InputNumber
-                          value={parseFloat(formData.deductions_input.recreation) || undefined}
-                          onChange={(v) => updateDeduction('recreation', String(v || 0))}
+                          value={parseFloat(formData.deductions_input.severance) || undefined}
+                          onChange={(v) => updateDeduction('severance', String(v || 0))}
                           min={0}
                           style={{ width: '100%' }}
-                          placeholder="סכום בש״ח"
+                          placeholder="סכום כולל בש״ח"
                           addonAfter="₪"
                         />
                       </Form.Item>
