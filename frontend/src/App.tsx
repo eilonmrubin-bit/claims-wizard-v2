@@ -120,21 +120,27 @@ const isOvernightShift = (shift: { start_time: string; end_time: string }): bool
   return endMins < startMins;
 };
 
+interface ConvertedPattern {
+  per_day: Record<string, { shifts: { start_time: string; end_time: string }[]; breaks?: { start_time: string; end_time: string }[] }>;
+  work_days: number[];
+}
+
 /**
  * Convert frontend PerDayShifts to backend DayShifts format.
  * Each ShiftEntry has its own break_minutes which gets converted to TimeRange.
  * Handles anchor='ends_here' by moving overnight shifts to the previous day.
+ * Returns updated work_days reflecting actual days with shifts after anchor adjustments.
  */
 const convertPerDayForBackend = (
   perDay: Record<number, PerDayShifts>,
-): Record<string, { shifts: { start_time: string; end_time: string }[]; breaks?: { start_time: string; end_time: string }[] }> => {
+  _originalWorkDays: number[],
+): ConvertedPattern => {
   // First pass: collect all shifts, handling anchor moves
   const adjustedPerDay: Record<number, { shifts: ShiftEntry[] }> = {};
 
-  // Initialize from original
   for (const [dayStr, dayData] of Object.entries(perDay)) {
     const day = parseInt(dayStr);
-    adjustedPerDay[day] = { shifts: [] };
+    if (!adjustedPerDay[day]) adjustedPerDay[day] = { shifts: [] };
     for (const shift of dayData.shifts) {
       if (shift.anchor === 'ends_here' && isOvernightShift(shift)) {
         // Move to previous day (0=Sunday → 6=Saturday wraps)
@@ -172,7 +178,13 @@ const convertPerDayForBackend = (
     };
   }
 
-  return result;
+  // Compute updated work_days: days that have at least one shift after adjustment
+  const updatedWorkDays = Object.entries(adjustedPerDay)
+    .filter(([_, data]) => data.shifts.length > 0)
+    .map(([dayStr]) => parseInt(dayStr))
+    .sort((a, b) => a - b);
+
+  return { per_day: result, work_days: updatedWorkDays };
 };
 
 // Get end of current month as default filing date
@@ -741,16 +753,17 @@ function App() {
           cycle_length: p.level_b.cycle.reduce((sum, w) => sum + (w.repeats || 1), 0),
           cycle: p.level_b.cycle.flatMap(week => {
             const reps = week.repeats || 1;
-            const converted = {
+            const convertedPerDay = convertPerDayForBackend(week.per_day, week.work_days);
+            const item = {
               id: p.id,
               start: p.start,
               end: p.end,
-              work_days: week.work_days,
+              work_days: convertedPerDay.work_days,
               default_shifts: [],
               default_breaks: [],
-              per_day: convertPerDayForBackend(week.per_day),
+              per_day: convertedPerDay.per_day,
             };
-            return Array(reps).fill(converted);
+            return Array(reps).fill(item);
           }),
         } : undefined;
 
@@ -777,9 +790,11 @@ function App() {
       // Convert per_day for all work patterns before sending
       const convertedWorkPatterns = formData.work_patterns.map(wp => {
         if (wp.per_day) {
+          const converted = convertPerDayForBackend(wp.per_day, wp.work_days || []);
           return {
             ...wp,
-            per_day: convertPerDayForBackend(wp.per_day),
+            per_day: converted.per_day,
+            work_days: converted.work_days,
           };
         }
         return wp;
@@ -1221,15 +1236,16 @@ function App() {
                                       </Col>
                                     </>
                                   )}
-                                  <Col span={4}>
+                                  <Col span={5}>
                                     <InputNumber
                                       value={dayType.break_minutes}
                                       onChange={(v) => updateDayType(pIndex, dtIndex, 'break_minutes', v || 0)}
                                       min={0}
                                       max={180}
                                       precision={0}
-                                      style={{ width: '100%' }}
-                                      addonBefore="הפסקה"
+                                      size="small"
+                                      style={{ width: '100%', minWidth: 120 }}
+                                      addonBefore="הפ'"
                                       addonAfter="דק'"
                                     />
                                   </Col>
@@ -1273,7 +1289,6 @@ function App() {
                         {pattern.pattern_type === 'cyclic' && pattern.level_b && (
                           <>
                             <Collapse
-                              accordion
                               defaultActiveKey={['0']}
                               items={pattern.level_b.cycle.map((week, wIndex) => ({
                                 key: String(wIndex),
