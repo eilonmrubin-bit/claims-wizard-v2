@@ -3068,40 +3068,47 @@ const VacationBreakdown: React.FC<VacationBreakdownProps> = ({ vacation, limitat
       {/* פאנל התיישנות חופשה */}
       {limitation && (
         <div style={{
-          marginTop: 16,
-          padding: '14px 16px',
+          marginTop: 16, padding: '14px 16px',
           background: 'rgba(78,205,196,0.06)',
-          borderRadius: 8,
-          border: '1px solid rgba(78,205,196,0.2)',
+          borderRadius: 8, border: '1px solid rgba(78,205,196,0.2)',
         }}>
-          <Text strong style={{ color: '#88D8E0', display: 'block', marginBottom: 10 }}>
+          <Text strong style={{ color: '#88D8E0', display: 'block', marginBottom: 8 }}>
             התיישנות חופשה — 3 שנים + שוטף
           </Text>
 
-          {/* הסבר */}
-          <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 12 }}>
-            חוק חופשה שנתית מאפשר לתבוע רק שנות חופשה שסיימו עד {vacationWindow ? formatDate(vacationWindow.effective_window_start) : '—'}.
-            שנים קודמות לכך התיישנו ואינן ניתנות לתביעה.
-          </Text>
+          {/* הסבר טקסטואלי */}
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 12, fontSize: 12 }}
+            message={
+              <span>
+                ניתן לתבוע שנות חופשה שהסתיימו החל מ-
+                <span className="ltr-number" style={{ fontWeight: 'bold', color: '#4ECDC4' }}>
+                  {vacationWindow ? formatDate(vacationWindow.effective_window_start) : '—'}
+                </span>
+                {vacationWindow && vacationWindow.base_window_start !== vacationWindow.effective_window_start && (
+                  <span style={{ color: '#88D8E0' }}>
+                    {' '}(חלון בסיסי {formatDate(vacationWindow.base_window_start)}, הורחב בשל הקפאות)
+                  </span>
+                )}
+                . שנות חופשה שהסתיימו לפני תאריך זה — <span style={{ color: '#FF6B6B' }}>התיישנו</span>.
+              </span>
+            }
+          />
 
           <Row gutter={16}>
             <Col span={6}>
               <Statistic
-                title="חלון מ-"
-                value={vacationWindow ? formatDate(vacationWindow.effective_window_start) : '—'}
+                title="תקופה בת-תביעה"
+                value={limitation.claimable_duration?.display ?? '—'}
                 valueStyle={{ color: '#4ECDC4', fontSize: 13 }}
               />
-              {vacationWindow && vacationWindow.base_window_start !== vacationWindow.effective_window_start && (
-                <Text type="secondary" style={{ fontSize: 11 }}>
-                  (בסיס: {formatDate(vacationWindow.base_window_start)}, הורחב בימי הקפאה)
-                </Text>
-              )}
             </Col>
             <Col span={6}>
               <Statistic
                 title="שנים שהתיישנו"
-                value={vacation.years.filter(y => !isYearClaimable(y)).length}
-                suffix={` / ${vacation.years.length}`}
+                value={`${vacation.years.filter(y => !isYearClaimable(y)).length} מתוך ${vacation.years.length}`}
                 valueStyle={{ color: '#FF6B6B', fontSize: 13 }}
               />
             </Col>

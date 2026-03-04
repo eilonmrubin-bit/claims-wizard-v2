@@ -806,7 +806,24 @@ def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
 
                 excluded_amount = full_amount - claimable_amount
 
-                claimable_dur, excluded_dur = compute_right_durations("vacation")
+                # vacation claimable duration: effective_vac_window_start → min(filing_date, employment_end)
+                if employment_start and employment_end:
+                    vac_claimable_start = max(effective_vac_window_start, employment_start)
+                    vac_claimable_end = min(filing_date, employment_end)
+                    if vac_claimable_start <= vac_claimable_end:
+                        claimable_dur = compute_duration(vac_claimable_start, vac_claimable_end)
+                    else:
+                        claimable_dur = None
+
+                    if employment_start < effective_vac_window_start:
+                        excl_end = min(effective_vac_window_start - timedelta(days=1), employment_end)
+                        excluded_dur = compute_duration(employment_start, excl_end) if employment_start <= excl_end else None
+                    else:
+                        excluded_dur = None
+                else:
+                    claimable_dur = None
+                    excluded_dur = None
+
                 per_right_results["vacation"] = RightLimitationResult(
                     limitation_type_id="vacation",
                     full_amount=full_amount,
