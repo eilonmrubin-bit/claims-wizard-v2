@@ -239,7 +239,22 @@ def _compute_segments(
             segment_value=segment_value,
         ))
 
-    return segments
+    # Merge consecutive segments with same day_value
+    merged = []
+    for seg in segments:
+        if merged and merged[-1].day_value == seg.day_value:
+            prev = merged[-1]
+            merged[-1] = RecreationDayValueSegment(
+                segment_start=prev.segment_start,
+                segment_end=seg.segment_end,
+                day_value=prev.day_value,
+                day_value_effective_date=prev.day_value_effective_date,
+                weight=prev.weight + seg.weight,
+                segment_value=prev.segment_value + seg.segment_value,
+            )
+        else:
+            merged.append(seg)
+    return merged
 
 
 def compute_recreation(
