@@ -466,6 +466,26 @@ class StaticDataLoader:
         row = lookup_by_date(table, target_date)
         return row["data"].value, row["data"].effective_date
 
+    def get_all_recreation_day_value_dates(self, industry: str = "general") -> list[date]:
+        """Get all effective dates for recreation day value for an industry.
+
+        Args:
+            industry: Industry identifier (default: general)
+
+        Returns:
+            Sorted list of all effective dates for the industry
+        """
+        if not self._loaded:
+            self.load_all()
+
+        # Filter by industry, fall back to general if not found
+        industry_rows = [rv for rv in self._recreation_day_value if rv.industry == industry]
+        if not industry_rows:
+            industry_rows = [rv for rv in self._recreation_day_value if rv.industry == "general"]
+
+        dates = sorted(set(rv.effective_date for rv in industry_rows))
+        return dates
+
     def get_recreation_days(self, industry: str, seniority_years: int) -> int:
         """Get recreation days per year for industry and seniority.
 

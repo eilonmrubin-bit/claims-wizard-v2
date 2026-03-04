@@ -233,6 +233,39 @@ interface SeveranceResult {
   total_claim: number;
 }
 
+interface RecreationDayValueSegment {
+  segment_start: string;
+  segment_end: string;
+  day_value: number;
+  day_value_effective_date: string;
+  weight: number;
+  segment_value: number;
+}
+
+interface RecreationYearData {
+  year_number: number;
+  year_start: string;
+  year_end: string;
+  is_partial: boolean;
+  partial_fraction: number | null;
+  seniority_years: number;
+  base_days: number;
+  avg_scope: number;
+  entitled_days: number;
+  segments: RecreationDayValueSegment[];
+  entitled_value: number;
+}
+
+interface RecreationResult {
+  entitled: boolean;
+  not_entitled_reason: string | null;
+  industry: string;
+  industry_fallback_used: boolean;
+  years: RecreationYearData[];
+  grand_total_days: number;
+  grand_total_value: number;
+}
+
 interface FreezePeriodApplied {
   name: string;
   start_date: string;
@@ -340,6 +373,7 @@ interface ResultsViewProps {
       overtime?: OvertimeResult;
       holidays?: HolidaysResult;
       severance?: SeveranceResult;
+      recreation?: RecreationResult;
     };
     limitation_results?: LimitationResults;
     total_employment?: TotalEmployment;
@@ -2193,7 +2227,212 @@ const SeveranceBreakdown: React.FC<{ severance: SeveranceResult }> = ({ severanc
 };
 
 // ============================================================================
-// ו. LimitationTimeline - התיישנות
+// ו. RecreationBreakdown - פירוט דמי הבראה
+// ============================================================================
+
+interface RecreationBreakdownProps {
+  recreation: RecreationResult;
+  limitation?: LimitationRightResult;
+}
+
+const RecreationBreakdown: React.FC<RecreationBreakdownProps> = ({ recreation, limitation }) => {
+  const industryLabels: Record<string, string> = {
+    general: 'כללי',
+    construction: 'בניין',
+    agriculture: 'חקלאות',
+    cleaning: 'ניקיון',
+  };
+
+  if (!recreation.entitled) {
+    return (
+      <Card
+        title={
+          <span>
+            <GiftOutlined style={{ marginLeft: 8 }} />
+            דמי הבראה
+          </span>
+        }
+        size="small"
+        style={{
+          borderRadius: 8,
+          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+          background: 'linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%)',
+        }}
+      >
+        <Alert
+          type="warning"
+          showIcon
+          message={recreation.not_entitled_reason || 'לא זכאי לדמי הבראה'}
+        />
+      </Card>
+    );
+  }
+
+  // Summary row
+  const summaryData = [
+    {
+      key: 'total',
+      label: 'סה"כ דמי הבראה',
+      days: recreation.grand_total_days,
+      beforeLimitation: recreation.grand_total_value,
+      afterLimitation: limitation?.claimable_amount ?? recreation.grand_total_value,
+    },
+  ];
+
+  // Year details
+  const yearColumns = [
+    { title: 'שנה', dataIndex: 'year_number', key: 'year_number', width: 60 },
+    {
+      title: 'תקופה',
+      key: 'period',
+      render: (_: unknown, record: RecreationYearData) => (
+        <span>
+          {formatDate(record.year_start)} – {formatDate(record.year_end)}
+          {record.is_partial && <Tag color="orange" style={{ marginRight: 4 }}>חלקית</Tag>}
+        </span>
+      ),
+    },
+    { title: 'ותק', dataIndex: 'seniority_years', key: 'seniority', width: 60 },
+    { title: 'ימי בסיס', dataIndex: 'base_days', key: 'base_days', width: 80 },
+    {
+      title: 'היקף',
+      key: 'scope',
+      width: 80,
+      render: (_: unknown, record: RecreationYearData) => (
+        <span>{(record.avg_scope * 100).toFixed(0)}%</span>
+      ),
+    },
+    {
+      title: 'ימים מזכים',
+      key: 'entitled_days',
+      width: 100,
+      render: (_: unknown, record: RecreationYearData) => (
+        <span className="ltr-number">{record.entitled_days.toFixed(2)}</span>
+      ),
+    },
+    {
+      title: 'שווי',
+      key: 'entitled_value',
+      width: 100,
+      render: (_: unknown, record: RecreationYearData) => (
+        <span className="ltr-number">{formatCurrency(record.entitled_value)}</span>
+      ),
+    },
+  ];
+
+  // Expand row to show segments if more than one
+  const expandedRowRender = (record: RecreationYearData) => {
+    if (record.segments.length <= 1) return null;
+
+    const segmentColumns = [
+      {
+        title: 'תקופה',
+        key: 'period',
+        render: (_: unknown, seg: RecreationDayValueSegment) => (
+          <span>{formatDate(seg.segment_start)} – {formatDate(seg.segment_end)}</span>
+        ),
+      },
+      {
+        title: 'ערך יום',
+        key: 'day_value',
+        render: (_: unknown, seg: RecreationDayValueSegment) => (
+          <span className="ltr-number">{formatCurrency(seg.day_value)}</span>
+        ),
+      },
+      {
+        title: 'משקל',
+        key: 'weight',
+        render: (_: unknown, seg: RecreationDayValueSegment) => (
+          <span>{(seg.weight * 100).toFixed(1)}%</span>
+        ),
+      },
+      {
+        title: 'שווי',
+        key: 'segment_value',
+        render: (_: unknown, seg: RecreationDayValueSegment) => (
+          <span className="ltr-number">{formatCurrency(seg.segment_value)}</span>
+        ),
+      },
+    ];
+
+    return (
+      <Table
+        dataSource={record.segments.map((s, i) => ({ ...s, key: i }))}
+        columns={segmentColumns}
+        pagination={false}
+        size="small"
+        style={{ margin: 0 }}
+      />
+    );
+  };
+
+  return (
+    <Card
+      title={
+        <span>
+          <GiftOutlined style={{ marginLeft: 8 }} />
+          דמי הבראה — {industryLabels[recreation.industry] || recreation.industry}
+        </span>
+      }
+      size="small"
+      style={{
+        borderRadius: 8,
+        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+        background: 'linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%)',
+      }}
+    >
+      <Row gutter={16} style={{ marginBottom: 16 }}>
+        <Col span={8}>
+          <Statistic
+            title="סה״כ ימים"
+            value={recreation.grand_total_days.toFixed(2)}
+            precision={2}
+          />
+        </Col>
+        <Col span={8}>
+          <Statistic
+            title="שווי לפני התיישנות"
+            value={recreation.grand_total_value}
+            precision={2}
+            prefix="₪"
+          />
+        </Col>
+        <Col span={8}>
+          <Statistic
+            title="שווי אחרי התיישנות"
+            value={limitation?.claimable_amount ?? recreation.grand_total_value}
+            precision={2}
+            prefix="₪"
+            valueStyle={{ color: '#52c41a' }}
+          />
+        </Col>
+      </Row>
+
+      {recreation.industry_fallback_used && (
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 16 }}
+          message="הענף לא נמצא בטבלה — שימוש בטבלה כללית"
+        />
+      )}
+
+      <Table
+        dataSource={recreation.years.map(y => ({ ...y, key: y.year_number }))}
+        columns={yearColumns}
+        pagination={false}
+        size="small"
+        expandable={{
+          expandedRowRender,
+          rowExpandable: (record) => record.segments.length > 1,
+        }}
+      />
+    </Card>
+  );
+};
+
+// ============================================================================
+// ז. LimitationTimeline - התיישנות
 // ============================================================================
 
 const LimitationTimeline: React.FC<{ limitation: LimitationResults }> = ({ limitation }) => {
@@ -2462,7 +2701,17 @@ const ResultsView: React.FC<ResultsViewProps> = ({ ssot }) => {
         <div style={{ marginBottom: 24 }}><SeveranceBreakdown severance={rights_results.severance} /></div>
       )}
 
-      {/* ז. Limitation Timeline */}
+      {/* ז. Recreation Breakdown */}
+      {rights_results?.recreation && (
+        <div style={{ marginBottom: 24 }}>
+          <RecreationBreakdown
+            recreation={rights_results.recreation}
+            limitation={limitation_results?.per_right?.recreation}
+          />
+        </div>
+      )}
+
+      {/* ח. Limitation Timeline */}
       {limitation_results && limitation_results.windows?.length > 0 && (
         <div style={{ marginBottom: 24 }}><LimitationTimeline limitation={limitation_results} /></div>
       )}

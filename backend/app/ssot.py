@@ -708,6 +708,17 @@ class HolidaysResult:
 
 
 @dataclass
+class RecreationDayValueSegment:
+    """A segment within an employment year where day_value is constant."""
+    segment_start: date | None = None
+    segment_end: date | None = None
+    day_value: Decimal = Decimal("0")
+    day_value_effective_date: date | None = None
+    weight: Decimal = Decimal("0")  # days_in_segment / total_year_days
+    segment_value: Decimal = Decimal("0")  # weight × entitled_days × day_value
+
+
+@dataclass
 class RecreationYearData:
     """Recreation data for a single employment year."""
     year_number: int = 0  # 1, 2, 3, ...
@@ -718,10 +729,9 @@ class RecreationYearData:
     seniority_years: int = 0  # seniority at start of this year
     base_days: int = 0  # days per year from table
     avg_scope: Decimal = Decimal("0")  # average job scope
-    day_value: Decimal = Decimal("0")  # day value in NIS
-    day_value_effective_date: date | None = None  # effective_date used
     entitled_days: Decimal = Decimal("0")  # base_days × partial_fraction × avg_scope
-    entitled_value: Decimal = Decimal("0")  # entitled_days × day_value
+    segments: list[RecreationDayValueSegment] = field(default_factory=list)
+    entitled_value: Decimal = Decimal("0")  # Σ segment_value
 
 
 @dataclass

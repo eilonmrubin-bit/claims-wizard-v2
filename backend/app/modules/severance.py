@@ -245,7 +245,7 @@ def compute_severance(
     total_employment_months: Decimal,
     actual_deposits: Decimal,
     shifts: list[Shift] | None = None,
-    recreation_annual_value: Decimal | None = None,
+    recreation_annual_by_month: dict[tuple[int, int], Decimal] | None = None,
     settings_path: Path | None = None,
 ) -> SeveranceData:
     """Compute severance pay.
@@ -259,7 +259,7 @@ def compute_severance(
         total_employment_months: Total months of employment (decimal)
         actual_deposits: Actual deposits made by employer (from deductions_input)
         shifts: List of shifts (for OT calculation in cleaning)
-        recreation_annual_value: Annual recreation value (for cleaning)
+        recreation_annual_by_month: Dict mapping (year, month) to annual recreation value for that month
         settings_path: Optional path to settings.json
 
     Returns:
@@ -477,7 +477,7 @@ def compute_severance(
 
     if config.recreation_addition:
         rec_monthly_details = []
-        recreation_pending = recreation_annual_value is None
+        recreation_pending = recreation_annual_by_month is None
 
         for pmr in period_month_records:
             month = pmr.month
@@ -489,7 +489,8 @@ def compute_severance(
                 month, effective_periods, pmr.effective_period_id
             )
 
-            annual_value = recreation_annual_value or Decimal("0")
+            # Look up annual recreation value for this specific month
+            annual_value = (recreation_annual_by_month or {}).get(month, Decimal("0"))
             monthly_value = annual_value / Decimal("12")
             amount = monthly_value * config.recreation_addition_rate * partial_fraction
 

@@ -12,6 +12,7 @@ from typing import Callable
 from app.ssot import (
     RecreationResult,
     RecreationYearData,
+    RecreationDayValueSegment,
     EmploymentPeriod,
     MonthAggregate,
 )
@@ -188,6 +189,59 @@ def _compute_avg_scope_for_year(
     return weighted_sum / total_weight
 
 
+def _compute_segments(
+    year_start: date,
+    year_end: date,
+    entitled_days: Decimal,
+    industry: str,
+    all_effective_dates: list[date],
+    get_recreation_day_value: Callable[[date, str], tuple[Decimal, date]],
+) -> list[RecreationDayValueSegment]:
+    """Compute day value segments for an employment year.
+
+    Segments split the year at each effective_date change point.
+    """
+    # Find effective_dates that fall within (year_start, year_end]
+    # We use > year_start because the year_start value is already covered
+    split_dates = [d for d in all_effective_dates if year_start < d <= year_end]
+
+    # Build segment boundaries: [year_start] + split_dates + [year_end + 1 day]
+    # We use year_end + 1 to make the last segment inclusive of year_end
+    boundaries = [year_start] + sorted(split_dates) + [year_end + timedelta(days=1)]
+
+    total_days_in_year = (year_end - year_start).days + 1
+    if total_days_in_year <= 0:
+        return []
+
+    segments = []
+    for i in range(len(boundaries) - 1):
+        seg_start = boundaries[i]
+        seg_end_exclusive = boundaries[i + 1]
+        # seg_end is inclusive (the day before seg_end_exclusive)
+        seg_end = seg_end_exclusive - timedelta(days=1)
+
+        # Get day value for this segment (lookup by segment start date)
+        day_value, effective_date = get_recreation_day_value(seg_start, industry)
+
+        # Calculate weight
+        days_in_segment = (seg_end - seg_start).days + 1
+        weight = Decimal(days_in_segment) / Decimal(total_days_in_year)
+
+        # Calculate segment value
+        segment_value = weight * entitled_days * day_value
+
+        segments.append(RecreationDayValueSegment(
+            segment_start=seg_start,
+            segment_end=seg_end,
+            day_value=day_value,
+            day_value_effective_date=effective_date,
+            weight=weight,
+            segment_value=segment_value,
+        ))
+
+    return segments
+
+
 def compute_recreation(
     employment_periods: list[EmploymentPeriod],
     total_seniority_years: Decimal,
@@ -195,6 +249,7 @@ def compute_recreation(
     industry: str,
     get_recreation_days: Callable[[str, int], int],
     get_recreation_day_value: Callable[[date, str], tuple[Decimal, date]],
+    get_all_effective_dates: Callable[[str], list[date]] | None = None,
 ) -> RecreationResult:
     """Compute recreation pay entitlement.
 
@@ -205,6 +260,7 @@ def compute_recreation(
         industry: Industry identifier
         get_recreation_days: Function to look up recreation days by industry + seniority
         get_recreation_day_value: Function to look up day value by date + industry
+        get_all_effective_dates: Function to get all effective dates for an industry
 
     Returns:
         RecreationResult with all calculation details
@@ -231,6 +287,9 @@ def compute_recreation(
 
     # Step 2: Define employment years
     employment_years = _compute_employment_years(employment_start, employment_end)
+
+    # Get all effective dates for segments computation
+    all_effective_dates = get_all_effective_dates(industry) if get_all_effective_dates else []
 
     # Step 3-8: Calculate for each employment year
     grand_total_days = Decimal("0")
@@ -262,17 +321,26 @@ def compute_recreation(
             month_aggregates,
         )
 
-        # Step 6: Get day value for end of this year
-        day_value, day_value_effective_date = get_recreation_day_value(emp_year.end, industry)
-
-        # Step 7: Calculate entitled days and value
+        # Step 7: Calculate entitled days
         if emp_year.is_partial:
             partial_fraction = Decimal(emp_year.whole_months) / Decimal("12")
         else:
             partial_fraction = Decimal("1")
 
         entitled_days = Decimal(base_days) * partial_fraction * avg_scope
-        entitled_value = entitled_days * day_value
+
+        # Step 6: Compute segments for day value
+        segments = _compute_segments(
+            emp_year.start,
+            emp_year.end,
+            entitled_days,
+            industry,
+            all_effective_dates,
+            get_recreation_day_value,
+        )
+
+        # Calculate entitled_value as sum of segment values
+        entitled_value = sum((seg.segment_value for seg in segments), Decimal("0"))
 
         # Add to totals
         grand_total_days += entitled_days
@@ -288,9 +356,8 @@ def compute_recreation(
             seniority_years=seniority_for_year,
             base_days=base_days,
             avg_scope=avg_scope,
-            day_value=day_value,
-            day_value_effective_date=day_value_effective_date,
             entitled_days=entitled_days,
+            segments=segments,
             entitled_value=entitled_value,
         )
         result.years.append(year_data)

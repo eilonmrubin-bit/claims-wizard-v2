@@ -453,6 +453,25 @@ def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
             # Get actual deposits from deductions_input
             actual_deposits = ssot.input.deductions_input.get("severance", Decimal("0"))
 
+            # Build recreation_annual_by_month for cleaning industry
+            recreation_annual_by_month = None
+            if (ssot.input.industry == "cleaning" and
+                    ssot.rights_results.recreation and
+                    ssot.rights_results.recreation.entitled):
+                recreation_annual_by_month = {}
+                for year in ssot.rights_results.recreation.years:
+                    if year.year_start and year.year_end:
+                        # Map every month that falls within this employment year
+                        cur = date(year.year_start.year, year.year_start.month, 1)
+                        end = year.year_end
+                        while cur <= end:
+                            recreation_annual_by_month[(cur.year, cur.month)] = year.entitled_value
+                            # Advance one month
+                            if cur.month == 12:
+                                cur = date(cur.year + 1, 1, 1)
+                            else:
+                                cur = date(cur.year, cur.month + 1, 1)
+
             severance_result = compute_severance(
                 termination_reason=ssot.input.termination_reason,
                 industry=ssot.input.industry,
@@ -462,7 +481,7 @@ def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
                 total_employment_months=total_employment_months,
                 actual_deposits=actual_deposits,
                 shifts=ssot.shifts,
-                recreation_annual_value=None,  # Future: from recreation module
+                recreation_annual_by_month=recreation_annual_by_month,
             )
 
             ssot.rights_results.severance = severance_result
@@ -481,6 +500,7 @@ def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
                 industry=ssot.input.industry,
                 get_recreation_days=static_data.get_recreation_days,
                 get_recreation_day_value=static_data.get_recreation_day_value,
+                get_all_effective_dates=static_data.get_all_recreation_day_value_dates,
             )
 
             ssot.rights_results.recreation = recreation_result

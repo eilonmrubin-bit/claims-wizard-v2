@@ -108,6 +108,16 @@ def mock_get_recreation_day_value(target_date: date, industry: str) -> tuple[Dec
         return Decimal("378.00"), date(2018, 7, 1)
 
 
+def mock_get_all_effective_dates(industry: str) -> list[date]:
+    """Mock function for getting all effective dates."""
+    # Cleaning has only one effective date
+    if industry == "cleaning":
+        return [date(2018, 7, 1)]
+
+    # Others have two effective dates: 2018-07-01 and 2023-07-01
+    return [date(2018, 7, 1), date(2023, 7, 1)]
+
+
 # =============================================================================
 # Test Case 1: 3 full years, general industry
 # =============================================================================
@@ -138,6 +148,7 @@ def test_case_1_three_full_years_general():
         industry="general",
         get_recreation_days=mock_get_recreation_days,
         get_recreation_day_value=mock_get_recreation_day_value,
+        get_all_effective_dates=mock_get_all_effective_dates,
     )
 
     assert result.entitled is True
@@ -165,10 +176,11 @@ def test_case_1_three_full_years_general():
     assert result.years[2].entitled_days == Decimal("6")
 
     assert result.grand_total_days == Decimal("17")
-    # Year 1 ends 2021-12-31 -> 378, Year 2 ends 2022-12-31 -> 378, Year 3 ends 2023-12-31 -> 418
-    # So: 5*378 + 6*378 + 6*418 = 1890 + 2268 + 2508 = 6666
-    expected_value = Decimal("5") * Decimal("378") + Decimal("6") * Decimal("378") + Decimal("6") * Decimal("418")
-    assert result.grand_total_value == expected_value
+    # Year 1: 5 × 378 = 1890
+    # Year 2: 6 × 378 = 2268
+    # Year 3: split at 2023-07-01 (181 days @ 378 + 184 days @ 418) ≈ 2388.99
+    # Total ≈ 6546.99
+    assert result.grand_total_value.quantize(Decimal("0.01")) == Decimal("6546.99")
 
 
 # =============================================================================
@@ -195,6 +207,7 @@ def test_case_2_less_than_year_not_entitled():
         industry="general",
         get_recreation_days=mock_get_recreation_days,
         get_recreation_day_value=mock_get_recreation_day_value,
+        get_all_effective_dates=mock_get_all_effective_dates,
     )
 
     assert result.entitled is False
@@ -233,6 +246,7 @@ def test_case_3_eighteen_months_partial_year():
         industry="general",
         get_recreation_days=mock_get_recreation_days,
         get_recreation_day_value=mock_get_recreation_day_value,
+        get_all_effective_dates=mock_get_all_effective_dates,
     )
 
     assert result.entitled is True
@@ -254,9 +268,10 @@ def test_case_3_eighteen_months_partial_year():
     assert result.years[1].entitled_days == Decimal("3")
 
     assert result.grand_total_days == Decimal("8")
-    # Year 1 ends 2023-12-31 -> 418, Year 2 ends 2024-07-01 -> 418
-    expected_value = Decimal("5") * Decimal("418") + Decimal("3") * Decimal("418")
-    assert result.grand_total_value == expected_value
+    # Year 1: split at 2023-07-01 (181 days @ 378 + 184 days @ 418) ≈ 1990.82
+    # Year 2: 3 × 418 = 1254
+    # Total ≈ 3244.82
+    assert result.grand_total_value.quantize(Decimal("0.01")) == Decimal("3244.82")
 
 
 # =============================================================================
@@ -288,6 +303,7 @@ def test_case_4_construction_with_seniority():
         industry="construction",
         get_recreation_days=mock_get_recreation_days,
         get_recreation_day_value=mock_get_recreation_day_value,
+        get_all_effective_dates=mock_get_all_effective_dates,
     )
 
     assert result.entitled is True
@@ -309,9 +325,10 @@ def test_case_4_construction_with_seniority():
     assert result.years[1].entitled_days == Decimal("4.5")
 
     assert result.grand_total_days == Decimal("9.0")
-    # Year 1 ends 2023-01-01 -> 378, Year 2 ends 2024-01-01 -> 418
-    expected_value = Decimal("4.5") * Decimal("378") + Decimal("4.5") * Decimal("418")
-    assert result.grand_total_value == expected_value
+    # Year 1 (2022): 4.5 × 378 = 1701
+    # Year 2 (2023): split at 2023-07-01 (181 days @ 378 + 184 days @ 418) ≈ 1791.74
+    # Total ≈ 3492.74
+    assert result.grand_total_value.quantize(Decimal("0.01")) == Decimal("3492.74")
 
 
 # =============================================================================
@@ -338,6 +355,7 @@ def test_case_5_exactly_one_year_boundary():
         industry="general",
         get_recreation_days=mock_get_recreation_days,
         get_recreation_day_value=mock_get_recreation_day_value,
+        get_all_effective_dates=mock_get_all_effective_dates,
     )
 
     assert result.entitled is True
@@ -373,6 +391,7 @@ def test_anti_pattern_seniority_floored():
         industry="general",
         get_recreation_days=mock_get_recreation_days,
         get_recreation_day_value=mock_get_recreation_day_value,
+        get_all_effective_dates=mock_get_all_effective_dates,
     )
 
     # Year 1: seniority = floor(1.5) + 1 = 2 → 6 days (seniority 2 is in range 2-3)
@@ -381,7 +400,7 @@ def test_anti_pattern_seniority_floored():
 
 
 def test_anti_pattern_per_year_day_value():
-    """Each employment year gets its own day value based on year_end."""
+    """Each employment year gets its own day value segments based on effective dates."""
     start = date(2022, 1, 1)
     end = date(2024, 1, 1)
 
@@ -395,12 +414,17 @@ def test_anti_pattern_per_year_day_value():
         industry="general",
         get_recreation_days=mock_get_recreation_days,
         get_recreation_day_value=mock_get_recreation_day_value,
+        get_all_effective_dates=mock_get_all_effective_dates,
     )
 
-    # Year 1 ends 2023-01-01 (before 2023-07-01) -> 378
-    assert result.years[0].day_value == Decimal("378")
-    # Year 2 ends 2024-01-01 (after 2023-07-01) -> 418
-    assert result.years[1].day_value == Decimal("418")
+    # Year 1 (2022): single segment, day_value = 378
+    assert len(result.years[0].segments) == 1
+    assert result.years[0].segments[0].day_value == Decimal("378")
+
+    # Year 2 (2023): two segments split at 2023-07-01
+    assert len(result.years[1].segments) == 2
+    assert result.years[1].segments[0].day_value == Decimal("378")
+    assert result.years[1].segments[1].day_value == Decimal("418")
 
 
 def test_industry_fallback_to_general():
@@ -418,6 +442,7 @@ def test_industry_fallback_to_general():
         industry="unknown_industry",  # Not in table
         get_recreation_days=mock_get_recreation_days,
         get_recreation_day_value=mock_get_recreation_day_value,
+        get_all_effective_dates=mock_get_all_effective_dates,
     )
 
     assert result.entitled is True
@@ -441,6 +466,7 @@ def test_no_intermediate_rounding():
         industry="general",
         get_recreation_days=mock_get_recreation_days,
         get_recreation_day_value=mock_get_recreation_day_value,
+        get_all_effective_dates=mock_get_all_effective_dates,
     )
 
     # Year 1: seniority=1 → 5 days, 5 * 1.0 * 0.75 = 3.75
