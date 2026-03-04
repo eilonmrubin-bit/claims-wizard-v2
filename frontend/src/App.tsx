@@ -1888,8 +1888,6 @@ function App() {
                         </Space>
                       </div>
                     </Col>
-                  </Row>
-                  <Row gutter={24}>
                     <Col span={6}>
                       <div style={{ marginBottom: 16 }}>
                         <Space>
