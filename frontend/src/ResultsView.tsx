@@ -339,6 +339,22 @@ interface VacationResult {
   grand_total_value: number;
 }
 
+interface PensionMonthData {
+  month: [number, number];
+  month_start: string;
+  salary_monthly: number;
+  job_scope: number;
+  pension_rate: number;
+  month_value: number;
+}
+
+interface PensionResult {
+  entitled: boolean;
+  industry: string;
+  months: PensionMonthData[];
+  grand_total_value: number;
+}
+
 interface FreezePeriodApplied {
   name: string;
   start_date: string;
@@ -453,6 +469,7 @@ interface ResultsViewProps {
       severance?: SeveranceResult;
       recreation?: RecreationResult;
       vacation?: VacationResult;
+      pension?: PensionResult;
     };
     limitation_results?: LimitationResults;
     total_employment?: TotalEmployment;
@@ -2780,7 +2797,224 @@ const RecreationBreakdown: React.FC<RecreationBreakdownProps> = ({ recreation, l
 };
 
 // ============================================================================
-// ז. VacationBreakdown - פירוט חופשה שנתית
+// ז. PensionBreakdown - פירוט פנסיה
+// ============================================================================
+
+const PENSION_RATE_LABELS: Record<string, string> = {
+  general: 'כללי (6.5%)',
+  agriculture: 'חקלאות (6.5%)',
+  cleaning: 'ניקיון (7.5%)',
+  construction: 'בניין (6% / 7.1%)',
+};
+
+interface PensionBreakdownProps {
+  pension: PensionResult;
+  limitation?: LimitationRightResult;
+}
+
+const PensionBreakdown: React.FC<PensionBreakdownProps> = ({ pension, limitation }) => {
+  const industryLabels: Record<string, string> = {
+    general: 'כללי',
+    construction: 'בניין',
+    agriculture: 'חקלאות',
+    cleaning: 'ניקיון',
+  };
+
+  if (!pension.entitled) {
+    return (
+      <Card
+        title={
+          <span>
+            <SafetyOutlined style={{ marginLeft: 8 }} />
+            פנסיה
+          </span>
+        }
+        size="small"
+        style={{
+          borderRadius: 8,
+          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+          background: 'linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%)',
+        }}
+      >
+        <Alert
+          type="warning"
+          showIcon
+          message="לא זכאי לפנסיה (הופעל ביטול)"
+        />
+      </Card>
+    );
+  }
+
+  // Group months by year for collapsible display
+  const monthsByYear: Record<number, PensionMonthData[]> = {};
+  for (const m of pension.months) {
+    const year = m.month[0];
+    if (!monthsByYear[year]) monthsByYear[year] = [];
+    monthsByYear[year].push(m);
+  }
+  const years = Object.keys(monthsByYear).map(Number).sort((a, b) => a - b);
+
+  // Calculate yearly summaries
+  const yearSummaries = years.map(year => {
+    const yearMonths = monthsByYear[year];
+    const totalValue = yearMonths.reduce((sum, m) => sum + m.month_value, 0);
+    const avgSalary = yearMonths.reduce((sum, m) => sum + m.salary_monthly, 0) / yearMonths.length;
+    const avgRate = yearMonths.reduce((sum, m) => sum + m.pension_rate, 0) / yearMonths.length;
+    return {
+      year,
+      monthsCount: yearMonths.length,
+      totalValue,
+      avgSalary,
+      avgRate,
+    };
+  });
+
+  // Month columns for expanded view
+  const monthColumns = [
+    {
+      title: 'חודש',
+      key: 'month',
+      width: 120,
+      render: (_: unknown, record: PensionMonthData) => formatMonth(record.month),
+    },
+    {
+      title: 'שכר חודשי',
+      key: 'salary',
+      width: 120,
+      render: (_: unknown, record: PensionMonthData) => (
+        <span className="ltr-number">{formatCurrency(record.salary_monthly)}</span>
+      ),
+    },
+    {
+      title: 'היקף משרה',
+      key: 'scope',
+      width: 80,
+      render: (_: unknown, record: PensionMonthData) => (
+        <span>{(record.job_scope * 100).toFixed(0)}%</span>
+      ),
+    },
+    {
+      title: 'שיעור',
+      key: 'rate',
+      width: 80,
+      render: (_: unknown, record: PensionMonthData) => (
+        <span>{(record.pension_rate * 100).toFixed(1)}%</span>
+      ),
+    },
+    {
+      title: 'שווי',
+      key: 'value',
+      width: 100,
+      render: (_: unknown, record: PensionMonthData) => (
+        <span className="ltr-number">{formatCurrency(record.month_value)}</span>
+      ),
+    },
+  ];
+
+  // Year columns for summary table
+  const yearColumns = [
+    { title: 'שנה', dataIndex: 'year', key: 'year', width: 80 },
+    { title: 'חודשים', dataIndex: 'monthsCount', key: 'months', width: 80 },
+    {
+      title: 'שיעור ממוצע',
+      key: 'avgRate',
+      width: 100,
+      render: (_: unknown, record: typeof yearSummaries[0]) => (
+        <span>{(record.avgRate * 100).toFixed(1)}%</span>
+      ),
+    },
+    {
+      title: 'שכר ממוצע',
+      key: 'avgSalary',
+      width: 120,
+      render: (_: unknown, record: typeof yearSummaries[0]) => (
+        <span className="ltr-number">{formatCurrency(record.avgSalary)}</span>
+      ),
+    },
+    {
+      title: 'שווי',
+      key: 'totalValue',
+      width: 120,
+      render: (_: unknown, record: typeof yearSummaries[0]) => (
+        <span className="ltr-number">{formatCurrency(record.totalValue)}</span>
+      ),
+    },
+  ];
+
+  // Expandable row to show monthly breakdown
+  const expandedRowRender = (record: typeof yearSummaries[0]) => {
+    const yearMonths = monthsByYear[record.year];
+    return (
+      <Table
+        dataSource={yearMonths.map((m, i) => ({ ...m, key: i }))}
+        columns={monthColumns}
+        pagination={false}
+        size="small"
+        style={{ margin: 0 }}
+      />
+    );
+  };
+
+  return (
+    <Card
+      title={
+        <Space>
+          <span>
+            <SafetyOutlined style={{ marginLeft: 8 }} />
+            פנסיה — {industryLabels[pension.industry] || pension.industry}
+          </span>
+          <Tag color="blue">{PENSION_RATE_LABELS[pension.industry] || pension.industry}</Tag>
+        </Space>
+      }
+      size="small"
+      style={{
+        borderRadius: 8,
+        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+        background: 'linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%)',
+      }}
+    >
+      <Row gutter={16} style={{ marginBottom: 16 }}>
+        <Col span={8}>
+          <Statistic
+            title="סה״כ חודשים"
+            value={pension.months.length}
+          />
+        </Col>
+        <Col span={8}>
+          <Statistic
+            title="שווי לפני התיישנות"
+            value={pension.grand_total_value}
+            precision={2}
+            prefix="₪"
+          />
+        </Col>
+        <Col span={8}>
+          <Statistic
+            title="שווי אחרי התיישנות"
+            value={limitation?.claimable_amount ?? pension.grand_total_value}
+            precision={2}
+            prefix="₪"
+            valueStyle={{ color: '#52c41a' }}
+          />
+        </Col>
+      </Row>
+
+      <Table
+        dataSource={yearSummaries.map(s => ({ ...s, key: s.year }))}
+        columns={yearColumns}
+        pagination={false}
+        size="small"
+        expandable={{
+          expandedRowRender,
+          rowExpandable: () => true,
+        }}
+      />
+    </Card>
+  );
+};
+
+// ============================================================================
+// ח. VacationBreakdown - פירוט חופשה שנתית
 // ============================================================================
 
 const VACATION_DAYS_TABLES: Record<string, { range: string; five_day: number; six_day: number }[]> = {
@@ -3551,6 +3785,16 @@ const ResultsView: React.FC<ResultsViewProps> = ({ ssot }) => {
           <RecreationBreakdown
             recreation={rights_results.recreation}
             limitation={limitation_results?.per_right?.recreation}
+          />
+        </div>
+      )}
+
+      {/* ז2. Pension Breakdown */}
+      {rights_results?.pension && rights_results.pension.entitled && (
+        <div style={{ marginBottom: 24 }}>
+          <PensionBreakdown
+            pension={rights_results.pension}
+            limitation={limitation_results?.per_right?.pension}
           />
         </div>
       )}

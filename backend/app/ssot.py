@@ -797,13 +797,33 @@ class VacationResult:
 
 
 @dataclass
+class PensionMonthData:
+    """Pension data for a single calendar month."""
+    month: tuple[int, int] = (0, 0)  # (year, month)
+    month_start: date | None = None
+    salary_monthly: Decimal = Decimal("0")
+    job_scope: Decimal = Decimal("0")
+    pension_rate: Decimal = Decimal("0")
+    month_value: Decimal = Decimal("0")  # salary_monthly × rate × job_scope
+
+
+@dataclass
+class PensionResult:
+    """Pension calculation result."""
+    entitled: bool = True
+    industry: str = ""
+    months: list[PensionMonthData] = field(default_factory=list)
+    grand_total_value: Decimal = Decimal("0")
+
+
+@dataclass
 class RightsResults:
     """Results for all rights (Phase 2)."""
     overtime: OvertimeResult | None = None
     holidays: HolidaysResult | None = None
     vacation: VacationResult | None = None
     severance: SeveranceData | None = None
-    pension: Any | None = None  # Not yet defined
+    pension: PensionResult | None = None
     recreation: RecreationResult | None = None
     salary_completion: Any | None = None  # Not yet defined
     travel: Any | None = None  # Not yet defined

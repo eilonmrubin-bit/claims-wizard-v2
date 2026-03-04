@@ -1898,6 +1898,15 @@ function App() {
                           <span style={{ fontWeight: 500 }}>חופשה</span>
                         </Space>
                       </div>
+                      <div style={{ marginBottom: 16 }}>
+                        <Space>
+                          <Switch
+                            checked={formData.right_toggles.pension?.enabled !== false}
+                            onChange={(checked) => updateRightToggle('pension', 'enabled', checked)}
+                          />
+                          <span style={{ fontWeight: 500 }}>פנסיה</span>
+                        </Space>
+                      </div>
                     </Col>
                   </Row>
                 ),
@@ -1936,6 +1945,18 @@ function App() {
                         <InputNumber
                           value={parseFloat(formData.deductions_input.severance) || undefined}
                           onChange={(v) => updateDeduction('severance', String(v || 0))}
+                          min={0}
+                          style={{ width: '100%' }}
+                          placeholder="סכום בש״ח"
+                          addonAfter="₪"
+                        />
+                      </Form.Item>
+                    </Col>
+                    <Col span={8}>
+                      <Form.Item label="הפרשות פנסיה ששולמו">
+                        <InputNumber
+                          value={parseFloat(formData.deductions_input.pension) || undefined}
+                          onChange={(v) => updateDeduction('pension', String(v || 0))}
                           min={0}
                           style={{ width: '100%' }}
                           placeholder="סכום בש״ח"

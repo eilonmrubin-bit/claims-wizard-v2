@@ -57,6 +57,7 @@ from .modules.summary import compute_summary
 from .modules.severance import compute_severance
 from .modules.recreation import compute_recreation
 from .modules.vacation import compute_vacation
+from .modules.pension import compute_pension
 from .utils.static_data import get_static_data
 from .modules.limitation import (
     get_limitation_type_for_right,
@@ -520,6 +521,16 @@ def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
             )
             ssot.rights_results.vacation = vacation_result
 
+        # Pension
+        if ssot.period_month_records and ssot.month_aggregates:
+            pension_result = compute_pension(
+                period_month_records=ssot.period_month_records,
+                month_aggregates=ssot.month_aggregates,
+                industry=ssot.input.industry,
+                right_toggles=ssot.input.right_toggles or {},
+            )
+            ssot.rights_results.pension = pension_result
+
         # =====================================================================
         # Phase 3 - Post-processing
         # =====================================================================
@@ -845,6 +856,28 @@ def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
 
                 per_right_results["vacation"] = RightLimitationResult(
                     limitation_type_id="vacation",
+                    full_amount=full_amount,
+                    claimable_amount=claimable_amount,
+                    excluded_amount=excluded_amount,
+                    claimable_duration=claimable_dur,
+                    excluded_duration=excluded_dur,
+                )
+
+            # Pension — general limitation, filter monthly
+            if ssot.rights_results.pension and ssot.rights_results.pension.entitled:
+                pension = ssot.rights_results.pension
+                full_amount = pension.grand_total_value
+
+                claimable_amount = Decimal("0")
+                for m in pension.months:
+                    month_start = date(m.month[0], m.month[1], 1)
+                    if effective_window_start <= month_start <= filing_date:
+                        claimable_amount += m.month_value
+
+                excluded_amount = full_amount - claimable_amount
+                claimable_dur, excluded_dur = compute_right_durations("general")
+                per_right_results["pension"] = RightLimitationResult(
+                    limitation_type_id="general",
                     full_amount=full_amount,
                     claimable_amount=claimable_amount,
                     excluded_amount=excluded_amount,
