@@ -317,16 +317,34 @@ SSOT.input
 סקיל: /mnt/skills/user/holidays/SKILL.md
 ```
 
+#### זכויות מוגדרות
+
+##### דמי הבראה
+סקיל: docs/skills/recreation/SKILL.md
+
+קלט: employment_periods, seniority_totals.prior_seniority_months, month_aggregates, industry
+פלט: rights_results.recreation
+
+**חשוב:** מודול זה חייב לרוץ לפני פיצויי פיטורין בפאזה 2.
+הסיבה: ענף ניקיון — פיצויי פיטורין כוללים רכיב הבראה שנתי שמחושב כאן.
+זוהי תלות מכוונת, לא טעות. אל תשנה את הסדר.
+
+##### פיצויי פיטורין
+סקיל: docs/skills/severance/SKILL.md
+
+קלט: termination_reason, industry, period_month_records, month_aggregates,
+      effective_periods, total_employment_months, actual_deposits, shifts,
+      rights_results.recreation (לענף ניקיון בלבד — חובה שיחושב קודם)
+פלט: rights_results.severance
+
 #### זכויות נוספות (טרם הוגדרו)
 
-```
-חופשה, פיצויים, פנסיה, הבראה, נסיעות, השלמת שכר — טרם הוגדרו.
+חופשה, פנסיה, נסיעות, השלמת שכר — טרם הוגדרו.
 כשיוגדרו, כל זכות:
   1. תקבל סקיל ייעודי
   2. תקרא מ-SSOT (period_month_records, daily_records, seniority, מאגרים סטטיים)
   3. תכתוב ל-rights_results.{right_id}
-  4. תרוץ כאן, במקביל לשאר הזכויות
-```
+  4. תרוץ בפאזה 2, בסדר שיוגדר בסקיל שלה
 
 ---
 

@@ -2015,7 +2015,10 @@ const HolidaysBreakdown: React.FC<{ holidays: HolidaysResult }> = ({ holidays })
 // ה. SeveranceBreakdown - פירוט פיצויי פיטורין
 // ============================================================================
 
-const SeveranceBreakdown: React.FC<{ severance: SeveranceResult }> = ({ severance }) => {
+const SeveranceBreakdown: React.FC<{
+  severance: SeveranceResult;
+  recreation?: RecreationResult;
+}> = ({ severance, recreation }) => {
   // Translate path to Hebrew
   const pathLabels: Record<string, string> = {
     contributions: 'הפרשות נדרשות (התפטרות)',
@@ -2047,7 +2050,7 @@ const SeveranceBreakdown: React.FC<{ severance: SeveranceResult }> = ({ severanc
 
   const pathLabel = pathLabels[severance.path] || severance.path;
   const isContributionsPath = severance.path === 'contributions';
-  const hasOT = severance.full_severance.ot_total > 0 || severance.required_contributions.ot_total > 0;
+  const showOTRow = severance.ot_addition !== null;
   const isRecreationPending = !!(severance.recreation_addition?.recreation_pending);
   const showRecreationRow = severance.recreation_addition !== null;
 
@@ -2191,7 +2194,7 @@ const SeveranceBreakdown: React.FC<{ severance: SeveranceResult }> = ({ severanc
       required: severance.required_contributions.base_total,
       claim: isContributionsPath ? severance.claim_before_deductions : undefined,
     },
-    ...(hasOT ? [{
+    ...(showOTRow ? [{
       key: 'ot',
       label: 'שע"נ (6%)',
       full: severance.full_severance.ot_total,
@@ -2264,127 +2267,8 @@ const SeveranceBreakdown: React.FC<{ severance: SeveranceResult }> = ({ severanc
         />
       )}
 
-      {/* Period details */}
-      <Collapse items={periodItems} style={{ marginBottom: 16 }} />
-
-      {/* OT Addition Card (cleaning industry only) */}
-      {severance.ot_addition && (
-        <Card
-          size="small"
-          title={`תוספת שעות נוספות לפיצויים — 6%`}
-          extra={<Tag color="cyan">{formatCurrency(severance.ot_addition.total)}</Tag>}
-          style={{ marginBottom: 16 }}
-        >
-          <Table
-            dataSource={severance.ot_addition.monthly_detail.map((d, i) => ({ ...d, key: i }))}
-            columns={[
-              {
-                title: <span style={{ color: '#88D8E0' }}>חודש</span>,
-                key: 'month',
-                render: (_: unknown, record: OtAdditionMonthlyDetail) => (
-                  <span style={{ color: '#E8F4F8' }}>{formatMonth(record.month)}</span>
-                ),
-              },
-              {
-                title: <span style={{ color: '#88D8E0' }}>שע"נ חודשי ברוטו</span>,
-                key: 'full_ot',
-                render: (_: unknown, record: OtAdditionMonthlyDetail) => (
-                  <span className="ltr-number" style={{ color: '#E8F4F8' }}>
-                    {formatCurrency(record.full_ot_monthly_pay)}
-                  </span>
-                ),
-              },
-              {
-                title: <span style={{ color: '#88D8E0' }}>היקף משרה</span>,
-                key: 'scope',
-                render: (_: unknown, record: OtAdditionMonthlyDetail) => (
-                  <span style={{ color: '#E8F4F8' }}>{(record.job_scope * 100).toFixed(1)}%</span>
-                ),
-              },
-              {
-                title: <span style={{ color: '#88D8E0' }}>סכום</span>,
-                key: 'amount',
-                render: (_: unknown, record: OtAdditionMonthlyDetail) => (
-                  <span className="ltr-number" style={{ color: '#4ECDC4', fontWeight: 'bold' }}>
-                    {formatCurrency(record.amount)}
-                  </span>
-                ),
-              },
-            ]}
-            pagination={false}
-            size="small"
-          />
-        </Card>
-      )}
-
-      {/* Recreation Addition Card (cleaning industry only) */}
-      {severance.recreation_addition && (
-        <Card
-          size="small"
-          title={`תוספת הבראה לפיצויים — 8.333%`}
-          extra={!severance.recreation_addition.recreation_pending && (
-            <Tag color="cyan">{formatCurrency(severance.recreation_addition.total)}</Tag>
-          )}
-          style={{ marginBottom: 16 }}
-        >
-          {severance.recreation_addition.recreation_pending ? (
-            <Alert
-              type="warning"
-              showIcon
-              message="הבראה טרם חושבה — הסכום יתעדכן לאחר חישוב מודול ההבראה"
-            />
-          ) : (
-            <Table
-              dataSource={severance.recreation_addition.monthly_detail.map((d, i) => ({ ...d, key: i }))}
-              columns={[
-                {
-                  title: <span style={{ color: '#88D8E0' }}>חודש</span>,
-                  key: 'month',
-                  render: (_: unknown, record: RecreationAdditionMonthlyDetail) => (
-                    <span style={{ color: '#E8F4F8' }}>{formatMonth(record.month)}</span>
-                  ),
-                },
-                {
-                  title: <span style={{ color: '#88D8E0' }}>שווי הבראה שנתי</span>,
-                  key: 'annual',
-                  render: (_: unknown, record: RecreationAdditionMonthlyDetail) => (
-                    <span className="ltr-number" style={{ color: '#E8F4F8' }}>
-                      {formatCurrency(record.annual_recreation_value)}
-                    </span>
-                  ),
-                },
-                {
-                  title: <span style={{ color: '#88D8E0' }}>שווי חודשי</span>,
-                  key: 'monthly',
-                  render: (_: unknown, record: RecreationAdditionMonthlyDetail) => (
-                    <span className="ltr-number" style={{ color: '#E8F4F8' }}>
-                      {formatCurrency(record.monthly_value)}
-                    </span>
-                  ),
-                },
-                {
-                  title: <span style={{ color: '#88D8E0' }}>חלקיות</span>,
-                  key: 'fraction',
-                  render: (_: unknown, record: RecreationAdditionMonthlyDetail) => (
-                    <span style={{ color: '#E8F4F8' }}>{(record.partial_fraction * 100).toFixed(1)}%</span>
-                  ),
-                },
-                {
-                  title: <span style={{ color: '#88D8E0' }}>סכום</span>,
-                  key: 'amount',
-                  render: (_: unknown, record: RecreationAdditionMonthlyDetail) => (
-                    <span className="ltr-number" style={{ color: '#4ECDC4', fontWeight: 'bold' }}>
-                      {formatCurrency(record.amount)}
-                    </span>
-                  ),
-                },
-              ]}
-              pagination={false}
-              size="small"
-            />
-          )}
-        </Card>
-      )}
+      {/* Period details (collapsed by default) */}
+      <Collapse defaultActiveKey={[]} items={periodItems} style={{ marginBottom: 16 }} />
 
       {/* Summary table */}
       <Table
@@ -2395,6 +2279,158 @@ const SeveranceBreakdown: React.FC<{ severance: SeveranceResult }> = ({ severanc
         rowClassName={(record) => record.key === 'total' ? 'summary-total-row' : ''}
         style={{ background: 'rgba(78, 205, 196, 0.05)' }}
       />
+
+      {/* OT Addition Collapse (cleaning industry only) */}
+      {severance.ot_addition && (
+        <Collapse
+          defaultActiveKey={[]}
+          style={{ marginTop: 12 }}
+          items={[{
+            key: 'ot',
+            label: (
+              <Space>
+                <span>תוספת שעות נוספות לפיצויים — 6%</span>
+                <Tag color="cyan">{formatCurrency(severance.ot_addition.total)}</Tag>
+              </Space>
+            ),
+            children: (
+              <Table
+                dataSource={severance.ot_addition.monthly_detail.map((d, i) => ({ ...d, key: i }))}
+                columns={[
+                  {
+                    title: <span style={{ color: '#88D8E0' }}>חודש</span>,
+                    key: 'month',
+                    render: (_: unknown, record: OtAdditionMonthlyDetail) => (
+                      <span style={{ color: '#E8F4F8' }}>{formatMonth(record.month)}</span>
+                    ),
+                  },
+                  {
+                    title: <span style={{ color: '#88D8E0' }}>שע"נ חודשי ברוטו</span>,
+                    key: 'full_ot',
+                    render: (_: unknown, record: OtAdditionMonthlyDetail) => (
+                      <span className="ltr-number" style={{ color: '#E8F4F8' }}>
+                        {formatCurrency(record.full_ot_monthly_pay)}
+                      </span>
+                    ),
+                  },
+                  {
+                    title: <span style={{ color: '#88D8E0' }}>היקף משרה</span>,
+                    key: 'scope',
+                    render: (_: unknown, record: OtAdditionMonthlyDetail) => (
+                      <span style={{ color: '#E8F4F8' }}>{(record.job_scope * 100).toFixed(1)}%</span>
+                    ),
+                  },
+                  {
+                    title: <span style={{ color: '#88D8E0' }}>סכום</span>,
+                    key: 'amount',
+                    render: (_: unknown, record: OtAdditionMonthlyDetail) => (
+                      <span className="ltr-number" style={{ color: '#4ECDC4', fontWeight: 'bold' }}>
+                        {formatCurrency(record.amount)}
+                      </span>
+                    ),
+                  },
+                ]}
+                pagination={false}
+                size="small"
+              />
+            ),
+          }]}
+        />
+      )}
+
+      {/* Recreation Addition Collapse (cleaning industry only) */}
+      {severance.recreation_addition && (
+        <Collapse
+          defaultActiveKey={[]}
+          style={{ marginTop: 12 }}
+          items={[{
+            key: 'rec',
+            label: (
+              <Space>
+                <span>תוספת הבראה לפיצויים — 8.333%</span>
+                {!severance.recreation_addition.recreation_pending && (
+                  <Tag color="cyan">{formatCurrency(severance.recreation_addition.total)}</Tag>
+                )}
+              </Space>
+            ),
+            children: severance.recreation_addition.recreation_pending ? (
+              <Alert
+                type="warning"
+                showIcon
+                message="הבראה טרם חושבה — הסכום יתעדכן אוטומטית"
+              />
+            ) : recreation ? (
+              <Table
+                dataSource={recreation.years.flatMap((year, yi) =>
+                  year.segments.length <= 1
+                    ? [{
+                        key: `y${yi}`,
+                        period: `שנה ${year.year_number} (${formatDate(year.year_start)}–${formatDate(year.year_end)})`,
+                        entitled_days: year.entitled_days,
+                        day_value: year.segments[0]?.day_value ?? 0,
+                        weight: null as string | null,
+                        amount: year.entitled_value,
+                      }]
+                    : year.segments.map((seg, si) => ({
+                        key: `y${yi}s${si}`,
+                        period: `שנה ${year.year_number} — ${formatDate(seg.segment_start)}–${formatDate(seg.segment_end)}`,
+                        entitled_days: year.entitled_days,
+                        day_value: seg.day_value,
+                        weight: `${(seg.weight * 100).toFixed(1)}%`,
+                        amount: seg.segment_value,
+                      }))
+                )}
+                columns={[
+                  {
+                    title: <span style={{ color: '#88D8E0' }}>תקופה</span>,
+                    dataIndex: 'period',
+                    key: 'period',
+                    render: (v: string) => <span style={{ color: '#E8F4F8' }}>{v}</span>,
+                  },
+                  {
+                    title: <span style={{ color: '#88D8E0' }}>ימים מזכים</span>,
+                    dataIndex: 'entitled_days',
+                    key: 'days',
+                    render: (v: number) => <span style={{ color: '#E8F4F8' }}>{v.toFixed(2)}</span>,
+                  },
+                  {
+                    title: <span style={{ color: '#88D8E0' }}>ערך יום</span>,
+                    dataIndex: 'day_value',
+                    key: 'dv',
+                    render: (v: number) => (
+                      <span className="ltr-number" style={{ color: '#E8F4F8' }}>
+                        {formatCurrency(v)}
+                      </span>
+                    ),
+                  },
+                  {
+                    title: <span style={{ color: '#88D8E0' }}>משקל</span>,
+                    dataIndex: 'weight',
+                    key: 'wt',
+                    render: (v: string | null) => (
+                      <span style={{ color: '#88D8E0' }}>{v ?? '—'}</span>
+                    ),
+                  },
+                  {
+                    title: <span style={{ color: '#88D8E0' }}>סכום</span>,
+                    dataIndex: 'amount',
+                    key: 'amt',
+                    render: (v: number) => (
+                      <span className="ltr-number" style={{ color: '#4ECDC4', fontWeight: 'bold' }}>
+                        {formatCurrency(v)}
+                      </span>
+                    ),
+                  },
+                ]}
+                pagination={false}
+                size="small"
+              />
+            ) : (
+              <Alert type="info" showIcon message="נתוני הבראה לא זמינים" />
+            ),
+          }]}
+        />
+      )}
     </Card>
   );
 };
@@ -2963,7 +2999,12 @@ const ResultsView: React.FC<ResultsViewProps> = ({ ssot }) => {
 
       {/* ו. Severance Breakdown */}
       {rights_results?.severance?.eligible && (
-        <div style={{ marginBottom: 24 }}><SeveranceBreakdown severance={rights_results.severance} /></div>
+        <div style={{ marginBottom: 24 }}>
+          <SeveranceBreakdown
+            severance={rights_results.severance}
+            recreation={rights_results.recreation}
+          />
+        </div>
       )}
 
       {/* ז. Recreation Breakdown */}

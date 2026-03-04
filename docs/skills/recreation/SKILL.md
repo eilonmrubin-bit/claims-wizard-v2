@@ -283,6 +283,14 @@ cleaning,2018-07-01,423.00
 
 ---
 
+## הערת סדר pipeline
+
+מודול זה חייב לרוץ **לפני** `compute_severance` בפאזה 2.
+ענף ניקיון: פיצויי פיטורין צורכים את `rights_results.recreation.years[].entitled_value`
+לחישוב רכיב ההבראה בפיצויים. ראה: docs/skills/severance/SKILL.md §Cleaning Additions.
+
+---
+
 ## Anti-Patterns
 
 1. **לא מחשבים לפי שנה קלנדרית.** תמיד לפי שנת עסקה (12 חודשים מתאריך תחילת העסקה).
