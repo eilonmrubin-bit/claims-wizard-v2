@@ -756,9 +756,19 @@ def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
                 # Vacation window: from Jan 1 of (filing_date.year - 3)
                 vac_window_start = date(filing_date.year - 3, 1, 1)
 
+                # Apply freeze days (same mechanism as general window)
+                total_freeze_days = 0
+                for fp in freeze_periods:
+                    if fp.start_date <= filing_date and fp.end_date >= vac_window_start:
+                        overlap_start = max(fp.start_date, vac_window_start)
+                        overlap_end = min(fp.end_date, filing_date)
+                        total_freeze_days += (overlap_end - overlap_start).days + 1
+
+                effective_vac_window_start = vac_window_start - timedelta(days=total_freeze_days)
+
                 claimable_amount = Decimal("0")
                 for year_data in vac.years:
-                    if year_data.year_end and vac_window_start <= year_data.year_end <= filing_date:
+                    if year_data.year_end and effective_vac_window_start <= year_data.year_end <= filing_date:
                         claimable_amount += year_data.year_value
 
                 excluded_amount = full_amount - claimable_amount

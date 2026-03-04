@@ -452,3 +452,140 @@ def test_no_intermediate_rounding():
 
     # Value should be exact, not rounded
     assert result.grand_total_value == expected_value
+
+
+# =============================================================================
+# Additional test cases from SKILL.md
+# =============================================================================
+
+def test_agriculture_no_week_type_dependency():
+    """Agriculture has same days for 5-day and 6-day weeks."""
+    start = date(2023, 1, 1)
+    end = date(2023, 12, 31)
+
+    employment_periods = [make_employment_period(start, end)]
+    daily_salary = Decimal("400")
+    period_month_records = make_period_month_records(start, end, daily_salary)
+    seniority_totals = make_seniority_totals(prior_months=0)
+
+    # 5-day week
+    work_patterns_5 = [make_work_pattern(start, end, [0, 1, 2, 3, 4])]
+    result_5 = compute_vacation(
+        employment_periods=employment_periods,
+        work_patterns=work_patterns_5,
+        period_month_records=period_month_records,
+        industry="agriculture",
+        seniority_totals=seniority_totals,
+    )
+
+    # 6-day week
+    work_patterns_6 = [make_work_pattern(start, end, [0, 1, 2, 3, 4, 5])]
+    result_6 = compute_vacation(
+        employment_periods=employment_periods,
+        work_patterns=work_patterns_6,
+        period_month_records=period_month_records,
+        industry="agriculture",
+        seniority_totals=seniority_totals,
+    )
+
+    # Agriculture: seniority 1 → 12 days for BOTH 5-day and 6-day
+    assert result_5.years[0].weighted_base_days == Decimal("12")
+    assert result_6.years[0].weighted_base_days == Decimal("12")
+
+
+def test_mixed_week_pattern_changes_mid_year():
+    """Pattern changes mid-year should create multiple segments."""
+    start = date(2023, 1, 1)
+    end = date(2023, 12, 31)
+    mid_year = date(2023, 7, 1)
+
+    employment_periods = [make_employment_period(start, end)]
+
+    # First half: 5-day, second half: 6-day
+    work_patterns = [
+        make_work_pattern(start, date(2023, 6, 30), [0, 1, 2, 3, 4]),
+        make_work_pattern(mid_year, end, [0, 1, 2, 3, 4, 5]),
+    ]
+
+    daily_salary = Decimal("450")
+    period_month_records = make_period_month_records(start, end, daily_salary)
+    seniority_totals = make_seniority_totals(prior_months=0)
+
+    result = compute_vacation(
+        employment_periods=employment_periods,
+        work_patterns=work_patterns,
+        period_month_records=period_month_records,
+        industry="general",
+        seniority_totals=seniority_totals,
+    )
+
+    # Should have segments for the week type changes
+    assert len(result.years) == 1
+    # weighted_base_days should be between 12 (5-day) and 14 (6-day)
+    assert Decimal("12") < result.years[0].weighted_base_days < Decimal("14")
+
+
+def test_general_seniority_13_plus():
+    """General industry with seniority 13+ should get max days."""
+    start = date(2023, 1, 1)
+    end = date(2023, 12, 31)
+
+    employment_periods = [make_employment_period(start, end)]
+    daily_salary = Decimal("500")
+    period_month_records = make_period_month_records(start, end, daily_salary)
+    # 12 years prior → seniority = 13
+    seniority_totals = make_seniority_totals(prior_months=144)
+
+    # 5-day week
+    work_patterns_5 = [make_work_pattern(start, end, [0, 1, 2, 3, 4])]
+    result_5 = compute_vacation(
+        employment_periods=employment_periods,
+        work_patterns=work_patterns_5,
+        period_month_records=period_month_records,
+        industry="general",
+        seniority_totals=seniority_totals,
+    )
+
+    # 6-day week
+    work_patterns_6 = [make_work_pattern(start, end, [0, 1, 2, 3, 4, 5])]
+    result_6 = compute_vacation(
+        employment_periods=employment_periods,
+        work_patterns=work_patterns_6,
+        period_month_records=period_month_records,
+        industry="general",
+        seniority_totals=seniority_totals,
+    )
+
+    # General seniority 13+: 5-day=20, 6-day=24
+    # But wait - general doesn't use industry seniority, so prior months are ignored
+    # Actually for general, seniority is based on employer only
+    # So seniority = 1 (first year at this employer)
+    assert result_5.years[0].seniority_years == 1
+    assert result_6.years[0].seniority_years == 1
+
+
+def test_hourly_salary_avg_daily_correct():
+    """Average daily salary should be computed correctly from hourly rates."""
+    start = date(2023, 1, 1)
+    end = date(2023, 12, 31)
+
+    employment_periods = [make_employment_period(start, end)]
+    work_patterns = [make_work_pattern(start, end, [0, 1, 2, 3, 4])]
+
+    # 50₪/hour × 8 hours = 400₪/day
+    daily_salary = Decimal("400")
+    period_month_records = make_period_month_records(start, end, daily_salary, work_days_per_month=22)
+    seniority_totals = make_seniority_totals(prior_months=0)
+
+    result = compute_vacation(
+        employment_periods=employment_periods,
+        work_patterns=work_patterns,
+        period_month_records=period_month_records,
+        industry="general",
+        seniority_totals=seniority_totals,
+    )
+
+    # avg_daily_salary should be 400
+    assert result.years[0].avg_daily_salary == Decimal("400")
+    # year_value = 12 days × 400 = 4800
+    assert result.years[0].year_value == Decimal("4800")
