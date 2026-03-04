@@ -322,6 +322,88 @@ const EXAMPLE_REST_WINDOW = {
   right_specific_inputs: {}
 };
 
+const EXAMPLE_CLEANING_SEVERANCE_RECREATION = {
+  case_metadata: {
+    case_name: "בדיקה: ניקיון — פיצויי פיטורין + הבראה",
+    notes: "עובד ניקיון, 3 שנים, ותק ענפי 8 שנים, פוטר, סעיף 14 נופל. בודק: חיבור הבראה לפיצויים, 2 segments בשנה 3, recreation_pending=false."
+  },
+  personal_details: { first_name: "מוחמד", last_name: "עבד", id_number: "987654321", birth_year: 1982 },
+  defendant_details: { name: "חברת ניקיון בע\"מ", id_number: "514222222", address: "חיפה" },
+  employment_periods: [
+    { id: "ep1", start: "2021-01-01", end: "2023-12-31" }
+  ],
+  work_patterns: [
+    {
+      id: "wp1",
+      start: "2021-01-01",
+      end: "2023-12-31",
+      work_days: [0, 1, 2, 3, 4],
+      default_shifts: [{ start_time: "07:00:00", end_time: "15:00:00" }],
+      default_breaks: [{ start_time: "11:00:00", end_time: "11:30:00" }]
+    }
+  ],
+  salary_tiers: [
+    {
+      id: "st1",
+      start: "2021-01-01",
+      end: "2023-12-31",
+      amount: "10000",
+      type: "monthly",
+      net_or_gross: "gross"
+    }
+  ],
+  rest_day: "saturday",
+  district: "haifa",
+  industry: "cleaning",
+  filing_date: "2025-01-01",
+  termination_reason: "fired",
+  seniority_input: { method: "prior_plus_pattern", prior_months: 96 },
+  right_toggles: {},
+  deductions_input: { overtime: "0", holidays: "0", severance: "5000" },
+  right_specific_inputs: {}
+};
+
+const EXAMPLE_GENERAL_RECREATION = {
+  case_metadata: {
+    case_name: "בדיקה: כללי — הבראה + התיישנות",
+    notes: "עובד כללי, 6 שנים (2019–2024), ותק ענפי 8 שנים. בודק: 6 שנות הבראה, segments בשנה 5 (2023), התיישנות (כל השנים בחלון)."
+  },
+  personal_details: { first_name: "אחמד", last_name: "יוסף", id_number: "111222333", birth_year: 1985 },
+  defendant_details: { name: "קבלן כללי בע\"מ", id_number: "514333333", address: "תל אביב" },
+  employment_periods: [
+    { id: "ep1", start: "2019-01-01", end: "2024-12-31" }
+  ],
+  work_patterns: [
+    {
+      id: "wp1",
+      start: "2019-01-01",
+      end: "2024-12-31",
+      work_days: [0, 1, 2, 3, 4],
+      default_shifts: [{ start_time: "08:00:00", end_time: "16:00:00" }],
+      default_breaks: [{ start_time: "12:00:00", end_time: "12:30:00" }]
+    }
+  ],
+  salary_tiers: [
+    {
+      id: "st1",
+      start: "2019-01-01",
+      end: "2024-12-31",
+      amount: "50",
+      type: "hourly",
+      net_or_gross: "gross"
+    }
+  ],
+  rest_day: "saturday",
+  district: "tel_aviv",
+  industry: "general",
+  filing_date: "2025-06-01",
+  termination_reason: "fired",
+  seniority_input: { method: "prior_plus_pattern", prior_months: 96 },
+  right_toggles: {},
+  deductions_input: { overtime: "0", holidays: "0", severance: "0" },
+  right_specific_inputs: {}
+};
+
 // Format months as "X שנים ו-Y חודשים"
 const formatMonthsDisplay = (totalMonths: number): string => {
   if (totalMonths === 0) return '0 חודשים';
@@ -885,10 +967,12 @@ function App() {
     }
   };
 
-  const loadExample = (example: 'main' | 'rest_window' = 'main') => {
+  const loadExample = (example: 'main' | 'rest_window' | 'cleaning_recreation' | 'general_recreation' = 'main') => {
     const examples = {
       main: EXAMPLE_JSON_INPUT,
       rest_window: EXAMPLE_REST_WINDOW,
+      cleaning_recreation: EXAMPLE_CLEANING_SEVERANCE_RECREATION,
+      general_recreation: EXAMPLE_GENERAL_RECREATION,
     };
     setJsonInput(JSON.stringify(examples[example], null, 2));
     setJsonError(null);
@@ -1797,8 +1881,10 @@ function App() {
                         items: [
                           { key: 'main', label: '8 שנים, דפוס משתנה, התיישנות' },
                           { key: 'rest_window', label: 'חלון מנוחה — שישי חוצה שבת' },
+                          { key: 'cleaning_recreation', label: 'ניקיון — פיצויים + הבראה' },
+                          { key: 'general_recreation', label: 'כללי — הבראה + התיישנות' },
                         ],
-                        onClick: ({ key }) => loadExample(key as 'main' | 'rest_window'),
+                        onClick: ({ key }) => loadExample(key as 'main' | 'rest_window' | 'cleaning_recreation' | 'general_recreation'),
                       }}
                     >
                       <Button>טען דוגמה ▾</Button>
