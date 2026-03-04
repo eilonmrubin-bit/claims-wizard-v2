@@ -1752,7 +1752,7 @@ function App() {
                 label: 'זכויות נתבעות',
                 children: (
                   <Row gutter={24}>
-                    <Col span={8}>
+                    <Col span={6}>
                       <div style={{ marginBottom: 16 }}>
                         <Space>
                           <Switch
@@ -1763,7 +1763,7 @@ function App() {
                         </Space>
                       </div>
                     </Col>
-                    <Col span={8}>
+                    <Col span={6}>
                       <div style={{ marginBottom: 16 }}>
                         <Space>
                           <Switch
@@ -1774,7 +1774,7 @@ function App() {
                         </Space>
                       </div>
                     </Col>
-                    <Col span={8}>
+                    <Col span={6}>
                       <div style={{ marginBottom: 16 }}>
                         <Space>
                           <Switch
@@ -1782,6 +1782,17 @@ function App() {
                             onChange={(checked) => updateRightToggle('severance', 'enabled', checked)}
                           />
                           <span style={{ fontWeight: 500 }}>פיצויי פיטורין</span>
+                        </Space>
+                      </div>
+                    </Col>
+                    <Col span={6}>
+                      <div style={{ marginBottom: 16 }}>
+                        <Space>
+                          <Switch
+                            checked={formData.right_toggles.recreation?.enabled !== false}
+                            onChange={(checked) => updateRightToggle('recreation', 'enabled', checked)}
+                          />
+                          <span style={{ fontWeight: 500 }}>הבראה</span>
                         </Space>
                       </div>
                     </Col>
