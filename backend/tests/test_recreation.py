@@ -47,12 +47,11 @@ def make_month_aggregates(start: date, end: date, job_scope: Decimal = Decimal("
 def mock_get_recreation_days(industry: str, seniority_years: int) -> int:
     """Mock function for recreation days lookup.
 
-    Note: Tables start from 0 to handle first employment year where
-    seniority at start may be 0.
+    Tables start from 1 (seniority after completing first year).
     """
     tables = {
         "general": [
-            (0, 1, 5),   # 0-1 years -> 5 days
+            (1, 1, 5),
             (2, 3, 6),
             (4, 10, 7),
             (11, 15, 8),
@@ -60,7 +59,7 @@ def mock_get_recreation_days(industry: str, seniority_years: int) -> int:
             (20, 999, 10),
         ],
         "construction": [
-            (0, 2, 6),   # 0-2 years -> 6 days
+            (1, 2, 6),
             (3, 4, 8),
             (5, 10, 9),
             (11, 15, 10),
@@ -68,13 +67,13 @@ def mock_get_recreation_days(industry: str, seniority_years: int) -> int:
             (20, 999, 12),
         ],
         "agriculture": [
-            (0, 7, 7),   # 0-7 years -> 7 days
+            (1, 7, 7),
             (8, 8, 8),
             (9, 9, 9),
             (10, 999, 10),
         ],
         "cleaning": [
-            (0, 3, 7),   # 0-3 years -> 7 days
+            (1, 3, 7),
             (4, 10, 9),
             (11, 15, 10),
             (16, 19, 11),
@@ -119,14 +118,12 @@ def test_case_1_three_full_years_general():
     industry: general
     seniority at start: 0
     scope: 1.0 כל התקופה
-    day_value: 418.00
 
-    year 1: seniority=0 → days=5, fraction=1.0, scope=1.0 → 5 ימים
-    year 2: seniority=1 → days=5, fraction=1.0, scope=1.0 → 5 ימים
-    year 3: seniority=2 → days=6, fraction=1.0, scope=1.0 → 6 ימים
+    year 1: seniority=1 → days=5, fraction=1.0, scope=1.0 → 5 ימים
+    year 2: seniority=2 → days=6, fraction=1.0, scope=1.0 → 6 ימים
+    year 3: seniority=3 → days=6, fraction=1.0, scope=1.0 → 6 ימים
 
-    grand_total_days  = 16.0
-    grand_total_value = 16.0 × 418 = 6,688.00 ₪
+    grand_total_days = 17.0
     """
     start = date(2021, 1, 1)
     end = date(2024, 1, 1)  # Exactly 3 years
@@ -148,32 +145,29 @@ def test_case_1_three_full_years_general():
     assert result.industry == "general"
     assert len(result.years) == 3
 
-    # Year 1: seniority=0 → days=5
+    # Year 1: seniority=1 → days=5
     assert result.years[0].year_number == 1
-    assert result.years[0].seniority_years == 0
+    assert result.years[0].seniority_years == 1
     assert result.years[0].base_days == 5
     assert result.years[0].is_partial is False
     assert result.years[0].entitled_days == Decimal("5")
 
-    # Year 2: seniority=1 → days=5
+    # Year 2: seniority=2 → days=6
     assert result.years[1].year_number == 2
-    assert result.years[1].seniority_years == 1
-    assert result.years[1].base_days == 5
-    assert result.years[1].entitled_days == Decimal("5")
+    assert result.years[1].seniority_years == 2
+    assert result.years[1].base_days == 6
+    assert result.years[1].entitled_days == Decimal("6")
 
-    # Year 3: seniority=2 → days=6
+    # Year 3: seniority=3 → days=6
     assert result.years[2].year_number == 3
-    assert result.years[2].seniority_years == 2
+    assert result.years[2].seniority_years == 3
     assert result.years[2].base_days == 6
     assert result.years[2].entitled_days == Decimal("6")
 
-    assert result.grand_total_days == Decimal("16")
-    # Note: Test case expects day_value=418 for all years, but years 1-2 end before 2023-07-01
-    # so they get 378. Let's verify the actual values.
-    # Year 1 ends 2022-01-01 -> 378, Year 2 ends 2023-01-01 -> 378, Year 3 ends 2024-01-01 -> 418
-    # So: 5*378 + 5*378 + 6*418 = 1890 + 1890 + 2508 = 6288
-    # The test case in SKILL.md assumes 418 for all years - let's match actual behavior
-    expected_value = Decimal("5") * Decimal("378") + Decimal("5") * Decimal("378") + Decimal("6") * Decimal("418")
+    assert result.grand_total_days == Decimal("17")
+    # Year 1 ends 2021-12-31 -> 378, Year 2 ends 2022-12-31 -> 378, Year 3 ends 2023-12-31 -> 418
+    # So: 5*378 + 6*378 + 6*418 = 1890 + 2268 + 2508 = 6666
+    expected_value = Decimal("5") * Decimal("378") + Decimal("6") * Decimal("378") + Decimal("6") * Decimal("418")
     assert result.grand_total_value == expected_value
 
 
@@ -220,13 +214,11 @@ def test_case_3_eighteen_months_partial_year():
     industry: general
     seniority at start: 0
     scope: 1.0
-    day_value: 418.00
 
-    year 1: seniority=0 → days=5, fraction=1.0, scope=1.0 → 5 ימים
-    year 2: seniority=1 → days=5, fraction=6/12=0.5, scope=1.0 → 2.5 ימים
+    year 1: seniority=1 → days=5, fraction=1.0, scope=1.0 → 5 ימים
+    year 2: seniority=2 → days=6, fraction=6/12=0.5, scope=1.0 → 3 ימים
 
-    grand_total_days  = 7.5
-    grand_total_value = 7.5 × 418 = 3,135.00 ₪
+    grand_total_days = 8.0
     """
     start = date(2023, 1, 1)
     end = date(2024, 7, 1)  # 18 months
@@ -246,24 +238,24 @@ def test_case_3_eighteen_months_partial_year():
     assert result.entitled is True
     assert len(result.years) == 2
 
-    # Year 1: full year, seniority=0 → days=5
+    # Year 1: full year, seniority=1 → days=5
     assert result.years[0].year_number == 1
-    assert result.years[0].seniority_years == 0
+    assert result.years[0].seniority_years == 1
     assert result.years[0].base_days == 5
     assert result.years[0].is_partial is False
     assert result.years[0].entitled_days == Decimal("5")
 
-    # Year 2: partial (6 months), seniority=1 → days=5, fraction=0.5
+    # Year 2: partial (6 months), seniority=2 → days=6, fraction=0.5
     assert result.years[1].year_number == 2
-    assert result.years[1].seniority_years == 1
-    assert result.years[1].base_days == 5
+    assert result.years[1].seniority_years == 2
+    assert result.years[1].base_days == 6
     assert result.years[1].is_partial is True
     assert result.years[1].partial_fraction == Decimal("0.5")
-    assert result.years[1].entitled_days == Decimal("2.5")
+    assert result.years[1].entitled_days == Decimal("3")
 
-    assert result.grand_total_days == Decimal("7.5")
-    # Year 1 ends 2024-01-01 -> 418, Year 2 ends 2024-07-01 -> 418
-    expected_value = Decimal("5") * Decimal("418") + Decimal("2.5") * Decimal("418")
+    assert result.grand_total_days == Decimal("8")
+    # Year 1 ends 2023-12-31 -> 418, Year 2 ends 2024-07-01 -> 418
+    expected_value = Decimal("5") * Decimal("418") + Decimal("3") * Decimal("418")
     assert result.grand_total_value == expected_value
 
 
@@ -278,11 +270,10 @@ def test_case_4_construction_with_seniority():
     seniority at start: 5 (5 שנות ותק ענפי לפני תחילת עסקה)
     scope: 0.5
 
-    year 1: seniority=5 → days=9 (5 נמצא בטווח 5–10), fraction=1.0, scope=0.5 → 4.5 ימים
-    year 2: seniority=6 → days=9, fraction=1.0, scope=0.5 → 4.5 ימים
+    year 1: seniority=6 → days=9 (6 נמצא בטווח 5–10), fraction=1.0, scope=0.5 → 4.5 ימים
+    year 2: seniority=7 → days=9 (7 נמצא בטווח 5–10), fraction=1.0, scope=0.5 → 4.5 ימים
 
-    grand_total_days  = 9.0
-    grand_total_value = 9.0 × 418 = 3,762.00 ₪
+    grand_total_days = 9.0
     """
     start = date(2022, 1, 1)
     end = date(2024, 1, 1)  # 2 years
@@ -303,16 +294,16 @@ def test_case_4_construction_with_seniority():
     assert result.industry == "construction"
     assert len(result.years) == 2
 
-    # Year 1: seniority=5 → days=9 (construction table: 5-10 = 9)
+    # Year 1: seniority=6 → days=9 (construction table: 5-10 = 9)
     assert result.years[0].year_number == 1
-    assert result.years[0].seniority_years == 5
+    assert result.years[0].seniority_years == 6
     assert result.years[0].base_days == 9
     assert result.years[0].avg_scope == Decimal("0.5")
     assert result.years[0].entitled_days == Decimal("4.5")
 
-    # Year 2: seniority=6 → days=9
+    # Year 2: seniority=7 → days=9
     assert result.years[1].year_number == 2
-    assert result.years[1].seniority_years == 6
+    assert result.years[1].seniority_years == 7
     assert result.years[1].base_days == 9
     assert result.years[1].avg_scope == Decimal("0.5")
     assert result.years[1].entitled_days == Decimal("4.5")
@@ -352,10 +343,10 @@ def test_case_5_exactly_one_year_boundary():
     assert result.entitled is True
     assert len(result.years) == 1
 
-    # Year 1: full year
+    # Year 1: full year, seniority=1
     assert result.years[0].year_number == 1
     assert result.years[0].is_partial is False
-    assert result.years[0].seniority_years == 0
+    assert result.years[0].seniority_years == 1
     assert result.years[0].base_days == 5
     assert result.years[0].entitled_days == Decimal("5")
 
@@ -384,9 +375,9 @@ def test_anti_pattern_seniority_floored():
         get_recreation_day_value=mock_get_recreation_day_value,
     )
 
-    # Year 1: seniority = floor(1.5) + 0 = 1 → 5 days (seniority 1 is in range 1-1)
-    assert result.years[0].seniority_years == 1
-    assert result.years[0].base_days == 5
+    # Year 1: seniority = floor(1.5) + 1 = 2 → 6 days (seniority 2 is in range 2-3)
+    assert result.years[0].seniority_years == 2
+    assert result.years[0].base_days == 6
 
 
 def test_anti_pattern_per_year_day_value():
@@ -431,7 +422,7 @@ def test_industry_fallback_to_general():
 
     assert result.entitled is True
     # Should fall back to general table
-    assert result.years[0].base_days == 5  # general: seniority 0 -> 5 days
+    assert result.years[0].base_days == 5  # general: seniority 1 -> 5 days
 
 
 def test_no_intermediate_rounding():
@@ -452,9 +443,9 @@ def test_no_intermediate_rounding():
         get_recreation_day_value=mock_get_recreation_day_value,
     )
 
-    # Year 1: 5 * 1.0 * 0.75 = 3.75
+    # Year 1: seniority=1 → 5 days, 5 * 1.0 * 0.75 = 3.75
     assert result.years[0].entitled_days == Decimal("3.75")
-    # Year 2: 5 * 0.5 * 0.75 = 1.875
-    assert result.years[1].entitled_days == Decimal("1.875")
-    # Total: 5.625 (no rounding)
-    assert result.grand_total_days == Decimal("5.625")
+    # Year 2: seniority=2 → 6 days, 6 * 0.5 * 0.75 = 2.25
+    assert result.years[1].entitled_days == Decimal("2.25")
+    # Total: 6.0 (no rounding)
+    assert result.grand_total_days == Decimal("6")

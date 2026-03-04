@@ -244,7 +244,8 @@ def compute_recreation(
 
     for emp_year in employment_years:
         # Step 3: Seniority for this year
-        seniority_for_year = seniority_at_start + (emp_year.year_number - 1)
+        # Worker completing year Y has seniority Y (not Y-1)
+        seniority_for_year = seniority_at_start + emp_year.year_number
 
         # Step 4: Table lookup for recreation days
         try:
