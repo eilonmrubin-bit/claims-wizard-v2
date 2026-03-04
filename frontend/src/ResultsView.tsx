@@ -2054,99 +2054,101 @@ const SeveranceBreakdown: React.FC<{
   const isRecreationPending = !!(severance.recreation_addition?.recreation_pending);
   const showRecreationRow = severance.recreation_addition !== null;
 
-  // Group monthly details by effective_period_id
-  const detailByPeriod: Record<string, SeveranceMonthlyDetail[]> = {};
-  severance.full_severance.base_monthly_detail.forEach((d) => {
-    if (!detailByPeriod[d.effective_period_id]) {
-      detailByPeriod[d.effective_period_id] = [];
-    }
-    detailByPeriod[d.effective_period_id].push(d);
-  });
+  // Detail columns for monthly breakdown
+  const detailColumns = [
+    {
+      title: <span style={{ color: '#88D8E0' }}>חודש</span>,
+      key: 'month',
+      render: (_: unknown, record: SeveranceMonthlyDetail) => (
+        <span style={{ color: '#E8F4F8' }}>{formatMonth(record.month)}</span>
+      ),
+    },
+    {
+      title: <span style={{ color: '#88D8E0' }}>ימים</span>,
+      key: 'days',
+      render: (_: unknown, record: SeveranceMonthlyDetail) => (
+        <span style={{ color: '#E8F4F8' }}>
+          {record.calendar_days_employed}/{record.total_calendar_days}
+        </span>
+      ),
+    },
+    {
+      title: <span style={{ color: '#88D8E0' }}>חלקיות</span>,
+      key: 'partial',
+      render: (_: unknown, record: SeveranceMonthlyDetail) => (
+        <span style={{ color: '#E8F4F8' }}>
+          {(record.partial_fraction * 100).toFixed(1)}%
+        </span>
+      ),
+    },
+    {
+      title: <span style={{ color: '#88D8E0' }}>היקף משרה</span>,
+      key: 'scope',
+      render: (_: unknown, record: SeveranceMonthlyDetail) => (
+        <span style={{ color: record.job_scope < 1 ? '#FF6B6B' : '#E8F4F8' }}>
+          {(record.job_scope * 100).toFixed(1)}%
+        </span>
+      ),
+    },
+    {
+      title: <span style={{ color: '#88D8E0' }}>שכר קובע</span>,
+      key: 'salary',
+      render: (_: unknown, record: SeveranceMonthlyDetail) => (
+        <span className="ltr-number" style={{ color: '#E8F4F8' }}>
+          {formatCurrency(record.salary_used)}
+        </span>
+      ),
+    },
+    {
+      title: <span style={{ color: '#88D8E0' }}>סכום</span>,
+      key: 'amount',
+      render: (_: unknown, record: SeveranceMonthlyDetail) => (
+        <span className="ltr-number" style={{ color: '#4ECDC4', fontWeight: 'bold' }}>
+          {formatCurrency(record.amount)}
+        </span>
+      ),
+    },
+  ];
 
-  // Build period collapse items
-  const periodItems = severance.full_severance.period_summaries.map((ps) => {
-    const periodDetails = detailByPeriod[ps.effective_period_id] || [];
-    const sortedDetails = [...periodDetails].sort((a, b) => {
-      if (a.month[0] !== b.month[0]) return a.month[0] - b.month[0];
-      return a.month[1] - b.month[1];
+  // Group monthly details by calendar year
+  const allMonthlyDetails = severance.full_severance.base_monthly_detail
+    .slice()
+    .sort((a, b) => a.month[0] !== b.month[0] ? a.month[0] - b.month[0] : a.month[1] - b.month[1]);
+
+  const byYear: Record<number, SeveranceMonthlyDetail[]> = {};
+  for (const detail of allMonthlyDetails) {
+    const yr = detail.month[0];
+    if (!byYear[yr]) byYear[yr] = [];
+    byYear[yr].push(detail);
+  }
+
+  const yearItems = Object.entries(byYear)
+    .sort(([a], [b]) => Number(a) - Number(b))
+    .map(([yearStr, details]) => {
+      const year = Number(yearStr);
+      const yearTotal = details.reduce((sum, d) => sum + d.amount, 0);
+      const avgScope = details.reduce((sum, d) => sum + d.job_scope, 0) / details.length;
+
+      return {
+        key: String(year),
+        label: (
+          <Space>
+            <span>{year}</span>
+            <Tag>{details.length} חודשים</Tag>
+            <Tag>היקף ממוצע {(avgScope * 100).toFixed(1)}%</Tag>
+            <Tag color="cyan">{formatCurrency(yearTotal)}</Tag>
+          </Space>
+        ),
+        children: (
+          <Table
+            dataSource={details.map((d, i) => ({ ...d, key: i }))}
+            columns={detailColumns}
+            pagination={false}
+            size="small"
+          />
+        ),
+      };
     });
-
-    const detailColumns = [
-      {
-        title: <span style={{ color: '#88D8E0' }}>חודש</span>,
-        key: 'month',
-        render: (_: unknown, record: SeveranceMonthlyDetail) => (
-          <span style={{ color: '#E8F4F8' }}>{formatMonth(record.month)}</span>
-        ),
-      },
-      {
-        title: <span style={{ color: '#88D8E0' }}>ימים</span>,
-        key: 'days',
-        render: (_: unknown, record: SeveranceMonthlyDetail) => (
-          <span style={{ color: '#E8F4F8' }}>
-            {record.calendar_days_employed}/{record.total_calendar_days}
-          </span>
-        ),
-      },
-      {
-        title: <span style={{ color: '#88D8E0' }}>חלקיות</span>,
-        key: 'partial',
-        render: (_: unknown, record: SeveranceMonthlyDetail) => (
-          <span style={{ color: '#E8F4F8' }}>
-            {(record.partial_fraction * 100).toFixed(1)}%
-          </span>
-        ),
-      },
-      {
-        title: <span style={{ color: '#88D8E0' }}>היקף משרה</span>,
-        key: 'scope',
-        render: (_: unknown, record: SeveranceMonthlyDetail) => (
-          <span style={{ color: record.job_scope < 1 ? '#FF6B6B' : '#E8F4F8' }}>
-            {(record.job_scope * 100).toFixed(1)}%
-          </span>
-        ),
-      },
-      {
-        title: <span style={{ color: '#88D8E0' }}>שכר קובע</span>,
-        key: 'salary',
-        render: (_: unknown, record: SeveranceMonthlyDetail) => (
-          <span className="ltr-number" style={{ color: '#E8F4F8' }}>
-            {formatCurrency(record.salary_used)}
-          </span>
-        ),
-      },
-      {
-        title: <span style={{ color: '#88D8E0' }}>סכום</span>,
-        key: 'amount',
-        render: (_: unknown, record: SeveranceMonthlyDetail) => (
-          <span className="ltr-number" style={{ color: '#4ECDC4', fontWeight: 'bold' }}>
-            {formatCurrency(record.amount)}
-          </span>
-        ),
-      },
-    ];
-
-    return {
-      key: ps.effective_period_id,
-      label: (
-        <Space>
-          <span>{ps.effective_period_id}: {formatDate(ps.start)} - {formatDate(ps.end)}</span>
-          <Tag>{ps.months_count.toFixed(1)} חודשים</Tag>
-          <Tag>היקף {(ps.avg_job_scope * 100).toFixed(1)}%</Tag>
-          <Tag color="cyan">{formatCurrency(ps.subtotal)}</Tag>
-        </Space>
-      ),
-      children: (
-        <Table
-          dataSource={sortedDetails}
-          columns={detailColumns}
-          rowKey={(record) => `${record.month[0]}-${record.month[1]}`}
-          pagination={false}
-          size="small"
-        />
-      ),
-    };
-  });
 
   // Summary table columns
   const summaryColumns = [
@@ -2267,8 +2269,8 @@ const SeveranceBreakdown: React.FC<{
         />
       )}
 
-      {/* Period details (collapsed by default) */}
-      <Collapse defaultActiveKey={[]} items={periodItems} style={{ marginBottom: 16 }} />
+      {/* Yearly details (collapsed by default) */}
+      <Collapse defaultActiveKey={[]} items={yearItems} style={{ marginBottom: 16 }} />
 
       {/* Summary table */}
       <Table
