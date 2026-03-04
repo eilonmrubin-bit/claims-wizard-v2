@@ -54,6 +54,8 @@ from .modules.limitation import (
 from .modules.deductions import apply_all_deductions
 from .modules.summary import compute_summary
 from .modules.severance import compute_severance
+from .modules.recreation import compute_recreation
+from .utils.static_data import get_static_data
 from .modules.limitation import (
     get_limitation_type_for_right,
     filter_with_none_limitation,
@@ -465,6 +467,24 @@ def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
 
             ssot.rights_results.severance = severance_result
 
+        # Recreation
+        if ssot.input.employment_periods and ssot.month_aggregates:
+            static_data = get_static_data()
+
+            # Get total seniority at employment start
+            total_seniority_years = ssot.seniority_totals.total_industry_years
+
+            recreation_result = compute_recreation(
+                employment_periods=ssot.input.employment_periods,
+                total_seniority_years=total_seniority_years,
+                month_aggregates=ssot.month_aggregates,
+                industry=ssot.input.industry,
+                get_recreation_days=static_data.get_recreation_days,
+                get_recreation_day_value=static_data.get_recreation_day_value,
+            )
+
+            ssot.rights_results.recreation = recreation_result
+
         # =====================================================================
         # Phase 3 - Post-processing
         # =====================================================================
@@ -662,6 +682,31 @@ def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
                 claimable_dur, excluded_dur = compute_right_durations(limitation_type_id)
                 per_right_results["severance"] = RightLimitationResult(
                     limitation_type_id=limitation_type_id,
+                    full_amount=full_amount,
+                    claimable_amount=claimable_amount,
+                    excluded_amount=excluded_amount,
+                    claimable_duration=claimable_dur,
+                    excluded_duration=excluded_dur,
+                )
+
+            # Recreation - uses general limitation
+            if ssot.rights_results.recreation and ssot.rights_results.recreation.entitled:
+                recreation = ssot.rights_results.recreation
+                full_amount = recreation.grand_total_value
+
+                # Recreation uses general limitation - filter by employment year end dates
+                # Since recreation is calculated per employment year, we check if each year
+                # ends within the claimable window
+                claimable_amount = Decimal("0")
+                for year_data in recreation.years:
+                    if year_data.year_end and effective_window_start <= year_data.year_end <= filing_date:
+                        claimable_amount += year_data.entitled_value
+
+                excluded_amount = full_amount - claimable_amount
+
+                claimable_dur, excluded_dur = compute_right_durations("general")
+                per_right_results["recreation"] = RightLimitationResult(
+                    limitation_type_id="general",
                     full_amount=full_amount,
                     claimable_amount=claimable_amount,
                     excluded_amount=excluded_amount,

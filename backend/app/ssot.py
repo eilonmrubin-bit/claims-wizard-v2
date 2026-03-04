@@ -708,6 +708,38 @@ class HolidaysResult:
 
 
 @dataclass
+class RecreationYearData:
+    """Recreation data for a single employment year."""
+    year_number: int = 0  # 1, 2, 3, ...
+    year_start: date | None = None
+    year_end: date | None = None
+    is_partial: bool = False
+    partial_fraction: Decimal | None = None  # 0 < x < 1, None if full year
+    seniority_years: int = 0  # seniority at start of this year
+    base_days: int = 0  # days per year from table
+    avg_scope: Decimal = Decimal("0")  # average job scope
+    day_value: Decimal = Decimal("0")  # day value in NIS
+    day_value_effective_date: date | None = None  # effective_date used
+    entitled_days: Decimal = Decimal("0")  # base_days × partial_fraction × avg_scope
+    entitled_value: Decimal = Decimal("0")  # entitled_days × day_value
+
+
+@dataclass
+class RecreationResult:
+    """Recreation pay calculation result."""
+    entitled: bool = False  # Whether employee met waiting period (1 year)
+    not_entitled_reason: str | None = None  # Reason if entitled=False
+
+    industry: str = ""  # general | construction | agriculture | cleaning
+    industry_fallback_used: bool = False  # True if industry not found and fell back to general
+
+    years: list[RecreationYearData] = field(default_factory=list)
+
+    grand_total_days: Decimal = Decimal("0")  # Total days (no rounding)
+    grand_total_value: Decimal = Decimal("0")  # Total value in NIS (round only in display)
+
+
+@dataclass
 class RightsResults:
     """Results for all rights (Phase 2)."""
     overtime: OvertimeResult | None = None
@@ -715,7 +747,7 @@ class RightsResults:
     vacation: Any | None = None  # Not yet defined
     severance: SeveranceData | None = None
     pension: Any | None = None  # Not yet defined
-    recreation: Any | None = None  # Not yet defined
+    recreation: RecreationResult | None = None
     salary_completion: Any | None = None  # Not yet defined
     travel: Any | None = None  # Not yet defined
 

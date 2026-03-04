@@ -49,6 +49,7 @@ class MinimumWage:
 @dataclass
 class RecreationDayValue:
     """Recreation day value entry."""
+    industry: str
     effective_date: date
     value: Decimal
 
@@ -291,6 +292,7 @@ class StaticDataLoader:
         rows = self._load_csv(path)
         self._recreation_day_value = [
             RecreationDayValue(
+                industry=row["industry"],
                 effective_date=parse_date(row["effective_date"]),
                 value=Decimal(row["value"]),
             )
@@ -436,24 +438,33 @@ class StaticDataLoader:
         row = lookup_by_date(table, target)
         return row["data"]
 
-    def get_recreation_day_value(self, target_date: date) -> Decimal:
-        """Get recreation day value for a specific date.
+    def get_recreation_day_value(self, target_date: date, industry: str = "general") -> tuple[Decimal, date]:
+        """Get recreation day value for a specific date and industry.
 
         Args:
             target_date: Date to look up
+            industry: Industry identifier (default: general)
 
         Returns:
-            Value in NIS
+            Tuple of (value in NIS, effective_date used)
 
         Raises:
-            ValueError: If no data for that date
+            ValueError: If no data for that date/industry
         """
         if not self._loaded:
             self.load_all()
 
-        table = [{"effective_date": rv.effective_date, "data": rv} for rv in self._recreation_day_value]
+        # Filter by industry, fall back to general if not found
+        industry_rows = [rv for rv in self._recreation_day_value if rv.industry == industry]
+        if not industry_rows:
+            industry_rows = [rv for rv in self._recreation_day_value if rv.industry == "general"]
+
+        if not industry_rows:
+            raise ValueError(f"No recreation day value data for industry: {industry}")
+
+        table = [{"effective_date": rv.effective_date, "data": rv} for rv in industry_rows]
         row = lookup_by_date(table, target_date)
-        return row["data"].value
+        return row["data"].value, row["data"].effective_date
 
     def get_recreation_days(self, industry: str, seniority_years: int) -> int:
         """Get recreation days per year for industry and seniority.

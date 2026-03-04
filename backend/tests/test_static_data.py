@@ -98,9 +98,9 @@ def test_loader_recreation_days(loader):
     days = loader.get_recreation_days("general", 2)
     assert days == 6
 
-    # Construction, 5 years
+    # Construction, 5 years (range 5-10 = 9 days)
     days = loader.get_recreation_days("construction", 5)
-    assert days == 8
+    assert days == 9
 
     # Unknown industry falls back to general
     days = loader.get_recreation_days("unknown", 5)
@@ -111,8 +111,9 @@ def test_loader_recreation_day_value(loader):
     """Test loading recreation day value."""
     loader.load_all()
 
-    value = loader.get_recreation_day_value(date(2024, 1, 1))
+    value, effective_date = loader.get_recreation_day_value(date(2024, 1, 1), "general")
     assert value == Decimal("418.00")
+    assert effective_date == date(2023, 7, 1)
 
 
 def test_loader_travel_allowance(loader):
