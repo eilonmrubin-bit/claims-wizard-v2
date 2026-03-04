@@ -148,13 +148,17 @@ def test_case_1_general_5day_3_full_years():
 
 def test_case_2_cleaning_partial_years_industry_seniority():
     """
+    Case 2 from SKILL.md: Cleaning, partial first/last year, industry seniority 12m
+
     Employment: 2021-04-01 – 2023-09-30, prior=12m (1y), 5-day
     Cleaning uses industry seniority
 
     Expected:
-    - Year 2021 (Apr-Dec, 9 months): seniority=floor(12/12)+1=2 → 10 days × 9/12
-    - Year 2022 (full year): seniority=floor(21/12)+1=2 → 10 days
-    - Year 2023 (Jan-Sep, 9 months): seniority=floor(33/12)+1=3 → 11 days × 9/12
+    - Year 2021 (Apr-Dec): seniority=floor(12/12)+1=2 → 10 days × partial_fraction
+    - Year 2022 (full year): seniority=floor(21/12)+1=2 → 10 days × 1.0
+    - Year 2023 (Jan-Sep): seniority=floor(33/12)+1=3 → 11 days × partial_fraction
+
+    partial_fraction = actual_work_days / full_year_work_days (not simply months!)
     """
     start = date(2021, 4, 1)
     end = date(2023, 9, 30)
@@ -185,16 +189,29 @@ def test_case_2_cleaning_partial_years_industry_seniority():
     assert result.years[0].year == 2021
     assert result.years[0].seniority_years == 2  # floor(12/12)+1 = 2
     assert result.years[0].is_partial is True
+    # partial_fraction should be actual_work_days / full_year_work_days
+    # For Apr-Dec in a 5-day week: ~196 work days out of ~261 full year
+    assert result.years[0].partial_fraction is not None
+    assert Decimal("0.7") < result.years[0].partial_fraction < Decimal("0.8")
+    # entitled_days = base_days × partial_fraction (10 × ~0.75 = ~7.5)
+    assert Decimal("7") < result.years[0].entitled_days < Decimal("8")
 
     # Year 2022: full year, seniority=2 (still in range)
     assert result.years[1].year == 2022
     assert result.years[1].seniority_years == 2  # floor(21/12)+1 = 2
     assert result.years[1].is_partial is False
+    assert result.years[1].partial_fraction is None  # None for full years
+    assert result.years[1].entitled_days == Decimal("10")  # base_days × 1.0
 
     # Year 2023: partial (Jan-Sep), seniority=3
     assert result.years[2].year == 2023
     assert result.years[2].seniority_years == 3  # floor(33/12)+1 = 3
     assert result.years[2].is_partial is True
+    # partial_fraction for Jan-Sep: ~196 work days out of ~261 full year
+    assert result.years[2].partial_fraction is not None
+    assert Decimal("0.7") < result.years[2].partial_fraction < Decimal("0.8")
+    # entitled_days = 11 × ~0.75 = ~8.25
+    assert Decimal("8") < result.years[2].entitled_days < Decimal("9")
 
 
 # =============================================================================
@@ -203,6 +220,8 @@ def test_case_2_cleaning_partial_years_industry_seniority():
 
 def test_case_3_construction_age_55_split():
     """
+    Case 3 from SKILL.md: Construction, mixed week, age 55 in year 10
+
     Employment: 2015-01-01 – 2024-12-31, prior=24m (2y), birth_year=1969
     Age 55 turns on 2024-01-01 (Jan 1, 1969+55)
 
@@ -210,7 +229,7 @@ def test_case_3_construction_age_55_split():
     At start of 2024: seniority = prior(24m) + months at defendant 2015-2023 (108m) = 132m
     seniority_years = floor(132/12)+1 = 11+1 = 12 years
 
-    Age 55 on Jan 1 2024 → full year at 55+ → use construction_55plus table
+    Age 55 on Jan 1 2024 → full year at 55+ → use construction_55plus table (28 days for 6-day)
     """
     start = date(2015, 1, 1)
     end = date(2024, 12, 31)
@@ -245,6 +264,19 @@ def test_case_3_construction_age_55_split():
 
     # Since age 55 is exactly on Jan 1, no split needed - full year at 55+
     # Worker turned 55 on Jan 1 2024, so full year is 55+
+    assert year_2024.is_55_plus is True
+
+    # Seniority for 2024: prior(24m) + 9 full years (2015-2023 = 108m) = 132m
+    # floor(132/12)+1 = 12 years
+    assert year_2024.seniority_years == 12
+
+    # Full year (not partial)
+    assert year_2024.is_partial is False
+    assert year_2024.partial_fraction is None
+
+    # With seniority 12 and 55+, use construction_55plus: 28 days (6-day)
+    assert year_2024.weighted_base_days == Decimal("28")
+    assert year_2024.entitled_days == Decimal("28")
 
 
 # =============================================================================

@@ -246,6 +246,54 @@ def _compute_partial_description(year: int, year_start: date, year_end: date) ->
         return f"{months_count} חודשים ({start_name}–{end_name})"
 
 
+def _get_pattern_for_full_year(
+    d: date,
+    work_patterns: list[WorkPattern],
+) -> WorkPattern | None:
+    """Find work pattern for a date, extrapolating outside employment.
+
+    For full-year calculations, we need to determine what pattern would apply
+    even for dates outside the actual employment period:
+    - If date is before all patterns: use the earliest pattern
+    - If date is after all patterns: use the latest pattern
+    - If date is within a pattern: use that pattern
+    """
+    if not work_patterns:
+        return None
+
+    # First, check if date falls within any pattern
+    for wp in work_patterns:
+        if wp.start and wp.end and wp.start <= d <= wp.end:
+            return wp
+
+    # Sort patterns by start date
+    sorted_patterns = sorted(
+        [wp for wp in work_patterns if wp.start],
+        key=lambda wp: wp.start
+    )
+
+    if not sorted_patterns:
+        return None
+
+    earliest = sorted_patterns[0]
+    latest = sorted_patterns[-1]
+
+    # Date is before all patterns - use earliest
+    if earliest.start and d < earliest.start:
+        return earliest
+
+    # Date is after all patterns - use latest
+    if latest.end and d > latest.end:
+        return latest
+
+    # Date falls in a gap between patterns - use the pattern that ends before this date
+    for wp in reversed(sorted_patterns):
+        if wp.end and wp.end < d:
+            return wp
+
+    return earliest
+
+
 def _count_work_days_in_year(
     year: int,
     year_start: date,
@@ -256,6 +304,10 @@ def _count_work_days_in_year(
 
     Returns:
         (actual_work_days, full_year_work_days)
+
+    The numerator (actual_days) counts work days within the employment period.
+    The denominator (full_year_days) counts work days for the entire calendar year,
+    extrapolating patterns to dates outside employment.
     """
     actual_days = 0
     full_year_days = 0
@@ -265,9 +317,11 @@ def _count_work_days_in_year(
 
     current = jan1
     while current <= dec31:
-        pattern = _get_pattern_for_date(current, work_patterns)
+        # For full_year_days: extrapolate patterns to cover entire year
+        pattern = _get_pattern_for_full_year(current, work_patterns)
         if pattern and current.weekday() in pattern.work_days:
             full_year_days += 1
+            # For actual_days: only count within employment period
             if year_start <= current <= year_end:
                 actual_days += 1
         current = _add_days(current, 1)
