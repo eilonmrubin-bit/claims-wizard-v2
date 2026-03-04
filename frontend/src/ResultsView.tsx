@@ -3059,7 +3059,7 @@ const VacationBreakdown: React.FC<VacationBreakdownProps> = ({ vacation, limitat
         <Col span={8}>
           <Statistic
             title="סה״כ ימים"
-            value={vacation.grand_total_days.toFixed(2)}
+            value={vacation.years.reduce((sum, y) => sum + y.entitled_days * (y.claimable_fraction ?? 1), 0).toFixed(2)}
             precision={2}
           />
         </Col>
