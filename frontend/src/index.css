@@ -561,3 +561,8 @@ body {
 .results-view .minimum-applied-row td {
   background: rgba(255, 107, 107, 0.08) !important;
 }
+
+/* Vacation year excluded (limitation) */
+.vacation-year-excluded td {
+  opacity: 0.45;
+}

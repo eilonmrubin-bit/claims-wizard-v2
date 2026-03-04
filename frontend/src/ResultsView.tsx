@@ -2827,6 +2827,16 @@ const VacationBreakdown: React.FC<VacationBreakdownProps> = ({ vacation, limitat
   // Get seniority values used in this case for highlighting
   const usedSeniorities = vacation.years.map(y => y.seniority_years);
 
+  // Check if a year is claimable (within limitation window)
+  const vacEffectiveWindowStart = vacationWindow?.effective_window_start
+    ? new Date(vacationWindow.effective_window_start)
+    : null;
+
+  const isYearClaimable = (year: VacationYearData): boolean => {
+    if (!vacEffectiveWindowStart || !year.year_end) return true;
+    return new Date(year.year_end) >= vacEffectiveWindowStart;
+  };
+
   if (!vacation.entitled) {
     return (
       <Card
@@ -2854,6 +2864,16 @@ const VacationBreakdown: React.FC<VacationBreakdownProps> = ({ vacation, limitat
 
   // Year columns
   const yearColumns = [
+    {
+      title: '',
+      key: 'status',
+      width: 32,
+      render: (_: unknown, record: VacationYearData) => (
+        isYearClaimable(record)
+          ? <Tooltip title="בתוך חלון ההתיישנות — ניתן לתבוע"><CheckCircleOutlined style={{ color: '#4ECDC4' }} /></Tooltip>
+          : <Tooltip title="מחוץ לחלון ההתיישנות — התיישן"><ClockCircleOutlined style={{ color: '#FF6B6B' }} /></Tooltip>
+      ),
+    },
     { title: 'שנה', dataIndex: 'year', key: 'year', width: 60 },
     {
       title: 'תקופה',
@@ -2904,7 +2924,12 @@ const VacationBreakdown: React.FC<VacationBreakdownProps> = ({ vacation, limitat
       key: 'year_value',
       width: 100,
       render: (_: unknown, record: VacationYearData) => (
-        <span className="ltr-number">{formatCurrency(record.year_value)}</span>
+        <span
+          className="ltr-number"
+          style={{ color: isYearClaimable(record) ? '#4ECDC4' : '#888', textDecoration: isYearClaimable(record) ? 'none' : 'line-through' }}
+        >
+          {formatCurrency(record.year_value)}
+        </span>
       ),
     },
   ];
@@ -3037,36 +3062,56 @@ const VacationBreakdown: React.FC<VacationBreakdownProps> = ({ vacation, limitat
           expandedRowRender,
           rowExpandable: (record) => record.week_type_segments.length > 1,
         }}
+        rowClassName={(record) => isYearClaimable(record) ? '' : 'vacation-year-excluded'}
       />
 
       {/* פאנל התיישנות חופשה */}
       {limitation && (
-        <div style={{ marginTop: 16, padding: '12px 16px', background: 'rgba(78,205,196,0.06)', borderRadius: 8, border: '1px solid rgba(78,205,196,0.2)' }}>
-          <Text strong style={{ color: '#88D8E0', display: 'block', marginBottom: 12 }}>
+        <div style={{
+          marginTop: 16,
+          padding: '14px 16px',
+          background: 'rgba(78,205,196,0.06)',
+          borderRadius: 8,
+          border: '1px solid rgba(78,205,196,0.2)',
+        }}>
+          <Text strong style={{ color: '#88D8E0', display: 'block', marginBottom: 10 }}>
             התיישנות חופשה — 3 שנים + שוטף
           </Text>
+
+          {/* הסבר */}
+          <Text type="secondary" style={{ fontSize: 12, display: 'block', marginBottom: 12 }}>
+            חוק חופשה שנתית מאפשר לתבוע רק שנות חופשה שסיימו עד {vacationWindow ? formatDate(vacationWindow.effective_window_start) : '—'}.
+            שנים קודמות לכך התיישנו ואינן ניתנות לתביעה.
+          </Text>
+
           <Row gutter={16}>
             <Col span={6}>
               <Statistic
-                title="תקופה שלא התיישנה"
-                value={limitation.claimable_duration?.display ?? '—'}
-                valueStyle={{ color: '#4ECDC4', fontSize: 14 }}
+                title="חלון מ-"
+                value={vacationWindow ? formatDate(vacationWindow.effective_window_start) : '—'}
+                valueStyle={{ color: '#4ECDC4', fontSize: 13 }}
+              />
+              {vacationWindow && vacationWindow.base_window_start !== vacationWindow.effective_window_start && (
+                <Text type="secondary" style={{ fontSize: 11 }}>
+                  (בסיס: {formatDate(vacationWindow.base_window_start)}, הורחב בימי הקפאה)
+                </Text>
+              )}
+            </Col>
+            <Col span={6}>
+              <Statistic
+                title="שנים שהתיישנו"
+                value={vacation.years.filter(y => !isYearClaimable(y)).length}
+                suffix={` / ${vacation.years.length}`}
+                valueStyle={{ color: '#FF6B6B', fontSize: 13 }}
               />
             </Col>
             <Col span={6}>
               <Statistic
-                title="ימים שלא התיישנו"
-                value={limitation.claimable_duration?.days ?? '—'}
-                valueStyle={{ color: '#4ECDC4', fontSize: 14 }}
-              />
-            </Col>
-            <Col span={6}>
-              <Statistic
-                title="שווי לפני התיישנות"
-                value={limitation.full_amount ?? vacation.grand_total_value}
+                title="שווי שהתיישן"
+                value={limitation.excluded_amount ?? 0}
                 precision={2}
                 prefix="₪"
-                valueStyle={{ fontSize: 14 }}
+                valueStyle={{ color: '#FF6B6B', fontSize: 13 }}
               />
             </Col>
             <Col span={6}>
@@ -3075,27 +3120,10 @@ const VacationBreakdown: React.FC<VacationBreakdownProps> = ({ vacation, limitat
                 value={limitation.claimable_amount ?? vacation.grand_total_value}
                 precision={2}
                 prefix="₪"
-                valueStyle={{ color: '#52c41a', fontSize: 14 }}
+                valueStyle={{ color: '#52c41a', fontSize: 13 }}
               />
             </Col>
           </Row>
-          {vacationWindow && (
-            <div style={{ marginTop: 8 }}>
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                חלון בסיסי: <span className="ltr-number">{formatDate(vacationWindow.base_window_start)}</span>
-                {vacationWindow.base_window_start !== vacationWindow.effective_window_start && (
-                  <> &nbsp;|&nbsp; חלון אפקטיבי (אחרי הקפאות): <span className="ltr-number" style={{ color: '#4ECDC4' }}>{formatDate(vacationWindow.effective_window_start)}</span></>
-                )}
-              </Text>
-            </div>
-          )}
-          {limitation.excluded_amount != null && limitation.excluded_amount > 0 && (
-            <div style={{ marginTop: 6 }}>
-              <Text type="secondary" style={{ fontSize: 12 }}>
-                שווי שהתיישן: <span style={{ color: '#FF6B6B' }}>₪{limitation.excluded_amount.toFixed(2)}</span>
-              </Text>
-            </div>
-          )}
         </div>
       )}
     </Card>
