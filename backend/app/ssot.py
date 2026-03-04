@@ -750,11 +750,56 @@ class RecreationResult:
 
 
 @dataclass
+class VacationWeekTypeSegment:
+    """A segment within a calendar year with uniform week type."""
+    segment_start: date | None = None
+    segment_end: date | None = None
+    week_type: str = ""  # "five_day" | "six_day"
+    weeks_count: Decimal = Decimal("0")
+    weight: Decimal = Decimal("0")  # weeks_count / total_weeks_in_year
+    base_days: int = 0  # days per table for this week type
+    weighted_days: Decimal = Decimal("0")  # weight × base_days
+
+
+@dataclass
+class VacationYearData:
+    """Vacation data for a single calendar year."""
+    year: int = 0
+    year_start: date | None = None  # Jan 1 or employment start (partial)
+    year_end: date | None = None  # Dec 31 or employment end (partial)
+    is_partial: bool = False
+    partial_fraction: Decimal | None = None  # None if full year
+    partial_description: str = ""  # e.g. "9 חודשים (אפריל–דצמבר)" for UI
+    seniority_years: int = 0
+    age_at_year_start: int | None = None  # construction only
+    age_55_split: bool = False  # construction: turned 55 this year
+    week_type_segments: list[VacationWeekTypeSegment] = field(default_factory=list)
+    weighted_base_days: Decimal = Decimal("0")
+    entitled_days: Decimal = Decimal("0")
+    avg_daily_salary: Decimal = Decimal("0")
+    year_value: Decimal = Decimal("0")
+
+
+@dataclass
+class VacationResult:
+    """Annual vacation calculation result."""
+    entitled: bool = True
+
+    industry: str = ""
+    seniority_basis: str = ""  # "employer" | "industry"
+
+    years: list[VacationYearData] = field(default_factory=list)
+
+    grand_total_days: Decimal = Decimal("0")
+    grand_total_value: Decimal = Decimal("0")
+
+
+@dataclass
 class RightsResults:
     """Results for all rights (Phase 2)."""
     overtime: OvertimeResult | None = None
     holidays: HolidaysResult | None = None
-    vacation: Any | None = None  # Not yet defined
+    vacation: VacationResult | None = None
     severance: SeveranceData | None = None
     pension: Any | None = None  # Not yet defined
     recreation: RecreationResult | None = None

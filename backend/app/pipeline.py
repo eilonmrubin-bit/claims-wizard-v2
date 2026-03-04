@@ -55,6 +55,7 @@ from .modules.deductions import apply_all_deductions
 from .modules.summary import compute_summary
 from .modules.severance import compute_severance
 from .modules.recreation import compute_recreation
+from .modules.vacation import compute_vacation
 from .utils.static_data import get_static_data
 from .modules.limitation import (
     get_limitation_type_for_right,
@@ -505,6 +506,19 @@ def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
 
             ssot.rights_results.severance = severance_result
 
+        # Vacation
+        if ssot.input.employment_periods and ssot.period_month_records:
+            vacation_result = compute_vacation(
+                employment_periods=ssot.input.employment_periods,
+                work_patterns=ssot.input.work_patterns or [],
+                period_month_records=ssot.period_month_records,
+                industry=ssot.input.industry,
+                seniority_totals=ssot.seniority_totals,
+                birth_year=ssot.input.personal_details.birth_year if ssot.input.personal_details else None,
+                right_toggles=ssot.input.right_toggles,
+            )
+            ssot.rights_results.vacation = vacation_result
+
         # =====================================================================
         # Phase 3 - Post-processing
         # =====================================================================
@@ -727,6 +741,31 @@ def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
                 claimable_dur, excluded_dur = compute_right_durations("general")
                 per_right_results["recreation"] = RightLimitationResult(
                     limitation_type_id="general",
+                    full_amount=full_amount,
+                    claimable_amount=claimable_amount,
+                    excluded_amount=excluded_amount,
+                    claimable_duration=claimable_dur,
+                    excluded_duration=excluded_dur,
+                )
+
+            # Vacation limitation (3-year window from Jan 1 of filing_date.year - 3)
+            if ssot.rights_results.vacation and ssot.rights_results.vacation.entitled:
+                vac = ssot.rights_results.vacation
+                full_amount = vac.grand_total_value
+
+                # Vacation window: from Jan 1 of (filing_date.year - 3)
+                vac_window_start = date(filing_date.year - 3, 1, 1)
+
+                claimable_amount = Decimal("0")
+                for year_data in vac.years:
+                    if year_data.year_end and vac_window_start <= year_data.year_end <= filing_date:
+                        claimable_amount += year_data.year_value
+
+                excluded_amount = full_amount - claimable_amount
+
+                claimable_dur, excluded_dur = compute_right_durations("vacation")
+                per_right_results["vacation"] = RightLimitationResult(
+                    limitation_type_id="vacation",
                     full_amount=full_amount,
                     claimable_amount=claimable_amount,
                     excluded_amount=excluded_amount,

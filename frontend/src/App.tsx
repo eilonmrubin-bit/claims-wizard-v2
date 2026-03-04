@@ -1797,6 +1797,19 @@ function App() {
                       </div>
                     </Col>
                   </Row>
+                  <Row gutter={24}>
+                    <Col span={6}>
+                      <div style={{ marginBottom: 16 }}>
+                        <Space>
+                          <Switch
+                            checked={formData.right_toggles.vacation?.enabled !== false}
+                            onChange={(checked) => updateRightToggle('vacation', 'enabled', checked)}
+                          />
+                          <span style={{ fontWeight: 500 }}>חופשה</span>
+                        </Space>
+                      </div>
+                    </Col>
+                  </Row>
                 ),
               },
               {

@@ -300,6 +300,42 @@ interface RecreationResult {
   grand_total_value: number;
 }
 
+interface VacationWeekTypeSegment {
+  segment_start: string;
+  segment_end: string;
+  week_type: string;  // "five_day" | "six_day"
+  weeks_count: number;
+  weight: number;
+  base_days: number;
+  weighted_days: number;
+}
+
+interface VacationYearData {
+  year: number;
+  year_start: string;
+  year_end: string;
+  is_partial: boolean;
+  partial_fraction: number | null;
+  partial_description: string;
+  seniority_years: number;
+  age_at_year_start: number | null;
+  age_55_split: boolean;
+  week_type_segments: VacationWeekTypeSegment[];
+  weighted_base_days: number;
+  entitled_days: number;
+  avg_daily_salary: number;
+  year_value: number;
+}
+
+interface VacationResult {
+  entitled: boolean;
+  industry: string;
+  seniority_basis: string;  // "employer" | "industry"
+  years: VacationYearData[];
+  grand_total_days: number;
+  grand_total_value: number;
+}
+
 interface FreezePeriodApplied {
   name: string;
   start_date: string;
@@ -408,6 +444,7 @@ interface ResultsViewProps {
       holidays?: HolidaysResult;
       severance?: SeveranceResult;
       recreation?: RecreationResult;
+      vacation?: VacationResult;
     };
     limitation_results?: LimitationResults;
     total_employment?: TotalEmployment;
@@ -2735,7 +2772,309 @@ const RecreationBreakdown: React.FC<RecreationBreakdownProps> = ({ recreation, l
 };
 
 // ============================================================================
-// ז. LimitationTimeline - התיישנות
+// ז. VacationBreakdown - פירוט חופשה שנתית
+// ============================================================================
+
+const VACATION_DAYS_TABLES: Record<string, { range: string; five_day: number; six_day: number }[]> = {
+  general: [
+    { range: '1–4', five_day: 12, six_day: 14 },
+    { range: '5', five_day: 14, six_day: 16 },
+    { range: '6', five_day: 15, six_day: 18 },
+    { range: '7', five_day: 17, six_day: 21 },
+    { range: '8+', five_day: 17, six_day: 21 },
+  ],
+  construction: [
+    { range: '1–4', five_day: 12, six_day: 14 },
+    { range: '5', five_day: 14, six_day: 16 },
+    { range: '6', five_day: 15, six_day: 18 },
+    { range: '7', five_day: 17, six_day: 21 },
+    { range: '8+', five_day: 17, six_day: 21 },
+  ],
+};
+
+interface VacationBreakdownProps {
+  vacation: VacationResult;
+  limitation?: LimitationRightResult;
+}
+
+const VacationBreakdown: React.FC<VacationBreakdownProps> = ({ vacation, limitation }) => {
+  const [showDaysTable, setShowDaysTable] = useState(false);
+
+  const industryLabels: Record<string, string> = {
+    general: 'כללי',
+    construction: 'בניין',
+  };
+
+  const seniorityBasisLabels: Record<string, string> = {
+    employer: 'אצל המעסיק',
+    industry: 'ענפי',
+  };
+
+  const weekTypeLabels: Record<string, string> = {
+    five_day: '5 ימים',
+    six_day: '6 ימים',
+  };
+
+  // Get the vacation days table for the current industry
+  const daysTable = VACATION_DAYS_TABLES[vacation.industry] || VACATION_DAYS_TABLES.general;
+
+  // Get seniority values used in this case for highlighting
+  const usedSeniorities = vacation.years.map(y => y.seniority_years);
+
+  if (!vacation.entitled) {
+    return (
+      <Card
+        title={
+          <span>
+            <CalendarOutlined style={{ marginLeft: 8 }} />
+            חופשה שנתית
+          </span>
+        }
+        size="small"
+        style={{
+          borderRadius: 8,
+          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+          background: 'linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%)',
+        }}
+      >
+        <Alert
+          type="warning"
+          showIcon
+          message="לא זכאי לחופשה שנתית"
+        />
+      </Card>
+    );
+  }
+
+  // Year columns
+  const yearColumns = [
+    { title: 'שנה', dataIndex: 'year', key: 'year', width: 60 },
+    {
+      title: 'תקופה',
+      key: 'period',
+      render: (_: unknown, record: VacationYearData) => (
+        <span>
+          {formatDate(record.year_start)} – {formatDate(record.year_end)}
+          {record.is_partial && (
+            <Tooltip title={record.partial_description}>
+              <Tag color="orange" style={{ marginRight: 4 }}>שנה חלקית</Tag>
+            </Tooltip>
+          )}
+          {record.age_55_split && (
+            <Tooltip title="פיצול לפי גיל 55">
+              <Tag color="purple" style={{ marginRight: 4 }}>גיל 55</Tag>
+            </Tooltip>
+          )}
+        </span>
+      ),
+    },
+    { title: 'ותק', dataIndex: 'seniority_years', key: 'seniority', width: 60 },
+    {
+      title: 'בסיס ימים',
+      key: 'weighted_base_days',
+      width: 90,
+      render: (_: unknown, record: VacationYearData) => (
+        <span className="ltr-number">{record.weighted_base_days.toFixed(2)}</span>
+      ),
+    },
+    {
+      title: 'ימים מזכים',
+      key: 'entitled_days',
+      width: 100,
+      render: (_: unknown, record: VacationYearData) => (
+        <span className="ltr-number">{record.entitled_days.toFixed(2)}</span>
+      ),
+    },
+    {
+      title: 'שכר יומי',
+      key: 'avg_daily_salary',
+      width: 100,
+      render: (_: unknown, record: VacationYearData) => (
+        <span className="ltr-number">{formatCurrency(record.avg_daily_salary)}</span>
+      ),
+    },
+    {
+      title: 'שווי',
+      key: 'year_value',
+      width: 100,
+      render: (_: unknown, record: VacationYearData) => (
+        <span className="ltr-number">{formatCurrency(record.year_value)}</span>
+      ),
+    },
+  ];
+
+  // Expand row to show week type segments if more than one
+  const expandedRowRender = (record: VacationYearData) => {
+    if (record.week_type_segments.length <= 1) return null;
+
+    const segmentColumns = [
+      {
+        title: 'תקופה',
+        key: 'period',
+        render: (_: unknown, seg: VacationWeekTypeSegment) => (
+          <span>{formatDate(seg.segment_start)} – {formatDate(seg.segment_end)}</span>
+        ),
+      },
+      {
+        title: 'סוג שבוע',
+        key: 'week_type',
+        render: (_: unknown, seg: VacationWeekTypeSegment) => (
+          <Tag color={seg.week_type === 'five_day' ? 'blue' : 'green'}>
+            {weekTypeLabels[seg.week_type] || seg.week_type}
+          </Tag>
+        ),
+      },
+      {
+        title: 'משקל',
+        key: 'weight',
+        render: (_: unknown, seg: VacationWeekTypeSegment) => (
+          <span>{(seg.weight * 100).toFixed(1)}%</span>
+        ),
+      },
+      {
+        title: 'ימי בסיס',
+        key: 'base_days',
+        dataIndex: 'base_days',
+      },
+      {
+        title: 'ימים משוקללים',
+        key: 'weighted_days',
+        render: (_: unknown, seg: VacationWeekTypeSegment) => (
+          <span className="ltr-number">{seg.weighted_days.toFixed(2)}</span>
+        ),
+      },
+    ];
+
+    return (
+      <Table
+        dataSource={record.week_type_segments.map((s, i) => ({ ...s, key: i }))}
+        columns={segmentColumns}
+        pagination={false}
+        size="small"
+        style={{ margin: 0 }}
+      />
+    );
+  };
+
+  // Helper to check if seniority falls in range
+  const seniorityInRange = (seniority: number, range: string): boolean => {
+    if (range.includes('+')) {
+      const min = parseInt(range.replace('+', ''));
+      return seniority >= min;
+    }
+    if (range.includes('–')) {
+      const [minStr, maxStr] = range.split('–');
+      return seniority >= parseInt(minStr) && seniority <= parseInt(maxStr);
+    }
+    return seniority === parseInt(range);
+  };
+
+  return (
+    <>
+    <Card
+      title={
+        <Space>
+          <span>
+            <CalendarOutlined style={{ marginLeft: 8 }} />
+            חופשה שנתית — {industryLabels[vacation.industry] || vacation.industry}
+            {vacation.seniority_basis && (
+              <Tag color="cyan" style={{ marginRight: 8 }}>
+                ותק {seniorityBasisLabels[vacation.seniority_basis] || vacation.seniority_basis}
+              </Tag>
+            )}
+          </span>
+          <Button size="small" onClick={() => setShowDaysTable(true)}>
+            טבלת ימי חופשה ▾
+          </Button>
+        </Space>
+      }
+      size="small"
+      style={{
+        borderRadius: 8,
+        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+        background: 'linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%)',
+      }}
+    >
+      <Row gutter={16} style={{ marginBottom: 16 }}>
+        <Col span={8}>
+          <Statistic
+            title="סה״כ ימים"
+            value={vacation.grand_total_days.toFixed(2)}
+            precision={2}
+          />
+        </Col>
+        <Col span={8}>
+          <Statistic
+            title="שווי לפני התיישנות"
+            value={vacation.grand_total_value}
+            precision={2}
+            prefix="₪"
+          />
+        </Col>
+        <Col span={8}>
+          <Statistic
+            title="שווי אחרי התיישנות"
+            value={limitation?.claimable_amount ?? vacation.grand_total_value}
+            precision={2}
+            prefix="₪"
+            valueStyle={{ color: '#52c41a' }}
+          />
+        </Col>
+      </Row>
+
+      <Table
+        dataSource={vacation.years.map(y => ({ ...y, key: y.year }))}
+        columns={yearColumns}
+        pagination={false}
+        size="small"
+        expandable={{
+          expandedRowRender,
+          rowExpandable: (record) => record.week_type_segments.length > 1,
+        }}
+      />
+    </Card>
+
+    <Modal
+      title={`טבלת ימי חופשה — ${industryLabels[vacation.industry] || vacation.industry}`}
+      open={showDaysTable}
+      onCancel={() => setShowDaysTable(false)}
+      footer={null}
+      width={500}
+    >
+      <Table
+        dataSource={daysTable.map((row, i) => ({ ...row, key: i }))}
+        columns={[
+          {
+            title: 'ותק (שנים שלמות)',
+            dataIndex: 'range',
+            key: 'range',
+          },
+          {
+            title: 'שבוע 5 ימים',
+            dataIndex: 'five_day',
+            key: 'five_day',
+          },
+          {
+            title: 'שבוע 6 ימים',
+            dataIndex: 'six_day',
+            key: 'six_day',
+          },
+        ]}
+        rowClassName={(record) =>
+          usedSeniorities.some(s => seniorityInRange(s, record.range))
+            ? 'highlighted-row'
+            : ''
+        }
+        pagination={false}
+        size="small"
+      />
+    </Modal>
+    </>
+  );
+};
+
+// ============================================================================
+// ח. LimitationTimeline - התיישנות
 // ============================================================================
 
 const LimitationTimeline: React.FC<{ limitation: LimitationResults }> = ({ limitation }) => {
@@ -3019,7 +3358,17 @@ const ResultsView: React.FC<ResultsViewProps> = ({ ssot }) => {
         </div>
       )}
 
-      {/* ח. Limitation Timeline */}
+      {/* ח. Vacation Breakdown */}
+      {rights_results?.vacation && (
+        <div style={{ marginBottom: 24 }}>
+          <VacationBreakdown
+            vacation={rights_results.vacation}
+            limitation={limitation_results?.per_right?.vacation}
+          />
+        </div>
+      )}
+
+      {/* ט. Limitation Timeline */}
       {limitation_results && limitation_results.windows?.length > 0 && (
         <div style={{ marginBottom: 24 }}><LimitationTimeline limitation={limitation_results} /></div>
       )}
