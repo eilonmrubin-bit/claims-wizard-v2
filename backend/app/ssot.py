@@ -854,6 +854,8 @@ class TimelineSummary:
     total_employment_days: int = 0
     claimable_days_general: int = 0
     excluded_days_general: int = 0
+    claimable_days_vacation: int = 0
+    excluded_days_vacation: int = 0
     total_freeze_days: int = 0
 
 

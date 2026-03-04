@@ -355,6 +355,8 @@ interface TimelineSummary {
   total_employment_days: number;
   claimable_days_general: number;
   excluded_days_general: number;
+  claimable_days_vacation?: number;
+  excluded_days_vacation?: number;
   total_freeze_days: number;
 }
 
@@ -3086,9 +3088,15 @@ const LimitationTimeline: React.FC<{ limitation: LimitationResults }> = ({ limit
     || Object.values(per_right || {})[0]?.claimable_duration?.display
     || '';
 
-  const claimablePercent = summary?.total_employment_days
-    ? Math.round((summary.claimable_days_general / summary.total_employment_days) * 100)
-    : 0;
+  // Per-window claimable percent
+  const getWindowPercent = (window: LimitationWindow) => {
+    if (!summary?.total_employment_days) return 0;
+    const isVacation = window.type_id === 'vacation';
+    const claimableDays = isVacation
+      ? (summary.claimable_days_vacation ?? summary.claimable_days_general)
+      : summary.claimable_days_general;
+    return Math.round((claimableDays / summary.total_employment_days) * 100);
+  };
 
   return (
     <Card
@@ -3139,14 +3147,16 @@ const LimitationTimeline: React.FC<{ limitation: LimitationResults }> = ({ limit
       )}
 
       {/* Windows */}
-      {windows.map((window, idx) => (
+      {windows.map((window, idx) => {
+        const pct = getWindowPercent(window);
+        return (
         <div key={idx} style={{ marginBottom: 16 }}>
           <Text strong>{window.type_name}</Text>
           <Progress
-            percent={claimablePercent}
+            percent={pct}
             strokeColor="#4ECDC4"
             trailColor="rgba(255, 107, 107, 0.3)"
-            format={() => `${claimablePercent}% לא התיישן`}
+            format={() => `${pct}% לא התיישן`}
           />
           <Row gutter={16} style={{ marginTop: 8 }}>
             <Col span={24}>
@@ -3181,7 +3191,7 @@ const LimitationTimeline: React.FC<{ limitation: LimitationResults }> = ({ limit
             </div>
           )}
         </div>
-      ))}
+      ); })}
     </Card>
   );
 };

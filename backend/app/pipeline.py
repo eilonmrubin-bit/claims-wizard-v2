@@ -47,6 +47,7 @@ from .modules.limitation import (
     filter_monthly_results,
     compute_duration,
     LimitationConfig,
+    LimitationType,
     FreezePeriod,
     GENERAL_LIMITATION,
     DEFAULT_WAR_FREEZE,
@@ -563,7 +564,39 @@ def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
                 claimable_duration=window_claimable_duration,
             )
 
-            ssot.limitation_results.windows = [ssot_window]
+            # Build vacation limitation window (3 + current year)
+            VACATION_LIMITATION = LimitationType(
+                id="vacation",
+                name="התיישנות חופשה",
+                compute_base_window_start=lambda fd: date(fd.year - 3, 1, 1),
+            )
+            vacation_window = compute_limitation_window(
+                VACATION_LIMITATION,
+                limitation_config,
+            )
+            vac_claimable_duration = compute_duration(
+                vacation_window.effective_window_start,
+                ssot.input.filing_date,
+            )
+            ssot_vacation_window = SSOTLimitationWindow(
+                type_id=vacation_window.type_id,
+                type_name=vacation_window.type_name,
+                base_window_start=vacation_window.base_window_start,
+                effective_window_start=vacation_window.effective_window_start,
+                freeze_periods_applied=[
+                    FreezePeriodApplied(
+                        name=fp.name,
+                        start_date=fp.start_date,
+                        end_date=fp.end_date,
+                        days=fp.days,
+                        duration=compute_duration(fp.start_date, fp.end_date),
+                    )
+                    for fp in vacation_window.freeze_periods_applied
+                ],
+                claimable_duration=vac_claimable_duration,
+            )
+
+            ssot.limitation_results.windows = [ssot_window, ssot_vacation_window]
 
             # Get employment dates
             employment_start = ssot.total_employment.first_day
@@ -834,10 +867,26 @@ def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
             # Total freeze days that affected the window
             total_freeze_days = sum(fp.days for fp in general_window.freeze_periods_applied)
 
+            # Claimable days for vacation limitation
+            vac_eff_start = vacation_window.effective_window_start
+            if employment_start and employment_end:
+                vac_claimable_start = max(vac_eff_start, employment_start)
+                vac_claimable_end = min(filing_date, employment_end)
+                if vac_claimable_start <= vac_claimable_end:
+                    claimable_days_vacation = (vac_claimable_end - vac_claimable_start).days + 1
+                else:
+                    claimable_days_vacation = 0
+                excluded_days_vacation = max(0, total_employment_days - claimable_days_vacation)
+            else:
+                claimable_days_vacation = 0
+                excluded_days_vacation = 0
+
             ssot.limitation_results.timeline_data.summary = TimelineSummary(
                 total_employment_days=total_employment_days,
                 claimable_days_general=claimable_days_general,
                 excluded_days_general=excluded_days_general,
+                claimable_days_vacation=claimable_days_vacation,
+                excluded_days_vacation=excluded_days_vacation,
                 total_freeze_days=total_freeze_days,
             )
 
