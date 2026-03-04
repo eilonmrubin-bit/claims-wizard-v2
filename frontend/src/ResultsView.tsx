@@ -3414,7 +3414,13 @@ const VacationBreakdown: React.FC<VacationBreakdownProps> = ({ vacation, limitat
             <Col span={6}>
               <Statistic
                 title="שנים שהתיישנו"
-                value={`${vacation.years.filter(y => (y.claimable_fraction ?? 1) === 0).length} מתוך ${vacation.years.length}`}
+                value={
+                  <span>
+                    <span className="ltr-number">{vacation.years.filter(y => (y.claimable_fraction ?? 1) === 0).length}</span>
+                    {' מתוך '}
+                    <span className="ltr-number">{vacation.years.length}</span>
+                  </span>
+                }
                 valueStyle={{ color: '#FF6B6B', fontSize: 13 }}
               />
             </Col>
