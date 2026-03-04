@@ -361,9 +361,12 @@ interface TimelineSummary {
 }
 
 interface LimitationRightResult {
-  claimable_duration?: { display: string };
+  limitation_type_id?: string;
   full_amount?: number;
   claimable_amount?: number;
+  excluded_amount?: number;
+  claimable_duration?: { display: string; days?: number; years_whole?: number; months_remainder?: number };
+  excluded_duration?: { display: string; days?: number; years_whole?: number; months_remainder?: number } | null;
 }
 
 interface LimitationResults {
@@ -2797,9 +2800,10 @@ const VACATION_DAYS_TABLES: Record<string, { range: string; five_day: number; si
 interface VacationBreakdownProps {
   vacation: VacationResult;
   limitation?: LimitationRightResult;
+  vacationWindow?: LimitationWindow;
 }
 
-const VacationBreakdown: React.FC<VacationBreakdownProps> = ({ vacation, limitation }) => {
+const VacationBreakdown: React.FC<VacationBreakdownProps> = ({ vacation, limitation, vacationWindow }) => {
   const [showDaysTable, setShowDaysTable] = useState(false);
 
   const industryLabels: Record<string, string> = {
@@ -3034,6 +3038,66 @@ const VacationBreakdown: React.FC<VacationBreakdownProps> = ({ vacation, limitat
           rowExpandable: (record) => record.week_type_segments.length > 1,
         }}
       />
+
+      {/* פאנל התיישנות חופשה */}
+      {limitation && (
+        <div style={{ marginTop: 16, padding: '12px 16px', background: 'rgba(78,205,196,0.06)', borderRadius: 8, border: '1px solid rgba(78,205,196,0.2)' }}>
+          <Text strong style={{ color: '#88D8E0', display: 'block', marginBottom: 12 }}>
+            התיישנות חופשה — 3 שנים + שוטף
+          </Text>
+          <Row gutter={16}>
+            <Col span={6}>
+              <Statistic
+                title="תקופה שלא התיישנה"
+                value={limitation.claimable_duration?.display ?? '—'}
+                valueStyle={{ color: '#4ECDC4', fontSize: 14 }}
+              />
+            </Col>
+            <Col span={6}>
+              <Statistic
+                title="ימים שלא התיישנו"
+                value={limitation.claimable_duration?.days ?? '—'}
+                valueStyle={{ color: '#4ECDC4', fontSize: 14 }}
+              />
+            </Col>
+            <Col span={6}>
+              <Statistic
+                title="שווי לפני התיישנות"
+                value={limitation.full_amount ?? vacation.grand_total_value}
+                precision={2}
+                prefix="₪"
+                valueStyle={{ fontSize: 14 }}
+              />
+            </Col>
+            <Col span={6}>
+              <Statistic
+                title="שווי בר-תביעה"
+                value={limitation.claimable_amount ?? vacation.grand_total_value}
+                precision={2}
+                prefix="₪"
+                valueStyle={{ color: '#52c41a', fontSize: 14 }}
+              />
+            </Col>
+          </Row>
+          {vacationWindow && (
+            <div style={{ marginTop: 8 }}>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                חלון בסיסי: <span className="ltr-number">{formatDate(vacationWindow.base_window_start)}</span>
+                {vacationWindow.base_window_start !== vacationWindow.effective_window_start && (
+                  <> &nbsp;|&nbsp; חלון אפקטיבי (אחרי הקפאות): <span className="ltr-number" style={{ color: '#4ECDC4' }}>{formatDate(vacationWindow.effective_window_start)}</span></>
+                )}
+              </Text>
+            </div>
+          )}
+          {limitation.excluded_amount != null && limitation.excluded_amount > 0 && (
+            <div style={{ marginTop: 6 }}>
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                שווי שהתיישן: <span style={{ color: '#FF6B6B' }}>₪{limitation.excluded_amount.toFixed(2)}</span>
+              </Text>
+            </div>
+          )}
+        </div>
+      )}
     </Card>
 
     <Modal
@@ -3146,8 +3210,8 @@ const LimitationTimeline: React.FC<{ limitation: LimitationResults }> = ({ limit
         </div>
       )}
 
-      {/* Windows */}
-      {windows.map((window, idx) => {
+      {/* Windows - only general, vacation is displayed in VacationBreakdown */}
+      {windows.filter(w => w.type_id !== 'vacation').map((window, idx) => {
         const pct = getWindowPercent(window);
         return (
         <div key={idx} style={{ marginBottom: 16 }}>
@@ -3374,6 +3438,7 @@ const ResultsView: React.FC<ResultsViewProps> = ({ ssot }) => {
           <VacationBreakdown
             vacation={rights_results.vacation}
             limitation={limitation_results?.per_right?.vacation}
+            vacationWindow={limitation_results?.windows?.find(w => w.type_id === 'vacation')}
           />
         </div>
       )}
