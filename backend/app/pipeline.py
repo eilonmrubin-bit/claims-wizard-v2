@@ -445,6 +445,25 @@ def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
 
             ssot.rights_results.holidays = holidays_result
 
+        # Recreation (must run before severance for cleaning industry recreation addition)
+        if ssot.input.employment_periods and ssot.month_aggregates:
+            static_data = get_static_data()
+
+            # Get prior seniority at employment start (not total which includes defendant period)
+            prior_seniority_years = Decimal(ssot.seniority_totals.prior_seniority_months) / Decimal("12")
+
+            recreation_result = compute_recreation(
+                employment_periods=ssot.input.employment_periods,
+                total_seniority_years=prior_seniority_years,
+                month_aggregates=ssot.month_aggregates,
+                industry=ssot.input.industry,
+                get_recreation_days=static_data.get_recreation_days,
+                get_recreation_day_value=static_data.get_recreation_day_value,
+                get_all_effective_dates=static_data.get_all_recreation_day_value_dates,
+            )
+
+            ssot.rights_results.recreation = recreation_result
+
         # Severance
         if ssot.input.termination_reason and ssot.period_month_records and ssot.effective_periods:
             # Compute total employment months
@@ -485,25 +504,6 @@ def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
             )
 
             ssot.rights_results.severance = severance_result
-
-        # Recreation
-        if ssot.input.employment_periods and ssot.month_aggregates:
-            static_data = get_static_data()
-
-            # Get total seniority at employment start
-            total_seniority_years = ssot.seniority_totals.total_industry_years
-
-            recreation_result = compute_recreation(
-                employment_periods=ssot.input.employment_periods,
-                total_seniority_years=total_seniority_years,
-                month_aggregates=ssot.month_aggregates,
-                industry=ssot.input.industry,
-                get_recreation_days=static_data.get_recreation_days,
-                get_recreation_day_value=static_data.get_recreation_day_value,
-                get_all_effective_dates=static_data.get_all_recreation_day_value_dates,
-            )
-
-            ssot.rights_results.recreation = recreation_result
 
         # =====================================================================
         # Phase 3 - Post-processing

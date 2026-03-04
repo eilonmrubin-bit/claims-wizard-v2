@@ -4,6 +4,7 @@
  * מציג את תוצאות החישוב בצורה מעוצבת ומאורגנת.
  */
 
+import { useState } from 'react';
 import {
   Card,
   Table,
@@ -19,6 +20,7 @@ import {
   Alert,
   Button,
   Descriptions,
+  Modal,
 } from 'antd';
 import {
   ClockCircleOutlined,
@@ -2006,11 +2008,14 @@ const SeveranceBreakdown: React.FC<{ severance: SeveranceResult }> = ({ severanc
   const salaryMethodLabels: Record<string, string> = {
     avg_12_months: 'ממוצע 12 חודשים אחרונים',
     last_month: 'חודש אחרון',
+    last_pmr: 'רשומה חודשית אחרונה',
   };
 
   const pathLabel = pathLabels[severance.path] || severance.path;
   const isContributionsPath = severance.path === 'contributions';
   const hasOT = severance.full_severance.ot_total > 0 || severance.required_contributions.ot_total > 0;
+  const hasRecreation = !!(severance.recreation_addition && severance.recreation_addition.total > 0);
+  const isRecreationPending = !!(severance.recreation_addition?.recreation_pending);
 
   // Group monthly details by effective_period_id
   const detailByPeriod: Record<string, SeveranceMonthlyDetail[]> = {};
@@ -2118,13 +2123,21 @@ const SeveranceBreakdown: React.FC<{ severance: SeveranceResult }> = ({ severanc
       title: <span style={{ color: '#88D8E0' }}>פיצויים מלאים</span>,
       dataIndex: 'full',
       key: 'full',
-      render: (v: number) => <span className="ltr-number" style={{ color: '#E8F4F8' }}>{formatCurrency(v)}</span>,
+      render: (v: number | string) => (
+        <span className="ltr-number" style={{ color: '#E8F4F8' }}>
+          {typeof v === 'string' ? v : formatCurrency(v)}
+        </span>
+      ),
     },
     {
       title: <span style={{ color: '#88D8E0' }}>הפרשות נדרשות</span>,
       dataIndex: 'required',
       key: 'required',
-      render: (v: number) => <span className="ltr-number" style={{ color: '#E8F4F8' }}>{formatCurrency(v)}</span>,
+      render: (v: number | string) => (
+        <span className="ltr-number" style={{ color: '#E8F4F8' }}>
+          {typeof v === 'string' ? v : formatCurrency(v)}
+        </span>
+      ),
     },
     ...(isContributionsPath ? [{
       title: <span style={{ color: '#88D8E0' }}>תביעה</span>,
@@ -2146,9 +2159,16 @@ const SeveranceBreakdown: React.FC<{ severance: SeveranceResult }> = ({ severanc
     },
     ...(hasOT ? [{
       key: 'ot',
-      label: 'שע"נ',
+      label: 'שע"נ (6%)',
       full: severance.full_severance.ot_total,
       required: severance.required_contributions.ot_total,
+      claim: undefined,
+    }] : []),
+    ...(hasRecreation || isRecreationPending ? [{
+      key: 'recreation',
+      label: 'הבראה (8.333%)',
+      full: isRecreationPending ? 'ממתין לחישוב' : severance.recreation_addition?.total ?? 0,
+      required: isRecreationPending ? 'ממתין לחישוב' : severance.recreation_addition?.total ?? 0,
       claim: undefined,
     }] : []),
     {
@@ -2230,18 +2250,59 @@ const SeveranceBreakdown: React.FC<{ severance: SeveranceResult }> = ({ severanc
 // ו. RecreationBreakdown - פירוט דמי הבראה
 // ============================================================================
 
+const RECREATION_DAYS_TABLES: Record<string, { range: string; days: number }[]> = {
+  general: [
+    { range: '1', days: 5 },
+    { range: '2–3', days: 6 },
+    { range: '4–10', days: 7 },
+    { range: '11–15', days: 8 },
+    { range: '16–19', days: 9 },
+    { range: '20+', days: 10 },
+  ],
+  construction: [
+    { range: '1–2', days: 6 },
+    { range: '3–4', days: 8 },
+    { range: '5–10', days: 9 },
+    { range: '11–15', days: 10 },
+    { range: '16–19', days: 11 },
+    { range: '20+', days: 12 },
+  ],
+  agriculture: [
+    { range: '1–7', days: 7 },
+    { range: '8', days: 8 },
+    { range: '9', days: 9 },
+    { range: '10+', days: 10 },
+  ],
+  cleaning: [
+    { range: '1–3', days: 7 },
+    { range: '4–10', days: 9 },
+    { range: '11–15', days: 10 },
+    { range: '16–19', days: 11 },
+    { range: '20–24', days: 12 },
+    { range: '25+', days: 13 },
+  ],
+};
+
 interface RecreationBreakdownProps {
   recreation: RecreationResult;
   limitation?: LimitationRightResult;
 }
 
 const RecreationBreakdown: React.FC<RecreationBreakdownProps> = ({ recreation, limitation }) => {
+  const [showDaysTable, setShowDaysTable] = useState(false);
+
   const industryLabels: Record<string, string> = {
     general: 'כללי',
     construction: 'בניין',
     agriculture: 'חקלאות',
     cleaning: 'ניקיון',
   };
+
+  // Get the recreation days table for the current industry
+  const daysTable = RECREATION_DAYS_TABLES[recreation.industry] || RECREATION_DAYS_TABLES.general;
+
+  // Get seniority values used in this case for highlighting
+  const usedSeniorities = recreation.years.map(y => y.seniority_years);
 
   if (!recreation.entitled) {
     return (
@@ -2366,13 +2427,32 @@ const RecreationBreakdown: React.FC<RecreationBreakdownProps> = ({ recreation, l
     );
   };
 
+  // Helper to check if seniority falls in range
+  const seniorityInRange = (seniority: number, range: string): boolean => {
+    if (range.includes('+')) {
+      const min = parseInt(range.replace('+', ''));
+      return seniority >= min;
+    }
+    if (range.includes('–')) {
+      const [minStr, maxStr] = range.split('–');
+      return seniority >= parseInt(minStr) && seniority <= parseInt(maxStr);
+    }
+    return seniority === parseInt(range);
+  };
+
   return (
+    <>
     <Card
       title={
-        <span>
-          <GiftOutlined style={{ marginLeft: 8 }} />
-          דמי הבראה — {industryLabels[recreation.industry] || recreation.industry}
-        </span>
+        <Space>
+          <span>
+            <GiftOutlined style={{ marginLeft: 8 }} />
+            דמי הבראה — {industryLabels[recreation.industry] || recreation.industry}
+          </span>
+          <Button size="small" onClick={() => setShowDaysTable(true)}>
+            טבלת ימי הבראה ▾
+          </Button>
+        </Space>
       }
       size="small"
       style={{
@@ -2428,6 +2508,38 @@ const RecreationBreakdown: React.FC<RecreationBreakdownProps> = ({ recreation, l
         }}
       />
     </Card>
+
+    <Modal
+      title={`טבלת ימי הבראה — ${industryLabels[recreation.industry] || recreation.industry}`}
+      open={showDaysTable}
+      onCancel={() => setShowDaysTable(false)}
+      footer={null}
+      width={400}
+    >
+      <Table
+        dataSource={daysTable.map((row, i) => ({ ...row, key: i }))}
+        columns={[
+          {
+            title: 'ותק (שנים שלמות)',
+            dataIndex: 'range',
+            key: 'range',
+          },
+          {
+            title: 'ימי הבראה לשנה',
+            dataIndex: 'days',
+            key: 'days',
+          },
+        ]}
+        rowClassName={(record) =>
+          usedSeniorities.some(s => seniorityInRange(s, record.range))
+            ? 'highlighted-row'
+            : ''
+        }
+        pagination={false}
+        size="small"
+      />
+    </Modal>
+    </>
   );
 };
 
