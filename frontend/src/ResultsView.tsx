@@ -21,6 +21,7 @@ import {
   Button,
   Descriptions,
   Modal,
+  Divider,
 } from 'antd';
 import {
   ClockCircleOutlined,
@@ -320,6 +321,7 @@ interface VacationYearData {
   seniority_years: number;
   age_at_year_start: number | null;
   age_55_split: boolean;
+  is_55_plus?: boolean;
   week_type_segments: VacationWeekTypeSegment[];
   weighted_base_days: number;
   entitled_days: number;
@@ -2783,18 +2785,42 @@ const RecreationBreakdown: React.FC<RecreationBreakdownProps> = ({ recreation, l
 
 const VACATION_DAYS_TABLES: Record<string, { range: string; five_day: number; six_day: number }[]> = {
   general: [
-    { range: '1–4', five_day: 12, six_day: 14 },
-    { range: '5', five_day: 14, six_day: 16 },
-    { range: '6', five_day: 15, six_day: 18 },
-    { range: '7', five_day: 17, six_day: 21 },
-    { range: '8+', five_day: 17, six_day: 21 },
+    { range: '1–5',  five_day: 12, six_day: 14 },
+    { range: '6',    five_day: 14, six_day: 16 },
+    { range: '7',    five_day: 15, six_day: 18 },
+    { range: '8',    five_day: 16, six_day: 19 },
+    { range: '9',    five_day: 17, six_day: 20 },
+    { range: '10',   five_day: 18, six_day: 21 },
+    { range: '11',   five_day: 19, six_day: 22 },
+    { range: '12',   five_day: 20, six_day: 23 },
+    { range: '13+',  five_day: 20, six_day: 24 },
   ],
   construction: [
-    { range: '1–4', five_day: 12, six_day: 14 },
-    { range: '5', five_day: 14, six_day: 16 },
-    { range: '6', five_day: 15, six_day: 18 },
-    { range: '7', five_day: 17, six_day: 21 },
-    { range: '8+', five_day: 17, six_day: 21 },
+    { range: '1–2',  five_day: 10, six_day: 12 },
+    { range: '3',    five_day: 11, six_day: 13 },
+    { range: '4',    five_day: 14, six_day: 16 },
+    { range: '5',    five_day: 15, six_day: 18 },
+    { range: '6–7',  five_day: 17, six_day: 19 },
+    { range: '8',    five_day: 17, six_day: 19 },
+    { range: '9+',   five_day: 23, six_day: 26 },
+  ],
+  construction_55plus: [
+    { range: '11+',  five_day: 24, six_day: 28 },
+  ],
+  agriculture: [
+    { range: '1–3',  five_day: 12, six_day: 12 },
+    { range: '4–6',  five_day: 16, six_day: 16 },
+    { range: '7–9',  five_day: 20, six_day: 20 },
+    { range: '10',   five_day: 24, six_day: 24 },
+    { range: '11+',  five_day: 26, six_day: 26 },
+  ],
+  cleaning: [
+    { range: '1–2',  five_day: 10, six_day: 12 },
+    { range: '3–4',  five_day: 11, six_day: 13 },
+    { range: '5',    five_day: 13, six_day: 15 },
+    { range: '6',    five_day: 18, six_day: 20 },
+    { range: '7–8',  five_day: 19, six_day: 21 },
+    { range: '9+',   five_day: 23, six_day: 26 },
   ],
 };
 
@@ -2828,6 +2854,9 @@ const VacationBreakdown: React.FC<VacationBreakdownProps> = ({ vacation, limitat
 
   // Get seniority values used in this case for highlighting
   const usedSeniorities = vacation.years.map(y => y.seniority_years);
+
+  // Check if any year uses 55+ table (for construction)
+  const has55Plus = vacation.years.some(y => y.is_55_plus || y.age_55_split);
 
   // Check if a year is claimable (within limitation window) - uses backend-computed claimable_fraction
   const isYearClaimable = (year: VacationYearData): boolean => {
@@ -2890,9 +2919,9 @@ const VacationBreakdown: React.FC<VacationBreakdownProps> = ({ vacation, limitat
               <Tag color="orange" style={{ marginRight: 4 }}>שנה חלקית</Tag>
             </Tooltip>
           )}
-          {record.age_55_split && (
-            <Tooltip title="פיצול לפי גיל 55">
-              <Tag color="purple" style={{ marginRight: 4 }}>גיל 55</Tag>
+          {(record.is_55_plus || record.age_55_split) && (
+            <Tooltip title={record.age_55_split ? 'פיצול לפי גיל 55 באמצע השנה' : 'כל השנה חושבה לפי טבלת גיל 55+'}>
+              <Tag color="purple" style={{ marginRight: 4 }}>גיל 55+</Tag>
             </Tooltip>
           )}
         </span>
@@ -3203,6 +3232,31 @@ const VacationBreakdown: React.FC<VacationBreakdownProps> = ({ vacation, limitat
         pagination={false}
         size="small"
       />
+      {vacation.industry === 'construction' && has55Plus && (
+        <>
+          <Divider />
+          <Text strong style={{ display: 'block', marginBottom: 8 }}>
+            טבלת גיל 55+ (ותק 11 ומעלה)
+          </Text>
+          <Table
+            dataSource={VACATION_DAYS_TABLES.construction_55plus.map((row, i) => ({ ...row, key: i }))}
+            columns={[
+              { title: 'ותק (שנים שלמות)', dataIndex: 'range', key: 'range' },
+              { title: 'שבוע 5 ימים', dataIndex: 'five_day', key: 'five_day' },
+              { title: 'שבוע 6 ימים', dataIndex: 'six_day', key: 'six_day' },
+            ]}
+            pagination={false}
+            size="small"
+            rowClassName={(row) => {
+              const sen = vacation.years.find(y => y.is_55_plus || y.age_55_split)?.seniority_years ?? 0;
+              return seniorityInRange(sen, row.range) ? 'highlighted-row' : '';
+            }}
+          />
+          <Text type="secondary" style={{ fontSize: 11, marginTop: 4, display: 'block' }}>
+            * חל על עובדי בנייה שהגיעו לגיל 55 עם ותק ענפי 11 שנים ומעלה
+          </Text>
+        </>
+      )}
     </Modal>
     </>
   );

@@ -459,6 +459,7 @@ def compute_vacation(
             seniority_years=seniority_years,
             age_at_year_start=age_at_year_start,
             age_55_split=age_55_split,
+            is_55_plus=is_55_plus,
             week_type_segments=week_type_segments,
             weighted_base_days=weighted_base_days,
             entitled_days=entitled_days,

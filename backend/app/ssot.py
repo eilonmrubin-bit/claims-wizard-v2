@@ -773,6 +773,7 @@ class VacationYearData:
     seniority_years: int = 0
     age_at_year_start: int | None = None  # construction only
     age_55_split: bool = False  # construction: turned 55 this year
+    is_55_plus: bool = False  # construction: entire year computed with 55+ table
     week_type_segments: list[VacationWeekTypeSegment] = field(default_factory=list)
     weighted_base_days: Decimal = Decimal("0")
     entitled_days: Decimal = Decimal("0")
