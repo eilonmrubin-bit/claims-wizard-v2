@@ -404,6 +404,96 @@ const EXAMPLE_GENERAL_RECREATION = {
   right_specific_inputs: {}
 };
 
+const EXAMPLE_GENERAL_VACATION = {
+  case_metadata: {
+    case_name: "בדיקה: כללי — חופשה שנתית + התיישנות",
+    notes: "עובד כללי, 3 שנים (2021–2023), prior=0, שכר 10,000₪/חודש, 5 ימים. filing 01.01.2026 → חלון חופשה מ-2023. שנות 2021+2022 נחתכות, רק 2023 בת-תביעה."
+  },
+  personal_details: { first_name: "חסן", last_name: "עבדאללה", id_number: "444555666", birth_year: 1990 },
+  defendant_details: { name: "חברת כללי בע\"מ", id_number: "514444444", address: "תל אביב" },
+  employment_periods: [
+    { id: "ep1", start: "2021-01-01", end: "2023-12-31" }
+  ],
+  work_patterns: [
+    {
+      id: "wp1",
+      start: "2021-01-01",
+      end: "2023-12-31",
+      work_days: [0, 1, 2, 3, 4],
+      default_shifts: [{ start_time: "08:00:00", end_time: "16:00:00" }],
+      default_breaks: [{ start_time: "12:00:00", end_time: "12:30:00" }]
+    }
+  ],
+  salary_tiers: [
+    {
+      id: "st1",
+      start: "2021-01-01",
+      end: "2023-12-31",
+      amount: "10000",
+      type: "monthly",
+      net_or_gross: "gross"
+    }
+  ],
+  rest_day: "saturday",
+  district: "tel_aviv",
+  industry: "general",
+  filing_date: "2026-01-01",
+  termination_reason: "fired",
+  seniority_input: { method: "prior_plus_pattern", prior_months: 0 },
+  right_toggles: {},
+  deductions_input: { overtime: "0", holidays: "0", severance: "0" },
+  right_specific_inputs: {}
+};
+
+const EXAMPLE_CONSTRUCTION_VACATION = {
+  case_metadata: {
+    case_name: "בדיקה: בנייה — חופשה, שבוע מעורב, גיל 55",
+    notes: "עובד בנייה, 10 שנים (2015–2024), prior=24m (2y ותק ענפי), birth_year=1969 (גיל 55 ב-2024). דפוס: 6 ימים עד 30.06.2020, 5 ימים מ-01.07.2020. שנת 2020 מעורבת (50/50). שנת 2024 — גיל 55+ ו-seniority 12 → 24 ימים."
+  },
+  personal_details: { first_name: "מחמוד", last_name: "אחמד", id_number: "777888999", birth_year: 1969 },
+  defendant_details: { name: "חברת בנייה בע\"מ", id_number: "514555555", address: "חיפה" },
+  employment_periods: [
+    { id: "ep1", start: "2015-01-01", end: "2024-12-31" }
+  ],
+  work_patterns: [
+    {
+      id: "wp1",
+      start: "2015-01-01",
+      end: "2020-06-30",
+      work_days: [0, 1, 2, 3, 4, 5],
+      default_shifts: [{ start_time: "06:00:00", end_time: "14:00:00" }],
+      default_breaks: [{ start_time: "10:00:00", end_time: "10:30:00" }]
+    },
+    {
+      id: "wp2",
+      start: "2020-07-01",
+      end: "2024-12-31",
+      work_days: [0, 1, 2, 3, 4],
+      default_shifts: [{ start_time: "07:00:00", end_time: "15:00:00" }],
+      default_breaks: [{ start_time: "11:00:00", end_time: "11:30:00" }]
+    }
+  ],
+  salary_tiers: [
+    {
+      id: "st1",
+      start: "2015-01-01",
+      end: "2024-12-31",
+      amount: "45",
+      type: "hourly",
+      net_or_gross: "gross"
+    }
+  ],
+  rest_day: "saturday",
+  district: "haifa",
+  industry: "construction",
+  filing_date: "2025-06-01",
+  termination_reason: "fired",
+  seniority_input: { method: "prior_plus_pattern", prior_months: 24 },
+  right_toggles: {},
+  deductions_input: { overtime: "0", holidays: "0", severance: "0" },
+  right_specific_inputs: {}
+};
+
 // Format months as "X שנים ו-Y חודשים"
 const formatMonthsDisplay = (totalMonths: number): string => {
   if (totalMonths === 0) return '0 חודשים';
@@ -967,12 +1057,14 @@ function App() {
     }
   };
 
-  const loadExample = (example: 'main' | 'rest_window' | 'cleaning_recreation' | 'general_recreation' = 'main') => {
+  const loadExample = (example: 'main' | 'rest_window' | 'cleaning_recreation' | 'general_recreation' | 'general_vacation' | 'construction_vacation' = 'main') => {
     const examples = {
       main: EXAMPLE_JSON_INPUT,
       rest_window: EXAMPLE_REST_WINDOW,
       cleaning_recreation: EXAMPLE_CLEANING_SEVERANCE_RECREATION,
       general_recreation: EXAMPLE_GENERAL_RECREATION,
+      general_vacation: EXAMPLE_GENERAL_VACATION,
+      construction_vacation: EXAMPLE_CONSTRUCTION_VACATION,
     };
     setJsonInput(JSON.stringify(examples[example], null, 2));
     setJsonError(null);
@@ -1907,8 +1999,10 @@ function App() {
                           { key: 'rest_window', label: 'חלון מנוחה — שישי חוצה שבת' },
                           { key: 'cleaning_recreation', label: 'ניקיון — פיצויים + הבראה' },
                           { key: 'general_recreation', label: 'כללי — הבראה + התיישנות' },
+                          { key: 'general_vacation', label: 'כללי — חופשה + התיישנות' },
+                          { key: 'construction_vacation', label: 'בנייה — חופשה, שבוע מעורב, גיל 55' },
                         ],
-                        onClick: ({ key }) => loadExample(key as 'main' | 'rest_window' | 'cleaning_recreation' | 'general_recreation'),
+                        onClick: ({ key }) => loadExample(key as 'main' | 'rest_window' | 'cleaning_recreation' | 'general_recreation' | 'general_vacation' | 'construction_vacation'),
                       }}
                     >
                       <Button>טען דוגמה ▾</Button>
