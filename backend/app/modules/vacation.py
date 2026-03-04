@@ -10,7 +10,7 @@ Key concepts:
 - Construction has special age-55 rules
 """
 
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Callable
 
@@ -145,64 +145,78 @@ def _compute_week_type_segments(
     seniority_years: int,
     is_55_plus: bool,
 ) -> list[VacationWeekTypeSegment]:
-    """Compute week type segments for a calendar year."""
-    segments: list[VacationWeekTypeSegment] = []
+    """Compute week type segments.
+
+    Each ISO week is classified as 5-day or 6-day by counting the distinct
+    work days in that week across all active patterns (overtime skill §Stage 3).
+    A week is included in year Y if its Sunday falls within [year_start, year_end].
+    """
+    from collections import defaultdict
 
     if not work_patterns:
-        return segments
+        return []
 
-    # Find all pattern boundaries within the year
-    boundaries = [year_start]
-    for wp in work_patterns:
-        if wp.start and year_start < wp.start <= year_end:
-            boundaries.append(wp.start)
-        if wp.end and year_start <= wp.end < year_end:
-            boundaries.append(_add_days(wp.end, 1))
-    boundaries.append(_add_days(year_end, 1))
+    # Find first Sunday on or before year_start
+    days_back = (year_start.weekday() + 1) % 7
+    first_sunday = year_start - timedelta(days=days_back)
 
-    # Sort and remove duplicates
-    boundaries = sorted(set(boundaries))
+    week_counts: dict[str, int] = defaultdict(int)
+    week_sundays: dict[str, list[date]] = defaultdict(list)
 
-    # Build segments
-    total_weeks = Decimal("0")
-    segment_list = []
+    current = first_sunday
+    while current <= year_end:
+        if current >= year_start:  # only weeks whose Sunday is in the year
+            # Collect all distinct work day indices across the full week (Sun–Sat)
+            work_day_indices: set[int] = set()
+            for day_offset in range(7):
+                day = current + timedelta(days=day_offset)
+                pattern = _get_pattern_for_date(day, work_patterns)
+                if pattern:
+                    for wd in pattern.work_days:
+                        work_day_indices.add(wd)
 
-    for i in range(len(boundaries) - 1):
-        seg_start = boundaries[i]
-        seg_end = _add_days(boundaries[i + 1], -1)
+            wt = "six_day" if len(work_day_indices) > 5 else "five_day"
+            week_counts[wt] += 1
+            week_sundays[wt].append(current)
 
-        if seg_start > year_end:
-            break
-        if seg_end > year_end:
-            seg_end = year_end
-        if seg_start < year_start:
-            seg_start = year_start
+        current += timedelta(days=7)
 
-        pattern = _get_pattern_for_date(seg_start, work_patterns)
-        if not pattern:
-            continue
+    total_weeks = sum(week_counts.values())
+    if total_weeks == 0:
+        return []
 
-        week_type = _get_week_type(pattern.work_days)
-        weeks = Decimal(str(_count_iso_weeks_in_range(seg_start, seg_end)))
+    total_dec = Decimal(str(total_weeks))
 
-        segment_list.append({
-            "start": seg_start,
-            "end": seg_end,
-            "week_type": week_type,
-            "weeks": weeks,
-        })
-        total_weeks += weeks
+    # Preserve order of first appearance
+    seen_order: list[str] = []
+    current = first_sunday
+    while current <= year_end:
+        if current >= year_start:
+            work_day_indices = set()
+            for day_offset in range(7):
+                day = current + timedelta(days=day_offset)
+                pattern = _get_pattern_for_date(day, work_patterns)
+                if pattern:
+                    for wd in pattern.work_days:
+                        work_day_indices.add(wd)
+            wt = "six_day" if len(work_day_indices) > 5 else "five_day"
+            if wt not in seen_order:
+                seen_order.append(wt)
+        current += timedelta(days=7)
 
-    # Compute weights and build segments
-    for seg in segment_list:
-        weight = seg["weeks"] / total_weeks if total_weeks > 0 else Decimal("0")
-        base_days = _lookup_base_days(industry, seniority_years, seg["week_type"], is_55_plus)
-
+    segments = []
+    for wt in seen_order:
+        count = week_counts[wt]
+        sundays = week_sundays[wt]
+        seg_start = max(sundays[0], year_start)
+        seg_end = min(sundays[-1] + timedelta(days=6), year_end)
+        weight = Decimal(str(count)) / total_dec
+        base_days = _lookup_base_days(industry, seniority_years, wt, is_55_plus)
         segments.append(VacationWeekTypeSegment(
-            segment_start=seg["start"],
-            segment_end=seg["end"],
-            week_type=seg["week_type"],
-            weeks_count=seg["weeks"],
+            segment_start=seg_start,
+            segment_end=seg_end,
+            week_type=wt,
+            weeks_count=Decimal(str(count)),
             weight=weight,
             base_days=base_days,
             weighted_days=weight * Decimal(str(base_days)),
