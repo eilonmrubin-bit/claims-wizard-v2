@@ -511,7 +511,7 @@ def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
         if ssot.input.employment_periods and ssot.period_month_records:
             vacation_result = compute_vacation(
                 employment_periods=ssot.input.employment_periods,
-                work_patterns=ssot.input.work_patterns or [],
+                work_patterns=work_patterns_resolved,
                 period_month_records=ssot.period_month_records,
                 industry=ssot.input.industry,
                 seniority_totals=ssot.seniority_totals,
