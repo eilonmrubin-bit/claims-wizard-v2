@@ -3117,7 +3117,7 @@ const VacationBreakdown: React.FC<VacationBreakdownProps> = ({ vacation, limitat
             </Col>
             <Col span={12}>
               <div style={{ padding: '8px 12px', background: 'rgba(78,205,196,0.1)', borderRadius: 6, border: '1px solid rgba(78,205,196,0.3)' }}>
-                <Text type="secondary" style={{ fontSize: 11, display: 'block' }}>ניתן לתבוע שנות חופשה שהסתיימו מ-</Text>
+                <Text type="secondary" style={{ fontSize: 11, display: 'block' }}>ניתן לתבוע חופשה החל מתאריך:</Text>
                 <Text strong className="ltr-number" style={{ fontSize: 16, color: '#4ECDC4' }}>
                   {formatDate(vacationWindow.effective_window_start)}
                 </Text>
