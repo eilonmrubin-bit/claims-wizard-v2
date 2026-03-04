@@ -3416,10 +3416,8 @@ const VacationBreakdown: React.FC<VacationBreakdownProps> = ({ vacation, limitat
                 title="שנים שהתיישנו"
                 value={vacation.years.filter(y => (y.claimable_fraction ?? 1) === 0).length}
                 formatter={(val) => (
-                  <span style={{ color: '#FF6B6B', fontSize: 13 }}>
-                    <span className="ltr-number">{val}</span>
-                    {' מתוך '}
-                    <span className="ltr-number">{vacation.years.length}</span>
+                  <span style={{ color: '#FF6B6B', fontSize: 13, direction: 'ltr', unicodeBidi: 'embed' }}>
+                    {val} מתוך {vacation.years.length}
                   </span>
                 )}
               />
