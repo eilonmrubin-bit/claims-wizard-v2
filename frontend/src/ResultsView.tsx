@@ -2813,6 +2813,8 @@ interface PensionBreakdownProps {
 }
 
 const PensionBreakdown: React.FC<PensionBreakdownProps> = ({ pension, limitation }) => {
+  const [expandedYears, setExpandedYears] = useState<number[]>([]);
+
   const industryLabels: Record<string, string> = {
     general: 'כללי',
     construction: 'בניין',
@@ -3007,6 +3009,13 @@ const PensionBreakdown: React.FC<PensionBreakdownProps> = ({ pension, limitation
         expandable={{
           expandedRowRender,
           rowExpandable: () => true,
+          expandedRowKeys: expandedYears,
+          onExpand: (expanded, record) => {
+            setExpandedYears(expanded
+              ? [...expandedYears, record.year]
+              : expandedYears.filter(y => y !== record.year)
+            );
+          },
         }}
       />
     </Card>
