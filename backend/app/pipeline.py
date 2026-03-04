@@ -801,8 +801,27 @@ def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
 
                 claimable_amount = Decimal("0")
                 for year_data in vac.years:
-                    if year_data.year_end and effective_vac_window_start <= year_data.year_end <= filing_date:
+                    if not year_data.year_end or not year_data.year_start:
+                        year_data.claimable_fraction = None
+                        continue
+                    year_start_d = year_data.year_start if isinstance(year_data.year_start, date) else date.fromisoformat(str(year_data.year_start))
+                    year_end_d = year_data.year_end if isinstance(year_data.year_end, date) else date.fromisoformat(str(year_data.year_end))
+
+                    # Year is completely outside the window (excluded)
+                    if year_end_d < effective_vac_window_start:
+                        year_data.claimable_fraction = Decimal("0")
+                        continue
+                    # Year is completely inside the window
+                    if year_start_d >= effective_vac_window_start:
+                        year_data.claimable_fraction = Decimal("1")
                         claimable_amount += year_data.year_value
+                    # Year is split by the limitation boundary - proportional fraction
+                    else:
+                        total_days = (year_end_d - year_start_d).days + 1
+                        claimable_days = (year_end_d - effective_vac_window_start).days + 1
+                        fraction = Decimal(claimable_days) / Decimal(total_days)
+                        year_data.claimable_fraction = fraction
+                        claimable_amount += year_data.year_value * fraction
 
                 excluded_amount = full_amount - claimable_amount
 

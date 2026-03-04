@@ -778,6 +778,7 @@ class VacationYearData:
     entitled_days: Decimal = Decimal("0")
     avg_daily_salary: Decimal = Decimal("0")
     year_value: Decimal = Decimal("0")
+    claimable_fraction: Decimal | None = None  # 1.0=full, 0.0=excluded, 0<x<1=partial (split by limitation)
 
 
 @dataclass

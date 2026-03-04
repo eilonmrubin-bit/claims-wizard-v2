@@ -325,6 +325,7 @@ interface VacationYearData {
   entitled_days: number;
   avg_daily_salary: number;
   year_value: number;
+  claimable_fraction?: number | null;  // 1.0=full, 0.0=excluded, 0<x<1=partial (split by limitation)
 }
 
 interface VacationResult {
@@ -2801,9 +2802,10 @@ interface VacationBreakdownProps {
   vacation: VacationResult;
   limitation?: LimitationRightResult;
   vacationWindow?: LimitationWindow;
+  filingDate?: string;
 }
 
-const VacationBreakdown: React.FC<VacationBreakdownProps> = ({ vacation, limitation, vacationWindow }) => {
+const VacationBreakdown: React.FC<VacationBreakdownProps> = ({ vacation, limitation, vacationWindow, filingDate }) => {
   const [showDaysTable, setShowDaysTable] = useState(false);
 
   const industryLabels: Record<string, string> = {
@@ -2827,14 +2829,16 @@ const VacationBreakdown: React.FC<VacationBreakdownProps> = ({ vacation, limitat
   // Get seniority values used in this case for highlighting
   const usedSeniorities = vacation.years.map(y => y.seniority_years);
 
-  // Check if a year is claimable (within limitation window)
-  const vacEffectiveWindowStart = vacationWindow?.effective_window_start
-    ? new Date(vacationWindow.effective_window_start)
-    : null;
-
+  // Check if a year is claimable (within limitation window) - uses backend-computed claimable_fraction
   const isYearClaimable = (year: VacationYearData): boolean => {
-    if (!vacEffectiveWindowStart || !year.year_end) return true;
-    return new Date(year.year_end) >= vacEffectiveWindowStart;
+    if (year.claimable_fraction === null || year.claimable_fraction === undefined) return true;
+    return year.claimable_fraction > 0;
+  };
+
+  // Check if a year is partially claimable (split by limitation boundary)
+  const isYearPartiallyClaimable = (year: VacationYearData): boolean => {
+    const f = year.claimable_fraction;
+    return f != null && f > 0 && f < 1;
   };
 
   if (!vacation.entitled) {
@@ -2922,15 +2926,40 @@ const VacationBreakdown: React.FC<VacationBreakdownProps> = ({ vacation, limitat
     {
       title: 'שווי',
       key: 'year_value',
-      width: 100,
-      render: (_: unknown, record: VacationYearData) => (
-        <span
-          className="ltr-number"
-          style={{ color: isYearClaimable(record) ? '#4ECDC4' : '#888', textDecoration: isYearClaimable(record) ? 'none' : 'line-through' }}
-        >
-          {formatCurrency(record.year_value)}
-        </span>
-      ),
+      width: 120,
+      render: (_: unknown, record: VacationYearData) => {
+        const excluded = !isYearClaimable(record);
+        const partial = isYearPartiallyClaimable(record);
+        const claimableValue = record.claimable_fraction != null
+          ? record.year_value * record.claimable_fraction
+          : record.year_value;
+
+        return (
+          <span>
+            {partial && (
+              <Tooltip title={`חלק יחסי: ${(record.claimable_fraction! * 100).toFixed(1)}% מהשנה בתוך החלון`}>
+                <span className="ltr-number" style={{ color: '#FFD93D' }}>
+                  {formatCurrency(claimableValue)}
+                </span>
+                <span className="ltr-number" style={{ color: '#888', textDecoration: 'line-through', marginRight: 4, fontSize: 11 }}>
+                  {formatCurrency(record.year_value)}
+                </span>
+              </Tooltip>
+            )}
+            {!partial && (
+              <span
+                className="ltr-number"
+                style={{
+                  color: excluded ? '#888' : '#4ECDC4',
+                  textDecoration: excluded ? 'line-through' : 'none',
+                }}
+              >
+                {formatCurrency(record.year_value)}
+              </span>
+            )}
+          </span>
+        );
+      },
     },
   ];
 
@@ -3066,37 +3095,42 @@ const VacationBreakdown: React.FC<VacationBreakdownProps> = ({ vacation, limitat
       />
 
       {/* פאנל התיישנות חופשה */}
-      {limitation && (
+      {limitation && vacationWindow && (
         <div style={{
-          marginTop: 16, padding: '14px 16px',
+          marginTop: 16, padding: '16px',
           background: 'rgba(78,205,196,0.06)',
           borderRadius: 8, border: '1px solid rgba(78,205,196,0.2)',
         }}>
-          <Text strong style={{ color: '#88D8E0', display: 'block', marginBottom: 8 }}>
+          <Text strong style={{ color: '#88D8E0', display: 'block', marginBottom: 12, fontSize: 15 }}>
             התיישנות חופשה — 3 שנים + שוטף
           </Text>
 
-          {/* הסבר טקסטואלי */}
-          <Alert
-            type="info"
-            showIcon
-            style={{ marginBottom: 12, fontSize: 12 }}
-            message={
-              <span>
-                ניתן לתבוע שנות חופשה שהסתיימו החל מ-
-                <span className="ltr-number" style={{ fontWeight: 'bold', color: '#4ECDC4' }}>
-                  {vacationWindow ? formatDate(vacationWindow.effective_window_start) : '—'}
-                </span>
-                {vacationWindow && vacationWindow.base_window_start !== vacationWindow.effective_window_start && (
-                  <span style={{ color: '#88D8E0' }}>
-                    {' '}(חלון בסיסי {formatDate(vacationWindow.base_window_start)}, הורחב בשל הקפאות)
-                  </span>
+          {/* שורת מידע ראשית */}
+          <Row gutter={[16, 8]} style={{ marginBottom: 12 }}>
+            <Col span={12}>
+              <div style={{ padding: '8px 12px', background: 'rgba(255,107,107,0.08)', borderRadius: 6, border: '1px solid rgba(255,107,107,0.2)' }}>
+                <Text type="secondary" style={{ fontSize: 11, display: 'block' }}>תאריך הגשת תביעה</Text>
+                <Text strong className="ltr-number" style={{ fontSize: 14 }}>
+                  {filingDate ? formatDate(filingDate) : '—'}
+                </Text>
+              </div>
+            </Col>
+            <Col span={12}>
+              <div style={{ padding: '8px 12px', background: 'rgba(78,205,196,0.1)', borderRadius: 6, border: '1px solid rgba(78,205,196,0.3)' }}>
+                <Text type="secondary" style={{ fontSize: 11, display: 'block' }}>ניתן לתבוע שנות חופשה שהסתיימו מ-</Text>
+                <Text strong className="ltr-number" style={{ fontSize: 16, color: '#4ECDC4' }}>
+                  {formatDate(vacationWindow.effective_window_start)}
+                </Text>
+                {vacationWindow.base_window_start !== vacationWindow.effective_window_start && (
+                  <Text type="secondary" style={{ fontSize: 11, display: 'block' }}>
+                    חלון בסיסי {formatDate(vacationWindow.base_window_start)} | הורחב בשל הקפאות
+                  </Text>
                 )}
-                . שנות חופשה שהסתיימו לפני תאריך זה — <span style={{ color: '#FF6B6B' }}>התיישנו</span>.
-              </span>
-            }
-          />
+              </div>
+            </Col>
+          </Row>
 
+          {/* מספרים */}
           <Row gutter={16}>
             <Col span={6}>
               <Statistic
@@ -3108,7 +3142,7 @@ const VacationBreakdown: React.FC<VacationBreakdownProps> = ({ vacation, limitat
             <Col span={6}>
               <Statistic
                 title="שנים שהתיישנו"
-                value={`${vacation.years.filter(y => !isYearClaimable(y)).length} מתוך ${vacation.years.length}`}
+                value={`${vacation.years.filter(y => (y.claimable_fraction ?? 1) === 0).length} מתוך ${vacation.years.length}`}
                 valueStyle={{ color: '#FF6B6B', fontSize: 13 }}
               />
             </Col>
@@ -3474,6 +3508,7 @@ const ResultsView: React.FC<ResultsViewProps> = ({ ssot }) => {
             vacation={rights_results.vacation}
             limitation={limitation_results?.per_right?.vacation}
             vacationWindow={limitation_results?.windows?.find(w => w.type_id === 'vacation')}
+            filingDate={limitation_results?.timeline_data?.filing_date}
           />
         </div>
       )}
