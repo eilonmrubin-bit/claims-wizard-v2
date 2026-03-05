@@ -68,7 +68,7 @@ class Section14Status(str, Enum):
 
 
 class LastSalaryMethod(str, Enum):
-    LAST_PMR = "last_pmr"
+    LAST_FULL_PMR = "last_full_pmr"
     AVG_12_MONTHS = "avg_12_months"
 
 
@@ -501,7 +501,7 @@ class LastSalaryPMRUsed:
 class LastSalaryInfo:
     """Information about last salary determination."""
     last_salary: Decimal = Decimal("0")
-    method: LastSalaryMethod = LastSalaryMethod.LAST_PMR
+    method: LastSalaryMethod = LastSalaryMethod.LAST_FULL_PMR
     salary_changed_in_last_year: bool = False
     pmrs_used: list[LastSalaryPMRUsed] = field(default_factory=list)
 

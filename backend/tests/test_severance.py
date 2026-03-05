@@ -820,3 +820,87 @@ class TestPathCWithSalaryChange:
                 assert detail.salary_used == Decimal("8000")
             else:
                 assert detail.salary_used == Decimal("10000")
+
+
+class TestFixture10PartialMonthsExcludedFromLastSalary:
+    """Fixture 10: Partial first and last months excluded from last salary average."""
+
+    def test_partial_months_excluded(self):
+        """Test that partial first/last months are excluded from last salary determination."""
+        # Employment: 2023-06-15 to 2024-06-14
+        # 2023-06: partial (starts 15 Jun) → excluded
+        # 2024-06: partial (ends 14 Jun) → excluded
+        # 2023-07 to 2024-05: 11 full months, salary 8,000
+        start = date(2023, 6, 15)
+        end = date(2024, 6, 14)
+
+        pmrs = []
+        mas = []
+
+        # All months from Jun 2023 to Jun 2024 with salary 8,000
+        year = 2023
+        month = 6
+        while (year, month) <= (2024, 6):
+            pmrs.append(make_pmr((year, month), "ep1", Decimal("8000")))
+            mas.append(make_month_aggregate((year, month)))
+            month += 1
+            if month > 12:
+                month = 1
+                year += 1
+
+        eps = [make_effective_period("ep1", start, end)]
+
+        result = compute_severance(
+            termination_reason=TerminationReason.FIRED,
+            industry="general",
+            period_month_records=pmrs,
+            month_aggregates=mas,
+            effective_periods=eps,
+            total_employment_months=Decimal("12"),
+            actual_deposits=Decimal("5000"),
+        )
+
+        assert result.eligible is True
+        # Last salary should be 8,000 from last full month (2024-05)
+        assert result.last_salary_info.last_salary == Decimal("8000")
+        assert result.last_salary_info.method == LastSalaryMethod.LAST_FULL_PMR
+        assert result.last_salary_info.salary_changed_in_last_year is False
+
+
+class TestFixture11AllMonthsPartialFallback:
+    """Fixture 11: All months partial — fallback to all months."""
+
+    def test_all_months_partial_fallback(self):
+        """Test fallback when all months in the last 12 are partial."""
+        # Employment: 2024-01-15 to 2024-02-14
+        # 2024-01: partial (starts 15 Jan)
+        # 2024-02: partial (ends 14 Feb)
+        # No full months → fallback to all
+        start = date(2024, 1, 15)
+        end = date(2024, 2, 14)
+
+        pmrs = [
+            make_pmr((2024, 1), "ep1", Decimal("10000")),
+            make_pmr((2024, 2), "ep1", Decimal("10000")),
+        ]
+        mas = [
+            make_month_aggregate((2024, 1)),
+            make_month_aggregate((2024, 2)),
+        ]
+        eps = [make_effective_period("ep1", start, end)]
+
+        result = compute_severance(
+            termination_reason=TerminationReason.FIRED,
+            industry="construction",  # min_months = 0
+            period_month_records=pmrs,
+            month_aggregates=mas,
+            effective_periods=eps,
+            total_employment_months=Decimal("1"),
+            actual_deposits=Decimal("1500"),
+        )
+
+        assert result.eligible is True
+        # Fallback to all months, salary 10,000 (no change)
+        assert result.last_salary_info.last_salary == Decimal("10000")
+        assert result.last_salary_info.method == LastSalaryMethod.LAST_FULL_PMR
+        assert result.last_salary_info.salary_changed_in_last_year is False

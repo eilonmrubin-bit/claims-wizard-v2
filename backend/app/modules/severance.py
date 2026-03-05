@@ -143,12 +143,15 @@ def _compute_partial_fraction(
 
 def _determine_last_salary(
     period_month_records: list[PeriodMonthRecord],
+    effective_periods: list[EffectivePeriod],
 ) -> LastSalaryInfo:
     """Determine the last salary based on PMRs.
 
     Rule:
-    - If salary did NOT change in last 12 months: use salary_monthly from last PMR
-    - If salary DID change: use simple average of salary_monthly across last 12 months
+    1. From the last 12 months, filter to full months only (partial_fraction == 1.0)
+    2. If no full months exist → fall back to all months in the last 12 months
+    3. Salary did NOT change across the filtered set → salary_monthly from the last full month
+    4. Salary DID change across the filtered set → simple average of salary_monthly
     """
     if not period_month_records:
         return LastSalaryInfo()
@@ -164,8 +167,6 @@ def _determine_last_salary(
     last_year, last_mon = last_month
 
     # Calculate 12 months ago (start of the 12-month window)
-    # If last month is Dec 2023, we want Jan 2023 (same year, month 1)
-    # If last month is Jun 2024, we want Jul 2023 (prev year, month 7)
     target_mon = last_mon - 11
     if target_mon <= 0:
         target_mon += 12
@@ -179,26 +180,45 @@ def _determine_last_salary(
         if pmr.month >= twelve_months_ago
     ]
 
-    # Get unique salary values
-    salary_values = set(pmr.salary_monthly for pmr in recent_pmrs)
+    # Compute partial_fraction for each PMR and filter to full months only
+    full_pmrs = []
+    for pmr in recent_pmrs:
+        _, _, partial_fraction = _compute_partial_fraction(
+            pmr.month, effective_periods, pmr.effective_period_id
+        )
+        if partial_fraction == Decimal("1"):
+            full_pmrs.append(pmr)
+
+    # Fall back to all recent PMRs if no full months exist
+    working_pmrs = full_pmrs if full_pmrs else recent_pmrs
+
+    # Get unique salary values from the working set
+    salary_values = set(pmr.salary_monthly for pmr in working_pmrs)
 
     pmrs_used = [
         LastSalaryPMRUsed(month=pmr.month, salary_monthly=pmr.salary_monthly)
-        for pmr in recent_pmrs
+        for pmr in working_pmrs
     ]
 
+    # Sort working_pmrs by month descending to get last full PMR
+    working_pmrs_sorted = sorted(
+        working_pmrs,
+        key=lambda p: p.month,
+        reverse=True,
+    )
+
     if len(salary_values) == 1:
-        # Salary did not change
+        # Salary did not change - use last full PMR's salary
         return LastSalaryInfo(
-            last_salary=sorted_pmrs[0].salary_monthly,
-            method=LastSalaryMethod.LAST_PMR,
+            last_salary=working_pmrs_sorted[0].salary_monthly,
+            method=LastSalaryMethod.LAST_FULL_PMR,
             salary_changed_in_last_year=False,
             pmrs_used=pmrs_used,
         )
     else:
-        # Salary changed - use average
-        total = sum(pmr.salary_monthly for pmr in recent_pmrs)
-        avg_salary = total / len(recent_pmrs)
+        # Salary changed - use average of working set
+        total = sum(pmr.salary_monthly for pmr in working_pmrs)
+        avg_salary = total / len(working_pmrs)
         return LastSalaryInfo(
             last_salary=avg_salary,
             method=LastSalaryMethod.AVG_12_MONTHS,
@@ -297,7 +317,7 @@ def compute_severance(
     result.eligible = True
 
     # Determine last salary
-    last_salary_info = _determine_last_salary(period_month_records)
+    last_salary_info = _determine_last_salary(period_month_records, effective_periods)
     result.last_salary_info = last_salary_info
     last_salary = last_salary_info.last_salary
 
@@ -322,8 +342,9 @@ def compute_severance(
             month, effective_periods, pmr.effective_period_id
         )
 
-        # month_full_base = last_salary × severance_rate × job_scope × partial_fraction
-        amount = last_salary * config.severance_rate * job_scope * partial_fraction
+        # month_full_base = last_salary × severance_rate × job_scope
+        # (job_scope already reflects partial months naturally)
+        amount = last_salary * config.severance_rate * job_scope
         full_base_total += amount
 
         detail = SeveranceMonthlyDetail(
@@ -387,9 +408,10 @@ def compute_severance(
             month, effective_periods, pmr.effective_period_id
         )
 
-        # month_required_base = salary_monthly × contribution_rate × job_scope × partial_fraction
+        # month_required_base = salary_monthly × contribution_rate × job_scope
         # Note: uses actual salary_monthly, NOT last_salary
-        amount = pmr.salary_monthly * config.contribution_rate * job_scope * partial_fraction
+        # (job_scope already reflects partial months naturally)
+        amount = pmr.salary_monthly * config.contribution_rate * job_scope
         req_base_total += amount
 
         detail = SeveranceMonthlyDetail(
@@ -481,10 +503,10 @@ def compute_severance(
 
         for pmr in period_month_records:
             month = pmr.month
-            year, mon = month
-            total_days = _get_calendar_days_in_month(year, mon)
+            ma = ma_lookup.get(month)
+            job_scope = ma.job_scope if ma else Decimal("1")
 
-            # Compute partial fraction
+            # Compute partial fraction (for display only)
             days_employed, _, partial_fraction = _compute_partial_fraction(
                 month, effective_periods, pmr.effective_period_id
             )
@@ -492,7 +514,8 @@ def compute_severance(
             # Look up annual recreation value for this specific month
             annual_value = (recreation_annual_by_month or {}).get(month, Decimal("0"))
             monthly_value = annual_value / Decimal("12")
-            amount = monthly_value * config.recreation_addition_rate * partial_fraction
+            # Use job_scope instead of partial_fraction (job_scope already reflects partial months)
+            amount = monthly_value * config.recreation_addition_rate * job_scope
 
             if not recreation_pending:
                 recreation_total += amount
