@@ -356,18 +356,27 @@ interface PensionResult {
 }
 
 // Training Fund types
+interface TrainingFundSegment {
+  days: number;
+  days_total: number;
+  employer_rate: number;
+  employee_rate: number;
+  eligible: boolean;
+  tier_source: 'industry' | 'custom';
+  segment_required: number;
+}
+
 interface TrainingFundMonthDetail {
   month: [number, number];
   effective_period_id: string;
   salary_base: number;
   recreation_component: number;
-  employer_rate: number;
-  employee_rate: number;
   job_scope: number;
   eligible_this_month: boolean;
   seniority_years: number | null;
-  tier_source: 'industry' | 'custom';
+  is_split_month: boolean;
   month_required: number;
+  segments: TrainingFundSegment[];
 }
 
 interface TrainingFundMonthlyBreakdown {
@@ -3081,13 +3090,24 @@ const TrainingFundBreakdown: React.FC<TrainingFundBreakdownProps> = ({ trainingF
   }
   const years = Object.keys(monthsByYear).map(Number).sort((a, b) => a - b);
 
+  // Helper to get effective rate from segments (weighted average)
+  const getEffectiveRate = (m: TrainingFundMonthDetail): number => {
+    if (!m.segments || m.segments.length === 0) return 0;
+    if (m.segments.length === 1) return m.segments[0].employer_rate;
+    // Weighted average by days
+    const totalDays = m.segments.reduce((sum, s) => sum + s.days, 0);
+    if (totalDays === 0) return 0;
+    return m.segments.reduce((sum, s) => sum + s.employer_rate * s.days, 0) / totalDays;
+  };
+
   // Calculate yearly summaries
   const yearSummaries = years.map(year => {
     const yearMonths = monthsByYear[year];
     const totalValue = yearMonths.reduce((sum, m) => sum + m.month_required, 0);
     const avgSalary = yearMonths.reduce((sum, m) => sum + m.salary_base, 0) / yearMonths.length;
-    const avgRate = yearMonths.reduce((sum, m) => sum + m.employer_rate, 0) / yearMonths.length;
+    const avgRate = yearMonths.reduce((sum, m) => sum + getEffectiveRate(m), 0) / yearMonths.length;
     const eligibleCount = yearMonths.filter(m => m.eligible_this_month).length;
+    const splitMonthCount = yearMonths.filter(m => m.is_split_month).length;
     return {
       year,
       monthsCount: yearMonths.length,
@@ -3095,6 +3115,7 @@ const TrainingFundBreakdown: React.FC<TrainingFundBreakdownProps> = ({ trainingF
       totalValue,
       avgSalary,
       avgRate,
+      splitMonthCount,
     };
   });
 
@@ -3104,7 +3125,12 @@ const TrainingFundBreakdown: React.FC<TrainingFundBreakdownProps> = ({ trainingF
       title: 'חודש',
       key: 'month',
       width: 100,
-      render: (_: unknown, record: TrainingFundMonthDetail) => formatMonth(record.month),
+      render: (_: unknown, record: TrainingFundMonthDetail) => (
+        <Space>
+          {formatMonth(record.month)}
+          {record.is_split_month && <Tag color="orange" style={{ fontSize: 10 }}>חצוי</Tag>}
+        </Space>
+      ),
     },
     {
       title: 'שכר בסיס',
@@ -3125,10 +3151,23 @@ const TrainingFundBreakdown: React.FC<TrainingFundBreakdownProps> = ({ trainingF
     {
       title: 'שיעור',
       key: 'rate',
-      width: 70,
-      render: (_: unknown, record: TrainingFundMonthDetail) => (
-        <span>{(record.employer_rate * 100).toFixed(1)}%</span>
-      ),
+      width: 100,
+      render: (_: unknown, record: TrainingFundMonthDetail) => {
+        if (record.is_split_month && record.segments.length > 1) {
+          // Show both rates for split months
+          return (
+            <Space direction="vertical" size={0} style={{ fontSize: 11 }}>
+              {record.segments.map((seg, i) => (
+                <span key={i}>
+                  {seg.days}d: {(seg.employer_rate * 100).toFixed(1)}%
+                </span>
+              ))}
+            </Space>
+          );
+        }
+        const rate = record.segments[0]?.employer_rate ?? 0;
+        return <span>{(rate * 100).toFixed(1)}%</span>;
+      },
     },
     {
       title: 'ותק',

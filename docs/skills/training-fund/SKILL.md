@@ -170,6 +170,35 @@ function get_rate_for_month(month, custom_tiers, industry_defaults):
   return industry_defaults.get_rate(month)
 ```
 
+### Split months
+
+A **split month** occurs when a rate transition falls mid-month. Two cases:
+
+1. **Seniority threshold crossing (construction)** — the day the worker crosses 3 or 6 years of industry seniority falls inside a calendar month.
+2. **Custom tier boundary** — a `training_fund_tier.start_date` or `end_date` falls inside a calendar month.
+
+In both cases, compute the month proportionally:
+
+```
+days_total = number of days in calendar month
+
+// Segment A: days before the transition
+days_A = transition_day - first_day_of_month   // exclusive
+rate_A = rate applicable before transition
+
+// Segment B: days from the transition onward
+days_B = days_total - days_A
+rate_B = rate applicable from transition
+
+month_required = salary_base × job_scope ×
+  ( (days_A / days_total) × employer_rate_A
+  + (days_B / days_total) × employer_rate_B )
+```
+
+Store both segments in `monthly_detail[month].segments` (see SSOT structure below).
+
+**More than two transitions in one month** — rare in practice, but apply the same logic iteratively: split into N segments, each weighted by its days.
+
 ---
 
 ## Computation
@@ -229,13 +258,20 @@ TrainingFundData {
     effective_period_id: string
     salary_base: decimal                 // salary_monthly [+ recreation if cleaning]
     recreation_component: decimal        // 0 if not cleaning or pending
-    employer_rate: decimal
-    employee_rate: decimal
     job_scope: decimal
-    eligible_this_month: boolean         // false if construction < 3yr seniority
-    seniority_years: decimal?            // construction only
+    eligible_this_month: boolean         // false if construction < 3yr seniority (all segments)
+    seniority_years: decimal?            // construction only — at start of month
     tier_source: "industry" | "custom"
-    month_required: decimal
+    month_required: decimal              // total for month (sum of segments)
+    is_split_month: boolean              // true if rate transition mid-month
+    segments: List<{                     // always 1 entry; 2+ if split month
+      days: integer
+      days_total: integer
+      employer_rate: decimal
+      employee_rate: decimal
+      eligible: boolean
+      segment_required: decimal          // salary_base × job_scope × (days/days_total) × employer_rate
+    }>
   }>
 
   // ═══ Totals ═══
@@ -335,9 +371,9 @@ Update `right_limitation_mapping`:
 
 2. **Construction worker, seniority < 3 years.** Not eligible for that month. `month_required = 0`. Once 3-year threshold is crossed, entitlement begins from that month forward (not retroactive).
 
-3. **Construction worker crossing 3-year or 6-year threshold mid-employment.** Rate changes from the month the threshold is crossed. Prior months retain the lower rate.
+3. **Construction worker crossing 3-year or 6-year threshold mid-employment.** Rate changes from the month the threshold is crossed. The crossing month is a **split month** — compute proportionally (see Split months above). Prior months retain the lower rate.
 
-4. **Custom tiers partially covering the employment period.** Months not covered by custom tiers fall back to industry defaults.
+4. **Custom tiers partially covering the employment period.** Months not covered by custom tiers fall back to industry defaults. If the tier boundary falls mid-month, that month is a **split month**.
 
 5. **Custom tiers with 0 rates.** Valid — means no entitlement for that period (e.g. during trial period per personal contract).
 
@@ -361,6 +397,7 @@ Update `right_limitation_mapping`:
 6. **DO NOT** assume foreman status. Require explicit `is_construction_foreman` input.
 7. **DO NOT** make construction entitlement retroactive when crossing 3/6 year threshold. Forward only.
 8. **DO NOT** compute general industry without custom tiers. It is not a default.
+9. **DO NOT** apply a single rate to an entire month when a threshold or tier boundary crosses mid-month. Use proportional day-based calculation (split month logic).
 
 ---
 
@@ -466,4 +503,68 @@ Input:
 Expected:
   eligible: false
   ineligible_reason: "לא הוזנו מדרגות קרן השתלמות"
+```
+
+### Fixture 7: Construction worker — split month at 3-year threshold
+
+```
+Input:
+  industry: "construction"
+  is_construction_foreman: false
+  employment: 2020-03-15 to 2023-06-30
+  industry_seniority at 2020-03-15: 2 years 11 months
+  → 3-year threshold reached on: 2020-04-15
+  salary_monthly: 10,000
+  job_scope: 1.0
+  actual_deposits: 0
+
+Explanation:
+  April 2020 is a split month (30 days):
+    Segment A: 2020-04-01 to 2020-04-14 → 14 days → rate = 0% (seniority < 3yr)
+    Segment B: 2020-04-15 to 2020-04-30 → 16 days → rate = 2.5%
+
+  April 2020 month_required:
+    = 10,000 × 1.0 × ((14/30) × 0.0 + (16/30) × 0.025)
+    = 10,000 × (0 + 0.01333...)
+    = 133.33
+
+  All months before April 2020 (Mar 2020): eligible_this_month = false, amount = 0
+  All months May 2020 onward: employer_rate = 2.5%, amount = 10,000 × 0.025 = 250/month
+
+Expected for April 2020:
+  is_split_month: true
+  segments:
+    { days: 14, days_total: 30, employer_rate: 0.0, eligible: false, segment_required: 0 }
+    { days: 16, days_total: 30, employer_rate: 0.025, eligible: true, segment_required: 133.33 }
+  month_required: 133.33
+```
+
+### Fixture 8: Custom tier — split month at tier boundary
+
+```
+Input:
+  industry: "general"
+  employment: 2022-01-01 to 2022-12-31 (12 months)
+  salary_monthly: 8,000
+  job_scope: 1.0
+  actual_deposits: 0
+  training_fund_tiers: [
+    { start_date: 2022-03-16, end_date: 2022-12-31,
+      employer_rate: 0.075, employee_rate: 0.025 }
+  ]
+
+Explanation:
+  Jan–Feb 2022: no tier covers → industry default (general, no tiers) → eligible = false, amount = 0
+  March 2022: tier starts 2022-03-16 → split month (31 days):
+    Segment A: 2022-03-01 to 2022-03-15 → 15 days → rate = 0% (no tier, general ineligible)
+    Segment B: 2022-03-16 to 2022-03-31 → 16 days → rate = 7.5%
+    month_required = 8,000 × 1.0 × ((15/31) × 0.0 + (16/31) × 0.075)
+                   = 8,000 × 0.03871 = 309.68
+  Apr–Dec 2022: full tier coverage, 9 months × 8,000 × 0.075 = 5,400
+
+Expected:
+  March 2022 is_split_month: true
+  March 2022 month_required: 309.68
+  required_total: 0 + 0 + 309.68 + 5,400 = 5,709.68
+  claim_before_deductions: 5,709.68
 ```

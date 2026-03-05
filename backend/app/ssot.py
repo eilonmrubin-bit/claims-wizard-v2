@@ -830,19 +830,30 @@ class PensionResult:
 
 
 @dataclass
+class TrainingFundSegment:
+    """A segment within a month for training fund calculation (split month support)."""
+    days: int = 0
+    days_total: int = 0
+    employer_rate: Decimal = Decimal("0")
+    employee_rate: Decimal = Decimal("0")
+    eligible: bool = True
+    tier_source: str = "industry"  # "industry" | "custom"
+    segment_required: Decimal = Decimal("0")
+
+
+@dataclass
 class TrainingFundMonthDetail:
     """Monthly detail for training fund calculation."""
     month: tuple[int, int] = (0, 0)
     effective_period_id: str = ""
     salary_base: Decimal = Decimal("0")
     recreation_component: Decimal = Decimal("0")
-    employer_rate: Decimal = Decimal("0")
-    employee_rate: Decimal = Decimal("0")
     job_scope: Decimal = Decimal("1")
-    eligible_this_month: bool = True
-    seniority_years: Decimal | None = None
-    tier_source: str = "industry"  # "industry" | "custom"
-    month_required: Decimal = Decimal("0")
+    eligible_this_month: bool = True  # False if all segments are ineligible
+    seniority_years: Decimal | None = None  # construction — at start of month
+    is_split_month: bool = False
+    month_required: Decimal = Decimal("0")  # sum of all segments
+    segments: list[TrainingFundSegment] = field(default_factory=list)
 
 
 @dataclass
