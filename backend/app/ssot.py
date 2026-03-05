@@ -189,6 +189,15 @@ class SeniorityInput:
 
 
 @dataclass
+class TrainingFundTier:
+    """Custom training fund tier from personal contract."""
+    start_date: date
+    end_date: date
+    employer_rate: Decimal = Decimal("0")
+    employee_rate: Decimal = Decimal("0")
+
+
+@dataclass
 class SSOTInput:
     """Layer 0 - All user input. Saved to .case file."""
 
@@ -207,6 +216,10 @@ class SSOTInput:
     industry: str = "general"
     filing_date: date | None = None
     termination_reason: TerminationReason | None = None  # Required for severance
+
+    # Training fund
+    is_construction_foreman: bool = False
+    training_fund_tiers: list[TrainingFundTier] = field(default_factory=list)
 
     # Seniority
     seniority_input: SeniorityInput = field(default_factory=SeniorityInput)
@@ -817,6 +830,45 @@ class PensionResult:
 
 
 @dataclass
+class TrainingFundMonthDetail:
+    """Monthly detail for training fund calculation."""
+    month: tuple[int, int] = (0, 0)
+    effective_period_id: str = ""
+    salary_base: Decimal = Decimal("0")
+    recreation_component: Decimal = Decimal("0")
+    employer_rate: Decimal = Decimal("0")
+    employee_rate: Decimal = Decimal("0")
+    job_scope: Decimal = Decimal("1")
+    eligible_this_month: bool = True
+    seniority_years: Decimal | None = None
+    tier_source: str = "industry"  # "industry" | "custom"
+    month_required: Decimal = Decimal("0")
+
+
+@dataclass
+class TrainingFundMonthlyBreakdown:
+    """Monthly breakdown for limitation module."""
+    month: tuple[int, int] = (0, 0)
+    claim_amount: Decimal = Decimal("0")
+
+
+@dataclass
+class TrainingFundData:
+    """Training fund calculation result."""
+    eligible: bool = False
+    ineligible_reason: str | None = None
+    industry: str = ""
+    is_construction_foreman: bool = False
+    used_custom_tiers: bool = False
+    recreation_pending: bool = False
+    monthly_detail: list[TrainingFundMonthDetail] = field(default_factory=list)
+    required_total: Decimal = Decimal("0")
+    actual_deposits: Decimal = Decimal("0")
+    claim_before_deductions: Decimal = Decimal("0")
+    monthly_breakdown: list[TrainingFundMonthlyBreakdown] = field(default_factory=list)
+
+
+@dataclass
 class RightsResults:
     """Results for all rights (Phase 2)."""
     overtime: OvertimeResult | None = None
@@ -825,6 +877,7 @@ class RightsResults:
     severance: SeveranceData | None = None
     pension: PensionResult | None = None
     recreation: RecreationResult | None = None
+    training_fund: TrainingFundData | None = None
     salary_completion: Any | None = None  # Not yet defined
     travel: Any | None = None  # Not yet defined
 

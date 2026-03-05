@@ -212,9 +212,12 @@ const createEmptyInput = (): SSOTInput => ({
     overtime: { enabled: true },
     holidays: { enabled: true },
     severance: { enabled: true },
+    training_fund: { enabled: true },
   },
   deductions_input: {},
   right_specific_inputs: {},
+  is_construction_foreman: false,
+  training_fund_tiers: [],
 });
 
 type SeniorityUnit = 'months' | 'years';
@@ -1907,6 +1910,25 @@ function App() {
                           <span style={{ fontWeight: 500 }}>פנסיה</span>
                         </Space>
                       </div>
+                      <div style={{ marginBottom: 16 }}>
+                        <Space>
+                          <Switch
+                            checked={formData.right_toggles.training_fund?.enabled !== false}
+                            onChange={(checked) => updateRightToggle('training_fund', 'enabled', checked)}
+                          />
+                          <span style={{ fontWeight: 500 }}>קרן השתלמות</span>
+                        </Space>
+                      </div>
+                      {formData.industry === 'construction' && (
+                        <div style={{ marginBottom: 16 }}>
+                          <Checkbox
+                            checked={formData.is_construction_foreman || false}
+                            onChange={(e) => updateField('is_construction_foreman', e.target.checked)}
+                          >
+                            מנהל עבודה מוסמך
+                          </Checkbox>
+                        </div>
+                      )}
                     </Col>
                   </Row>
                 ),
@@ -1957,6 +1979,18 @@ function App() {
                         <InputNumber
                           value={parseFloat(formData.deductions_input.pension) || undefined}
                           onChange={(v) => updateDeduction('pension', String(v || 0))}
+                          min={0}
+                          style={{ width: '100%' }}
+                          placeholder="סכום בש״ח"
+                          addonAfter="₪"
+                        />
+                      </Form.Item>
+                    </Col>
+                    <Col span={8}>
+                      <Form.Item label="הפרשות קרן השתלמות ששולמו">
+                        <InputNumber
+                          value={parseFloat(formData.deductions_input.training_fund) || undefined}
+                          onChange={(v) => updateDeduction('training_fund', String(v || 0))}
                           min={0}
                           style={{ width: '100%' }}
                           placeholder="סכום בש״ח"

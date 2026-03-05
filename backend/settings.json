@@ -37,8 +37,40 @@
       "severance": "dynamic",
       "pension": "general",
       "recreation": "general",
+      "training_fund": "general",
       "salary_completion": "general",
       "travel": "general"
+    }
+  },
+  "training_fund_config": {
+    "industries": {
+      "construction": {
+        "name": "בניין",
+        "tiers_by_seniority": [
+          { "role": "foreman", "min_seniority_years": 0,
+            "employer_rate": 0.075, "employee_rate": 0.025 },
+          { "role": "worker", "min_seniority_years": 0,
+            "max_seniority_years": 3,
+            "employer_rate": 0.0, "employee_rate": 0.0 },
+          { "role": "worker", "min_seniority_years": 3,
+            "max_seniority_years": 6,
+            "employer_rate": 0.025, "employee_rate": 0.01 },
+          { "role": "worker", "min_seniority_years": 6,
+            "employer_rate": 0.05, "employee_rate": 0.025 }
+        ]
+      },
+      "cleaning": {
+        "name": "ניקיון",
+        "employer_rate": 0.075,
+        "employee_rate": 0.025,
+        "min_months": 0
+      },
+      "general": {
+        "name": "כללי",
+        "employer_rate": null,
+        "employee_rate": null,
+        "min_months": 0
+      }
     }
   },
   "severance_config": {

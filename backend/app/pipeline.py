@@ -58,6 +58,7 @@ from .modules.severance import compute_severance
 from .modules.recreation import compute_recreation
 from .modules.vacation import compute_vacation
 from .modules.pension import compute_pension
+from .modules.training_fund import compute_training_fund
 from .utils.static_data import get_static_data
 from .modules.limitation import (
     get_limitation_type_for_right,
@@ -531,6 +532,19 @@ def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
             )
             ssot.rights_results.pension = pension_result
 
+        # Training Fund
+        if ssot.period_month_records and ssot.month_aggregates:
+            training_fund_result = compute_training_fund(
+                period_month_records=ssot.period_month_records,
+                month_aggregates=ssot.month_aggregates,
+                seniority_monthly=ssot.seniority_monthly,
+                industry=ssot.input.industry,
+                is_construction_foreman=ssot.input.is_construction_foreman,
+                training_fund_tiers=ssot.input.training_fund_tiers,
+                actual_deposits=ssot.input.deductions_input.get("training_fund", Decimal("0")),
+            )
+            ssot.rights_results.training_fund = training_fund_result
+
         # =====================================================================
         # Phase 3 - Post-processing
         # =====================================================================
@@ -877,6 +891,28 @@ def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
                 excluded_amount = full_amount - claimable_amount
                 claimable_dur, excluded_dur = compute_right_durations("general")
                 per_right_results["pension"] = RightLimitationResult(
+                    limitation_type_id="general",
+                    full_amount=full_amount,
+                    claimable_amount=claimable_amount,
+                    excluded_amount=excluded_amount,
+                    claimable_duration=claimable_dur,
+                    excluded_duration=excluded_dur,
+                )
+
+            # Training Fund — general limitation, filter monthly
+            if ssot.rights_results.training_fund and ssot.rights_results.training_fund.eligible:
+                tf = ssot.rights_results.training_fund
+                full_amount = tf.claim_before_deductions
+
+                claimable_amount = Decimal("0")
+                for mb in tf.monthly_breakdown:
+                    month_start = date(mb.month[0], mb.month[1], 1)
+                    if effective_window_start <= month_start <= filing_date:
+                        claimable_amount += mb.claim_amount
+
+                excluded_amount = full_amount - claimable_amount
+                claimable_dur, excluded_dur = compute_right_durations("general")
+                per_right_results["training_fund"] = RightLimitationResult(
                     limitation_type_id="general",
                     full_amount=full_amount,
                     claimable_amount=claimable_amount,

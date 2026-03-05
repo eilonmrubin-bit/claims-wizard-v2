@@ -136,6 +136,13 @@ export type District = 'jerusalem' | 'tel_aviv' | 'haifa' | 'south' | 'galil';
 
 export type TerminationReason = 'fired' | 'resigned_as_fired' | 'resigned';
 
+export interface TrainingFundTier {
+  start_date: string;  // YYYY-MM-DD
+  end_date: string;    // YYYY-MM-DD
+  employer_rate: string;  // Decimal as string, e.g. "0.075"
+  employee_rate: string;
+}
+
 export interface SSOTInput {
   case_metadata: CaseMetadata;
   personal_details: PersonalDetails;
@@ -153,6 +160,8 @@ export interface SSOTInput {
   deductions_input: Record<string, string>;
   right_specific_inputs: Record<string, Record<string, unknown>>;
   pattern_sources?: PatternSource[];
+  is_construction_foreman?: boolean;
+  training_fund_tiers?: TrainingFundTier[];
 }
 
 export interface ApiError {

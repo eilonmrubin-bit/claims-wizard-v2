@@ -355,6 +355,40 @@ interface PensionResult {
   grand_total_value: number;
 }
 
+// Training Fund types
+interface TrainingFundMonthDetail {
+  month: [number, number];
+  effective_period_id: string;
+  salary_base: number;
+  recreation_component: number;
+  employer_rate: number;
+  employee_rate: number;
+  job_scope: number;
+  eligible_this_month: boolean;
+  seniority_years: number | null;
+  tier_source: 'industry' | 'custom';
+  month_required: number;
+}
+
+interface TrainingFundMonthlyBreakdown {
+  month: [number, number];
+  claim_amount: number;
+}
+
+interface TrainingFundResult {
+  eligible: boolean;
+  ineligible_reason: string | null;
+  industry: string;
+  is_construction_foreman: boolean;
+  used_custom_tiers: boolean;
+  recreation_pending: boolean;
+  monthly_detail: TrainingFundMonthDetail[];
+  required_total: number;
+  actual_deposits: number;
+  claim_before_deductions: number;
+  monthly_breakdown: TrainingFundMonthlyBreakdown[];
+}
+
 interface FreezePeriodApplied {
   name: string;
   start_date: string;
@@ -470,6 +504,7 @@ interface ResultsViewProps {
       recreation?: RecreationResult;
       vacation?: VacationResult;
       pension?: PensionResult;
+      training_fund?: TrainingFundResult;
     };
     limitation_results?: LimitationResults;
     total_employment?: TotalEmployment;
@@ -2994,6 +3029,278 @@ const PensionBreakdown: React.FC<PensionBreakdownProps> = ({ pension, limitation
 };
 
 // ============================================================================
+// ז2. TrainingFundBreakdown - פירוט קרן השתלמות
+// ============================================================================
+
+const TRAINING_FUND_INDUSTRY_LABELS: Record<string, string> = {
+  general: 'כללי',
+  construction: 'בניין',
+  cleaning: 'ניקיון',
+  agriculture: 'חקלאות',
+};
+
+interface TrainingFundBreakdownProps {
+  trainingFund: TrainingFundResult;
+  limitation?: LimitationRightResult;
+}
+
+const TrainingFundBreakdown: React.FC<TrainingFundBreakdownProps> = ({ trainingFund, limitation }) => {
+  const [expandedYears, setExpandedYears] = useState<number[]>([]);
+
+  if (!trainingFund.eligible) {
+    return (
+      <Card
+        title={
+          <span>
+            <BankOutlined style={{ marginLeft: 8 }} />
+            קרן השתלמות
+          </span>
+        }
+        size="small"
+        style={{
+          borderRadius: 8,
+          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+          background: 'linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%)',
+        }}
+      >
+        <Alert
+          type="warning"
+          showIcon
+          message={trainingFund.ineligible_reason || 'לא זכאי לקרן השתלמות'}
+        />
+      </Card>
+    );
+  }
+
+  // Group months by year for collapsible display
+  const monthsByYear: Record<number, TrainingFundMonthDetail[]> = {};
+  for (const m of trainingFund.monthly_detail) {
+    const year = m.month[0];
+    if (!monthsByYear[year]) monthsByYear[year] = [];
+    monthsByYear[year].push(m);
+  }
+  const years = Object.keys(monthsByYear).map(Number).sort((a, b) => a - b);
+
+  // Calculate yearly summaries
+  const yearSummaries = years.map(year => {
+    const yearMonths = monthsByYear[year];
+    const totalValue = yearMonths.reduce((sum, m) => sum + m.month_required, 0);
+    const avgSalary = yearMonths.reduce((sum, m) => sum + m.salary_base, 0) / yearMonths.length;
+    const avgRate = yearMonths.reduce((sum, m) => sum + m.employer_rate, 0) / yearMonths.length;
+    const eligibleCount = yearMonths.filter(m => m.eligible_this_month).length;
+    return {
+      year,
+      monthsCount: yearMonths.length,
+      eligibleCount,
+      totalValue,
+      avgSalary,
+      avgRate,
+    };
+  });
+
+  // Month columns for expanded view
+  const monthColumns = [
+    {
+      title: 'חודש',
+      key: 'month',
+      width: 100,
+      render: (_: unknown, record: TrainingFundMonthDetail) => formatMonth(record.month),
+    },
+    {
+      title: 'שכר בסיס',
+      key: 'salary',
+      width: 110,
+      render: (_: unknown, record: TrainingFundMonthDetail) => (
+        <span className="ltr-number">{formatCurrency(record.salary_base)}</span>
+      ),
+    },
+    {
+      title: 'היקף',
+      key: 'scope',
+      width: 70,
+      render: (_: unknown, record: TrainingFundMonthDetail) => (
+        <span>{(record.job_scope * 100).toFixed(0)}%</span>
+      ),
+    },
+    {
+      title: 'שיעור',
+      key: 'rate',
+      width: 70,
+      render: (_: unknown, record: TrainingFundMonthDetail) => (
+        <span>{(record.employer_rate * 100).toFixed(1)}%</span>
+      ),
+    },
+    {
+      title: 'ותק',
+      key: 'seniority',
+      width: 60,
+      render: (_: unknown, record: TrainingFundMonthDetail) => (
+        record.seniority_years !== null
+          ? <span>{record.seniority_years.toFixed(1)}</span>
+          : <span>—</span>
+      ),
+    },
+    {
+      title: 'זכאי',
+      key: 'eligible',
+      width: 60,
+      render: (_: unknown, record: TrainingFundMonthDetail) => (
+        record.eligible_this_month
+          ? <Tag color="green">כן</Tag>
+          : <Tag color="red">לא</Tag>
+      ),
+    },
+    {
+      title: 'נדרש',
+      key: 'required',
+      width: 100,
+      render: (_: unknown, record: TrainingFundMonthDetail) => (
+        <span className="ltr-number">{formatCurrency(record.month_required)}</span>
+      ),
+    },
+  ];
+
+  // Year columns for summary table
+  const yearColumns = [
+    { title: 'שנה', dataIndex: 'year', key: 'year', width: 70 },
+    { title: 'חודשים', dataIndex: 'monthsCount', key: 'months', width: 70 },
+    { title: 'זכאים', dataIndex: 'eligibleCount', key: 'eligible', width: 70 },
+    {
+      title: 'שיעור ממוצע',
+      key: 'avgRate',
+      width: 90,
+      render: (_: unknown, record: typeof yearSummaries[0]) => (
+        <span>{(record.avgRate * 100).toFixed(1)}%</span>
+      ),
+    },
+    {
+      title: 'שכר ממוצע',
+      key: 'avgSalary',
+      width: 110,
+      render: (_: unknown, record: typeof yearSummaries[0]) => (
+        <span className="ltr-number">{formatCurrency(record.avgSalary)}</span>
+      ),
+    },
+    {
+      title: 'שווי',
+      key: 'totalValue',
+      width: 110,
+      render: (_: unknown, record: typeof yearSummaries[0]) => (
+        <span className="ltr-number">{formatCurrency(record.totalValue)}</span>
+      ),
+    },
+  ];
+
+  // Expandable row to show monthly breakdown
+  const expandedRowRender = (record: typeof yearSummaries[0]) => {
+    const yearMonths = monthsByYear[record.year];
+    return (
+      <Table
+        dataSource={yearMonths.map((m, i) => ({ ...m, key: i }))}
+        columns={monthColumns}
+        pagination={false}
+        size="small"
+        style={{ margin: 0 }}
+        rowClassName={(record) => !record.eligible_this_month ? 'row-disabled' : ''}
+      />
+    );
+  };
+
+  // Build title with tags
+  const titleTags = [];
+  if (trainingFund.is_construction_foreman) {
+    titleTags.push(<Tag key="foreman" color="purple">מנהל עבודה</Tag>);
+  }
+  if (trainingFund.used_custom_tiers) {
+    titleTags.push(<Tag key="custom" color="orange">חוזה אישי</Tag>);
+  }
+  if (trainingFund.recreation_pending) {
+    titleTags.push(<Tag key="pending" color="gold">ממתין להבראה</Tag>);
+  }
+
+  return (
+    <Card
+      title={
+        <Space>
+          <span>
+            <BankOutlined style={{ marginLeft: 8 }} />
+            קרן השתלמות — {TRAINING_FUND_INDUSTRY_LABELS[trainingFund.industry] || trainingFund.industry}
+          </span>
+          {titleTags}
+        </Space>
+      }
+      size="small"
+      style={{
+        borderRadius: 8,
+        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+        background: 'linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%)',
+      }}
+    >
+      {trainingFund.recreation_pending && (
+        <Alert
+          type="info"
+          showIcon
+          message="הסכום יעודכן לאחר חישוב הבראה"
+          style={{ marginBottom: 16 }}
+        />
+      )}
+
+      <Row gutter={16} style={{ marginBottom: 16 }}>
+        <Col span={6}>
+          <Statistic
+            title="סה״כ חודשים"
+            value={trainingFund.monthly_detail.length}
+          />
+        </Col>
+        <Col span={6}>
+          <Statistic
+            title="סה״כ נדרש"
+            value={trainingFund.required_total}
+            precision={2}
+            prefix="₪"
+          />
+        </Col>
+        <Col span={6}>
+          <Statistic
+            title="הפרשות בפועל"
+            value={trainingFund.actual_deposits}
+            precision={2}
+            prefix="₪"
+          />
+        </Col>
+        <Col span={6}>
+          <Statistic
+            title="אחרי התיישנות"
+            value={limitation?.claimable_amount ?? trainingFund.claim_before_deductions}
+            precision={2}
+            prefix="₪"
+            valueStyle={{ color: '#52c41a' }}
+          />
+        </Col>
+      </Row>
+
+      <Table
+        dataSource={yearSummaries.map(s => ({ ...s, key: s.year }))}
+        columns={yearColumns}
+        pagination={false}
+        size="small"
+        expandable={{
+          expandedRowRender,
+          rowExpandable: () => true,
+          expandedRowKeys: expandedYears,
+          onExpand: (expanded, record) => {
+            setExpandedYears(expanded
+              ? [...expandedYears, record.year]
+              : expandedYears.filter(y => y !== record.year)
+            );
+          },
+        }}
+      />
+    </Card>
+  );
+};
+
+// ============================================================================
 // ח. VacationBreakdown - פירוט חופשה שנתית
 // ============================================================================
 
@@ -3780,6 +4087,16 @@ const ResultsView: React.FC<ResultsViewProps> = ({ ssot }) => {
           <PensionBreakdown
             pension={rights_results.pension}
             limitation={limitation_results?.per_right?.pension}
+          />
+        </div>
+      )}
+
+      {/* ז3. Training Fund Breakdown */}
+      {rights_results?.training_fund && (
+        <div style={{ marginBottom: 24 }}>
+          <TrainingFundBreakdown
+            trainingFund={rights_results.training_fund}
+            limitation={limitation_results?.per_right?.training_fund}
           />
         </div>
       )}
