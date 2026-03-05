@@ -525,7 +525,7 @@ class SeverancePeriodSummary:
     effective_period_id: str = ""
     start: date | None = None
     end: date | None = None
-    months_count: Decimal = Decimal("0")
+    months_count: int = 0
     avg_job_scope: Decimal = Decimal("0")
     avg_salary_monthly: Decimal | None = None  # Only for required contributions
     subtotal: Decimal = Decimal("0")

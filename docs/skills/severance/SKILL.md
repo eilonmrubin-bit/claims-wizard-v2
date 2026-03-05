@@ -421,7 +421,7 @@ SeveranceData {
       effective_period_id: string
       start: date
       end: date
-      months_count: decimal
+      months_count: integer             // count of calendar months in this period (including partial months)
       avg_job_scope: decimal
       subtotal: decimal
     }>
@@ -449,7 +449,7 @@ SeveranceData {
       effective_period_id: string
       start: date
       end: date
-      months_count: decimal
+      months_count: integer             // count of calendar months in this period (including partial months)
       avg_job_scope: decimal
       avg_salary_monthly: decimal
       subtotal: decimal

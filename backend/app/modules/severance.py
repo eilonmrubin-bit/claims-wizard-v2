@@ -372,8 +372,8 @@ def compute_severance(
             continue
 
         subtotal = sum(d.amount for d in details)
-        # months_count = sum of partial_fractions (not count of PMRs)
-        months_count = sum(d.partial_fraction for d in details)
+        # months_count = count of calendar months (including partial months)
+        months_count = len(details)
         # avg_job_scope = weighted average by calendar_days_employed
         total_days = sum(d.calendar_days_employed for d in details)
         if total_days > 0:
@@ -439,8 +439,8 @@ def compute_severance(
             continue
 
         subtotal = sum(d.amount for d in details)
-        # months_count = sum of partial_fractions (not count of PMRs)
-        months_count = sum(d.partial_fraction for d in details)
+        # months_count = count of calendar months (including partial months)
+        months_count = len(details)
         # avg_job_scope = weighted average by calendar_days_employed
         total_days = sum(d.calendar_days_employed for d in details)
         if total_days > 0:

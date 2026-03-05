@@ -643,10 +643,9 @@ class TestPartialMonths:
         assert mar_detail.total_calendar_days == 31
         assert abs(mar_detail.partial_fraction - Decimal("10") / Decimal("31")) < Decimal("0.001")
 
-        # Period summary months_count should be sum of fractions, not 3
+        # Period summary months_count should be count of calendar months
         summary = result.full_severance.period_summaries[0]
-        expected_months = Decimal("17") / Decimal("31") + Decimal("1") + Decimal("10") / Decimal("31")
-        assert abs(summary.months_count - expected_months) < Decimal("0.01")
+        assert summary.months_count == 3
 
 
 class TestVaryingJobScope:
@@ -764,8 +763,8 @@ class TestTwoEffectivePeriodsWithDifferentSalaries:
         ep1_full_summary = next(s for s in result.full_severance.period_summaries if s.effective_period_id == "ep1")
         ep2_full_summary = next(s for s in result.full_severance.period_summaries if s.effective_period_id == "ep2")
 
-        assert abs(ep1_full_summary.months_count - Decimal("12")) < Decimal("0.01")
-        assert abs(ep2_full_summary.months_count - Decimal("12")) < Decimal("0.01")
+        assert ep1_full_summary.months_count == 12
+        assert ep2_full_summary.months_count == 12
 
 
 class TestPathCWithSalaryChange:
