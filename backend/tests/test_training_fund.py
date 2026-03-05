@@ -669,17 +669,53 @@ class TestConstructionSeniorityThresholds:
             assert any(seg.employer_rate == Decimal("0.05") for seg in m.segments)
 
 
-class TestPartialJobScope:
-    """Tests for partial job scope handling."""
+class TestFixture9MultiplePMRsSameMonth:
+    """Fixture 9: Two PMRs in same month — hours_weight prevents double-counting.
 
-    def test_partial_job_scope_reduces_amount(self):
-        """Job scope < 1.0 should reduce month_required proportionally."""
-        pmrs = [PeriodMonthRecord(
-            effective_period_id="ep1",
+    Input:
+        industry: "cleaning"
+        Month January 2022 has two effective periods (salary change mid-month):
+        - PMR A: salary 6,000, hours 78
+        - PMR B: salary 7,000, hours 91
+        - MonthAggregate total_regular_hours: 169
+
+    Expected:
+        hours_weight_A = 78 / 169 ≈ 0.4615
+        hours_weight_B = 91 / 169 ≈ 0.5385
+        PMR A required = 6,000 × 0.075 × 0.4615 ≈ 207.69
+        PMR B required = 7,000 × 0.075 × 0.5385 ≈ 282.71
+        Total: ≈ 490.40
+
+    Wrong calculation (using job_scope per PMR):
+        If job_scope = 0.9266 (169/182.4) applied to each:
+        PMR A = 6,000 × 0.075 × 0.9266 = 416.97
+        PMR B = 7,000 × 0.075 × 0.9266 = 486.47
+        Total = 903.44 → WRONG (double-count)
+    """
+
+    def test_multiple_pmrs_same_month_uses_hours_weight(self):
+        # Two PMRs for the same month with different salaries and hours
+        pmrs = [
+            PeriodMonthRecord(
+                effective_period_id="ep1",
+                month=(2022, 1),
+                salary_monthly=Decimal("6000"),
+                total_regular_hours=Decimal("78"),
+            ),
+            PeriodMonthRecord(
+                effective_period_id="ep2",
+                month=(2022, 1),
+                salary_monthly=Decimal("7000"),
+                total_regular_hours=Decimal("91"),
+            ),
+        ]
+
+        # Month aggregate with total hours for the month
+        mas = [MonthAggregate(
             month=(2022, 1),
-            salary_monthly=Decimal("10000"),
+            total_regular_hours=Decimal("169"),  # 78 + 91
+            job_scope=Decimal("0.9266"),  # 169/182.4 - should NOT be used
         )]
-        mas = [MonthAggregate(month=(2022, 1), job_scope=Decimal("0.5"))]
 
         result = compute_training_fund(
             period_month_records=pmrs,
@@ -692,9 +728,73 @@ class TestPartialJobScope:
         )
 
         assert result.eligible is True
+        assert len(result.monthly_detail) == 2
+
+        # Find PMR A and B results
+        pmr_a = next(d for d in result.monthly_detail if d.salary_base == Decimal("6000"))
+        pmr_b = next(d for d in result.monthly_detail if d.salary_base == Decimal("7000"))
+
+        # Check hours_weight is calculated correctly
+        assert pmr_a.total_regular_hours == Decimal("78")
+        assert pmr_a.month_total_regular_hours == Decimal("169")
+        expected_weight_a = Decimal("78") / Decimal("169")
+        assert abs(pmr_a.hours_weight - expected_weight_a) < Decimal("0.0001")
+
+        assert pmr_b.total_regular_hours == Decimal("91")
+        assert pmr_b.month_total_regular_hours == Decimal("169")
+        expected_weight_b = Decimal("91") / Decimal("169")
+        assert abs(pmr_b.hours_weight - expected_weight_b) < Decimal("0.0001")
+
+        # PMR A required: 6,000 × 0.075 × (78/169) ≈ 207.69
+        expected_a = Decimal("6000") * Decimal("0.075") * (Decimal("78") / Decimal("169"))
+        assert abs(pmr_a.month_required - expected_a) < Decimal("0.01")
+
+        # PMR B required: 7,000 × 0.075 × (91/169) ≈ 282.71
+        expected_b = Decimal("7000") * Decimal("0.075") * (Decimal("91") / Decimal("169"))
+        assert abs(pmr_b.month_required - expected_b) < Decimal("0.01")
+
+        # Total should be approximately 490.40 (NOT 903.44 from double-count)
+        expected_total = expected_a + expected_b
+        assert abs(result.required_total - expected_total) < Decimal("0.01")
+
+        # Verify it's NOT using job_scope (which would give ~903.44)
+        wrong_total = (Decimal("6000") + Decimal("7000")) * Decimal("0.075") * Decimal("0.9266")
+        assert result.required_total < wrong_total  # Sanity check
+
+
+class TestPartialHoursWeight:
+    """Tests for partial hours_weight handling (replaces job_scope tests)."""
+
+    def test_partial_hours_weight_reduces_amount(self):
+        """Hours weight < 1.0 should reduce month_required proportionally."""
+        pmrs = [PeriodMonthRecord(
+            effective_period_id="ep1",
+            month=(2022, 1),
+            salary_monthly=Decimal("10000"),
+            total_regular_hours=Decimal("91"),  # Half of 182
+        )]
+        mas = [MonthAggregate(
+            month=(2022, 1),
+            total_regular_hours=Decimal("182"),  # Full month hours
+            job_scope=Decimal("0.5"),  # Not used anymore
+        )]
+
+        result = compute_training_fund(
+            period_month_records=pmrs,
+            month_aggregates=mas,
+            seniority_monthly=[],
+            industry="cleaning",
+            is_construction_foreman=False,
+            training_fund_tiers=[],
+            actual_deposits=Decimal("0"),
+        )
+
+        assert result.eligible is True
+        # hours_weight = 91/182 = 0.5
         # 10,000 x 0.075 x 0.5 = 375
-        assert result.monthly_detail[0].month_required == Decimal("375")
-        assert result.required_total == Decimal("375")
+        assert result.monthly_detail[0].hours_weight == Decimal("91") / Decimal("182")
+        assert result.monthly_detail[0].month_required == Decimal("10000") * Decimal("0.075") * (Decimal("91") / Decimal("182"))
+        assert result.required_total == result.monthly_detail[0].month_required
 
 
 class TestMonthlyBreakdown:

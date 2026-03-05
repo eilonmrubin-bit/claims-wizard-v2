@@ -320,9 +320,17 @@ def compute_training_fund(
     for pmr in period_month_records:
         year, month = pmr.month
 
-        # Get month aggregate for job_scope
+        # Get month aggregate for hours_weight calculation
         ma = ma_lookup.get(pmr.month)
-        job_scope = ma.job_scope if ma else Decimal("1")
+        month_total_hours = ma.total_regular_hours if ma else Decimal("0")
+
+        # Calculate hours_weight: PMR hours / month total hours
+        # This prevents double-counting when multiple PMRs share the same month
+        pmr_hours = pmr.total_regular_hours
+        if month_total_hours > 0:
+            hours_weight = pmr_hours / month_total_hours
+        else:
+            hours_weight = Decimal("1")
 
         # Get salary base
         salary_base = pmr.salary_monthly
@@ -357,7 +365,7 @@ def compute_training_fund(
             seg_days = (seg_end - seg_start).days + 1
 
             if eligible:
-                segment_required = salary_base * job_scope * (Decimal(seg_days) / Decimal(days_total)) * emp_rate
+                segment_required = salary_base * (Decimal(seg_days) / Decimal(days_total)) * emp_rate * hours_weight
             else:
                 segment_required = Decimal("0")
 
@@ -385,7 +393,9 @@ def compute_training_fund(
             effective_period_id=pmr.effective_period_id,
             salary_base=salary_base,
             recreation_component=recreation_component,
-            job_scope=job_scope,
+            total_regular_hours=pmr_hours,
+            month_total_regular_hours=month_total_hours,
+            hours_weight=hours_weight,
             eligible_this_month=eligible_this_month,
             seniority_years=seniority_at_start,
             is_split_month=is_split_month,

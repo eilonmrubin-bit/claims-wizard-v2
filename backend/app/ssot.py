@@ -848,7 +848,9 @@ class TrainingFundMonthDetail:
     effective_period_id: str = ""
     salary_base: Decimal = Decimal("0")
     recreation_component: Decimal = Decimal("0")
-    job_scope: Decimal = Decimal("1")
+    total_regular_hours: Decimal = Decimal("0")        # from PMR
+    month_total_regular_hours: Decimal = Decimal("0")  # from MonthAggregate
+    hours_weight: Decimal = Decimal("1")               # = total / month_total
     eligible_this_month: bool = True  # False if all segments are ineligible
     seniority_years: Decimal | None = None  # construction — at start of month
     is_split_month: bool = False

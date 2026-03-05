@@ -371,7 +371,9 @@ interface TrainingFundMonthDetail {
   effective_period_id: string;
   salary_base: number;
   recreation_component: number;
-  job_scope: number;
+  total_regular_hours: number;        // from PMR
+  month_total_regular_hours: number;  // from MonthAggregate
+  hours_weight: number;               // = total / month_total
   eligible_this_month: boolean;
   seniority_years: number | null;
   is_split_month: boolean;
@@ -3141,11 +3143,11 @@ const TrainingFundBreakdown: React.FC<TrainingFundBreakdownProps> = ({ trainingF
       ),
     },
     {
-      title: 'היקף',
-      key: 'scope',
+      title: 'משקל',
+      key: 'hours_weight',
       width: 70,
       render: (_: unknown, record: TrainingFundMonthDetail) => (
-        <span>{(record.job_scope * 100).toFixed(0)}%</span>
+        <span>{(record.hours_weight * 100).toFixed(0)}%</span>
       ),
     },
     {
