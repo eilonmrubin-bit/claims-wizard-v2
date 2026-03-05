@@ -2126,24 +2126,6 @@ const SeveranceBreakdown: React.FC<{
       ),
     },
     {
-      title: <span style={{ color: '#88D8E0' }}>ימים</span>,
-      key: 'days',
-      render: (_: unknown, record: SeveranceMonthlyDetail) => (
-        <span style={{ color: '#E8F4F8' }}>
-          {record.calendar_days_employed}/{record.total_calendar_days}
-        </span>
-      ),
-    },
-    {
-      title: <span style={{ color: '#88D8E0' }}>חלקיות</span>,
-      key: 'partial',
-      render: (_: unknown, record: SeveranceMonthlyDetail) => (
-        <span style={{ color: '#E8F4F8' }}>
-          {(record.partial_fraction * 100).toFixed(1)}%
-        </span>
-      ),
-    },
-    {
       title: <span style={{ color: '#88D8E0' }}>היקף משרה</span>,
       key: 'scope',
       render: (_: unknown, record: SeveranceMonthlyDetail) => (
@@ -2581,17 +2563,6 @@ const RecreationBreakdown: React.FC<RecreationBreakdownProps> = ({ recreation, l
       </Card>
     );
   }
-
-  // Summary row
-  const summaryData = [
-    {
-      key: 'total',
-      label: 'סה"כ דמי הבראה',
-      days: recreation.grand_total_days,
-      beforeLimitation: recreation.grand_total_value,
-      afterLimitation: limitation?.claimable_amount ?? recreation.grand_total_value,
-    },
-  ];
 
   // Year details
   const yearColumns = [
