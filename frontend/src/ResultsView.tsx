@@ -659,6 +659,23 @@ const SummaryCard: React.FC<{ summary: ClaimSummary }> = ({ summary }) => {
 // ב. RightsTable - טבלת פירוט זכויות
 // ============================================================================
 
+// Translation map for right names (English IDs to Hebrew)
+const rightNameTranslations: Record<string, string> = {
+  'training_fund': 'קרן השתלמות',
+  'pension': 'פנסיה',
+  'vacation': 'חופשה שנתית',
+  'recreation': 'דמי הבראה',
+  'holidays': 'דמי חגים',
+  'overtime': 'שעות נוספות',
+  'severance': 'פיצויי פיטורים',
+  'prior_notice': 'דמי הודעה מוקדמת',
+  'convalescence': 'דמי הבראה',
+};
+
+const translateRightName = (name: string): string => {
+  return rightNameTranslations[name] || name;
+};
+
 const RightsTable: React.FC<{
   rights: ClaimSummaryRight[];
   deductionResults?: Record<string, DeductionResult>;
@@ -668,7 +685,7 @@ const RightsTable: React.FC<{
       title: <span style={{ color: '#88D8E0' }}>זכות</span>,
       dataIndex: 'name',
       key: 'name',
-      render: (v: string) => <span style={{ color: '#E8F4F8' }}>{v}</span>,
+      render: (v: string) => <span style={{ color: '#E8F4F8' }}>{translateRightName(v)}</span>,
     },
     {
       title: <span style={{ color: '#88D8E0' }}>סכום מלא</span>,
@@ -1963,7 +1980,7 @@ interface HolidaysBreakdownProps {
   filingDate?: string;
 }
 
-const HolidaysBreakdown: React.FC<HolidaysBreakdownProps> = ({ holidays, limitation, generalWindow, filingDate }) => {
+const HolidaysBreakdown: React.FC<HolidaysBreakdownProps> = ({ holidays, limitation: _limitation, generalWindow, filingDate: _filingDate }) => {
   // Helper: check if a year is within the limitation window
   const isYearClaimable = (year: number): boolean => {
     if (!generalWindow?.effective_window_start) return true;
@@ -2601,7 +2618,7 @@ interface RecreationBreakdownProps {
   filingDate?: string;
 }
 
-const RecreationBreakdown: React.FC<RecreationBreakdownProps> = ({ recreation, limitation, generalWindow, filingDate }) => {
+const RecreationBreakdown: React.FC<RecreationBreakdownProps> = ({ recreation, limitation, generalWindow, filingDate: _filingDate }) => {
   const [showDaysTable, setShowDaysTable] = useState(false);
 
   // Helper: check if a year is within the limitation window
@@ -2893,7 +2910,7 @@ interface PensionBreakdownProps {
   filingDate?: string;
 }
 
-const PensionBreakdown: React.FC<PensionBreakdownProps> = ({ pension, limitation, generalWindow, filingDate }) => {
+const PensionBreakdown: React.FC<PensionBreakdownProps> = ({ pension, limitation, generalWindow, filingDate: _filingDate }) => {
   const [expandedYears, setExpandedYears] = useState<number[]>([]);
 
   const industryLabels: Record<string, string> = {
@@ -3180,7 +3197,7 @@ interface TrainingFundBreakdownProps {
   filingDate?: string;
 }
 
-const TrainingFundBreakdown: React.FC<TrainingFundBreakdownProps> = ({ trainingFund, limitation, generalWindow, filingDate }) => {
+const TrainingFundBreakdown: React.FC<TrainingFundBreakdownProps> = ({ trainingFund, limitation, generalWindow, filingDate: _filingDate }) => {
   const [expandedYears, setExpandedYears] = useState<number[]>([]);
 
   if (!trainingFund.eligible) {
