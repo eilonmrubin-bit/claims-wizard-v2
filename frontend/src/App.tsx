@@ -1998,6 +1998,42 @@ function App() {
                         />
                       </Form.Item>
                     </Col>
+                    <Col span={8}>
+                      <Form.Item label="חופשה ששולמה">
+                        <InputNumber
+                          value={parseFloat(formData.deductions_input.vacation) || undefined}
+                          onChange={(v) => updateDeduction('vacation', String(v || 0))}
+                          min={0}
+                          style={{ width: '100%' }}
+                          placeholder="סכום בש״ח"
+                          addonAfter="₪"
+                        />
+                      </Form.Item>
+                    </Col>
+                    <Col span={8}>
+                      <Form.Item label="הבראה ששולמה">
+                        <InputNumber
+                          value={parseFloat(formData.deductions_input.recreation) || undefined}
+                          onChange={(v) => updateDeduction('recreation', String(v || 0))}
+                          min={0}
+                          style={{ width: '100%' }}
+                          placeholder="סכום בש״ח"
+                          addonAfter="₪"
+                        />
+                      </Form.Item>
+                    </Col>
+                    <Col span={8}>
+                      <Form.Item label="נסיעות ששולמו">
+                        <InputNumber
+                          value={parseFloat(formData.deductions_input.travel) || undefined}
+                          onChange={(v) => updateDeduction('travel', String(v || 0))}
+                          min={0}
+                          style={{ width: '100%' }}
+                          placeholder="סכום בש״ח"
+                          addonAfter="₪"
+                        />
+                      </Form.Item>
+                    </Col>
                   </Row>
                 ),
               },
