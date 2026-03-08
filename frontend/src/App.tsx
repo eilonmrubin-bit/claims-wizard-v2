@@ -1978,7 +1978,11 @@ function App() {
                                 <span style={{ fontWeight: 500 }}>קרן השתלמות</span>
                                 {formData.right_toggles.training_fund?.enabled !== false && (
                                   <span style={{ color: '#88D8E0', marginRight: 8 }}>
-                                    ({(formData.training_fund_tiers || []).length} מדרגות)
+                                    ({(formData.training_fund_tiers || []).length > 0
+                                      ? `${(formData.training_fund_tiers || []).length} מדרגות`
+                                      : formData.industry === 'general'
+                                        ? '0'
+                                        : 'ברירת מחדל ענפית'})
                                   </span>
                                 )}
                                 {formData.right_toggles.training_fund?.enabled !== false && formData.industry === 'construction' && (
