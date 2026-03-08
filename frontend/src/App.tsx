@@ -1937,23 +1937,25 @@ function App() {
                           <span style={{ fontWeight: 500 }}>קרן השתלמות</span>
                         </Space>
                       </div>
-                      {formData.industry === 'construction' && (
-                        <div style={{ marginBottom: 16 }}>
-                          <Checkbox
-                            checked={formData.is_construction_foreman || false}
-                            onChange={(e) => updateField('is_construction_foreman', e.target.checked)}
-                          >
-                            מנהל עבודה מוסמך
-                          </Checkbox>
-                        </div>
-                      )}
-                      <Collapse
-                        size="small"
-                        style={{ marginTop: 16 }}
-                        items={[
-                          {
-                            key: 'training_fund_tiers',
-                            label: `מדרגות חוזה אישי (${(formData.training_fund_tiers || []).length})`,
+                      {formData.right_toggles.training_fund?.enabled !== false && (
+                        <>
+                          {formData.industry === 'construction' && (
+                            <div style={{ marginBottom: 16 }}>
+                              <Checkbox
+                                checked={formData.is_construction_foreman || false}
+                                onChange={(e) => updateField('is_construction_foreman', e.target.checked)}
+                              >
+                                מנהל עבודה מוסמך
+                              </Checkbox>
+                            </div>
+                          )}
+                          <Collapse
+                            size="small"
+                            style={{ marginTop: 16 }}
+                            items={[
+                              {
+                                key: 'training_fund_tiers',
+                                label: `קרן השתלמות — חוזה אישי (${(formData.training_fund_tiers || []).length})`,
                             children: (
                               <div>
                                 <div style={{ marginBottom: 12, fontSize: 12, color: '#88D8E0' }}>
@@ -2015,101 +2017,117 @@ function App() {
                               </div>
                             ),
                           },
-                        ]}
-                      />
+                            ]}
+                          />
+                        </>
+                      )}
                     </Col>
                   </Row>
                 ),
               },
               {
                 key: 'deductions',
-                label: 'ניכויי מעסיק',
+                label: 'הפרשות מעסיק',
                 children: (
                   <Row gutter={16}>
-                    <Col span={8}>
-                      <Form.Item label="ניכוי משעות נוספות">
-                        <InputNumber
-                          value={parseFloat(formData.deductions_input.overtime) || undefined}
-                          onChange={(v) => updateDeduction('overtime', String(v || 0))}
-                          min={0}
-                          style={{ width: '100%' }}
-                          placeholder="סכום בש״ח"
-                          addonAfter="₪"
-                        />
-                      </Form.Item>
-                    </Col>
-                    <Col span={8}>
-                      <Form.Item label="ניכוי מדמי חגים">
-                        <InputNumber
-                          value={parseFloat(formData.deductions_input.holidays) || undefined}
-                          onChange={(v) => updateDeduction('holidays', String(v || 0))}
-                          min={0}
-                          style={{ width: '100%' }}
-                          placeholder="סכום בש״ח"
-                          addonAfter="₪"
-                        />
-                      </Form.Item>
-                    </Col>
-                    <Col span={8}>
-                      <Form.Item label="הפרשות בפועל לפיצויים">
-                        <InputNumber
-                          value={parseFloat(formData.deductions_input.severance) || undefined}
-                          onChange={(v) => updateDeduction('severance', String(v || 0))}
-                          min={0}
-                          style={{ width: '100%' }}
-                          placeholder="סכום בש״ח"
-                          addonAfter="₪"
-                        />
-                      </Form.Item>
-                    </Col>
-                    <Col span={8}>
-                      <Form.Item label="הפרשות פנסיה ששולמו">
-                        <InputNumber
-                          value={parseFloat(formData.deductions_input.pension) || undefined}
-                          onChange={(v) => updateDeduction('pension', String(v || 0))}
-                          min={0}
-                          style={{ width: '100%' }}
-                          placeholder="סכום בש״ח"
-                          addonAfter="₪"
-                        />
-                      </Form.Item>
-                    </Col>
-                    <Col span={8}>
-                      <Form.Item label="הפרשות קרן השתלמות ששולמו">
-                        <InputNumber
-                          value={parseFloat(formData.deductions_input.training_fund) || undefined}
-                          onChange={(v) => updateDeduction('training_fund', String(v || 0))}
-                          min={0}
-                          style={{ width: '100%' }}
-                          placeholder="סכום בש״ח"
-                          addonAfter="₪"
-                        />
-                      </Form.Item>
-                    </Col>
-                    <Col span={8}>
-                      <Form.Item label="חופשה ששולמה">
-                        <InputNumber
-                          value={parseFloat(formData.deductions_input.vacation) || undefined}
-                          onChange={(v) => updateDeduction('vacation', String(v || 0))}
-                          min={0}
-                          style={{ width: '100%' }}
-                          placeholder="סכום בש״ח"
-                          addonAfter="₪"
-                        />
-                      </Form.Item>
-                    </Col>
-                    <Col span={8}>
-                      <Form.Item label="הבראה ששולמה">
-                        <InputNumber
-                          value={parseFloat(formData.deductions_input.recreation) || undefined}
-                          onChange={(v) => updateDeduction('recreation', String(v || 0))}
-                          min={0}
-                          style={{ width: '100%' }}
-                          placeholder="סכום בש״ח"
-                          addonAfter="₪"
-                        />
-                      </Form.Item>
-                    </Col>
+                    {formData.right_toggles.overtime?.enabled !== false && (
+                      <Col span={8}>
+                        <Form.Item label="שעות נוספות ששולמו">
+                          <InputNumber
+                            value={parseFloat(formData.deductions_input.overtime) || undefined}
+                            onChange={(v) => updateDeduction('overtime', String(v || 0))}
+                            min={0}
+                            style={{ width: '100%' }}
+                            placeholder="סכום בש״ח"
+                            addonAfter="₪"
+                          />
+                        </Form.Item>
+                      </Col>
+                    )}
+                    {formData.right_toggles.holidays?.enabled !== false && (
+                      <Col span={8}>
+                        <Form.Item label="דמי חגים ששולמו">
+                          <InputNumber
+                            value={parseFloat(formData.deductions_input.holidays) || undefined}
+                            onChange={(v) => updateDeduction('holidays', String(v || 0))}
+                            min={0}
+                            style={{ width: '100%' }}
+                            placeholder="סכום בש״ח"
+                            addonAfter="₪"
+                          />
+                        </Form.Item>
+                      </Col>
+                    )}
+                    {formData.right_toggles.severance?.enabled !== false && (
+                      <Col span={8}>
+                        <Form.Item label="פיצויים ששולמו">
+                          <InputNumber
+                            value={parseFloat(formData.deductions_input.severance) || undefined}
+                            onChange={(v) => updateDeduction('severance', String(v || 0))}
+                            min={0}
+                            style={{ width: '100%' }}
+                            placeholder="סכום בש״ח"
+                            addonAfter="₪"
+                          />
+                        </Form.Item>
+                      </Col>
+                    )}
+                    {formData.right_toggles.pension?.enabled !== false && (
+                      <Col span={8}>
+                        <Form.Item label="פנסיה ששולמה">
+                          <InputNumber
+                            value={parseFloat(formData.deductions_input.pension) || undefined}
+                            onChange={(v) => updateDeduction('pension', String(v || 0))}
+                            min={0}
+                            style={{ width: '100%' }}
+                            placeholder="סכום בש״ח"
+                            addonAfter="₪"
+                          />
+                        </Form.Item>
+                      </Col>
+                    )}
+                    {formData.right_toggles.training_fund?.enabled !== false && (
+                      <Col span={8}>
+                        <Form.Item label="קרן השתלמות ששולמה">
+                          <InputNumber
+                            value={parseFloat(formData.deductions_input.training_fund) || undefined}
+                            onChange={(v) => updateDeduction('training_fund', String(v || 0))}
+                            min={0}
+                            style={{ width: '100%' }}
+                            placeholder="סכום בש״ח"
+                            addonAfter="₪"
+                          />
+                        </Form.Item>
+                      </Col>
+                    )}
+                    {formData.right_toggles.vacation?.enabled !== false && (
+                      <Col span={8}>
+                        <Form.Item label="חופשה ששולמה">
+                          <InputNumber
+                            value={parseFloat(formData.deductions_input.vacation) || undefined}
+                            onChange={(v) => updateDeduction('vacation', String(v || 0))}
+                            min={0}
+                            style={{ width: '100%' }}
+                            placeholder="סכום בש״ח"
+                            addonAfter="₪"
+                          />
+                        </Form.Item>
+                      </Col>
+                    )}
+                    {formData.right_toggles.recreation?.enabled !== false && (
+                      <Col span={8}>
+                        <Form.Item label="הבראה ששולמה">
+                          <InputNumber
+                            value={parseFloat(formData.deductions_input.recreation) || undefined}
+                            onChange={(v) => updateDeduction('recreation', String(v || 0))}
+                            min={0}
+                            style={{ width: '100%' }}
+                            placeholder="סכום בש״ח"
+                            addonAfter="₪"
+                          />
+                        </Form.Item>
+                      </Col>
+                    )}
                     <Col span={8}>
                       <Form.Item label="נסיעות ששולמו">
                         <InputNumber
