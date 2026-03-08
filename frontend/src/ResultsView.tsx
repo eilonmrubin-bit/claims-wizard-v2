@@ -1611,7 +1611,7 @@ const ShiftDetail: React.FC<{ shift: ShiftData }> = ({ shift }) => {
               .filter((item) => item.claim_amount !== 0)
               .map((item, idx) => (
                 <Tag key={idx} color={getTierColor(item.tier, item.in_rest)} style={{ marginBottom: 4 }}>
-                  {item.hours.toFixed(2)}h × {formatCurrency(item.hourly_wage)} × {getClaimLabel(item.tier, item.in_rest)}
+                  {item.hours.toFixed(2)}ש׳ × {formatCurrency(item.hourly_wage)} × {getClaimLabel(item.tier, item.in_rest)}
                   {item.in_rest && ' (מנוחה)'}
                   {' = '}
                   {formatCurrency(item.claim_amount)}
@@ -1736,7 +1736,7 @@ const WeekCollapseContent: React.FC<{
             <div>{week.total_regular_hours?.toFixed(1) || 0}</div>
           </Col>
           <Col span={6}>
-            <Text type="secondary">OT שבועי:</Text>
+            <Text type="secondary">ש״נ שבועי:</Text>
             <div style={{ color: week.weekly_ot_hours > 0 ? '#FFD93D' : undefined }}>
               {week.weekly_ot_hours?.toFixed(1) || 0}
             </div>
@@ -3161,7 +3161,7 @@ const TrainingFundBreakdown: React.FC<TrainingFundBreakdownProps> = ({ trainingF
             <Space direction="vertical" size={0} style={{ fontSize: 11 }}>
               {record.segments.map((seg, i) => (
                 <span key={i}>
-                  {seg.days}d: {(seg.employer_rate * 100).toFixed(1)}%
+                  {seg.days}י׳: {(seg.employer_rate * 100).toFixed(1)}%
                 </span>
               ))}
             </Space>
