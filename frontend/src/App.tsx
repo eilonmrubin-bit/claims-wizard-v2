@@ -1960,33 +1960,40 @@ function App() {
                       </Space>
                     </Col>
                   </Row>
-                  {/* Row 3: Training fund toggle + Collapse */}
+                  {/* Row 3: Training fund Collapse with toggle in header */}
                   <Row gutter={24}>
                     <Col span={24}>
-                      <Space style={{ marginBottom: formData.right_toggles.training_fund?.enabled !== false ? 12 : 0 }}>
-                        <Switch
-                          checked={formData.right_toggles.training_fund?.enabled !== false}
-                          onChange={(checked) => updateRightToggle('training_fund', 'enabled', checked)}
-                        />
-                        <span style={{ fontWeight: 500 }}>קרן השתלמות</span>
-                        {formData.right_toggles.training_fund?.enabled !== false && formData.industry === 'construction' && (
-                          <Checkbox
-                            checked={formData.is_construction_foreman || false}
-                            onChange={(e) => updateField('is_construction_foreman', e.target.checked)}
-                            style={{ marginRight: 16 }}
-                          >
-                            מנהל עבודה מוסמך
-                          </Checkbox>
-                        )}
-                      </Space>
-                      {formData.right_toggles.training_fund?.enabled !== false && (
-                        <Collapse
-                          items={[
-                            {
-                              key: 'training_fund_tiers',
-                              label: `קרן השתלמות — חוזה אישי (${(formData.training_fund_tiers || []).length})`,
-                              children: (
-                              <div>
+                      <Collapse
+                        collapsible={formData.right_toggles.training_fund?.enabled !== false ? 'header' : 'disabled'}
+                        activeKey={formData.right_toggles.training_fund?.enabled !== false ? undefined : []}
+                        items={[
+                          {
+                            key: 'training_fund_tiers',
+                            label: (
+                              <Space onClick={(e) => e.stopPropagation()}>
+                                <Switch
+                                  checked={formData.right_toggles.training_fund?.enabled !== false}
+                                  onChange={(checked) => updateRightToggle('training_fund', 'enabled', checked)}
+                                />
+                                <span style={{ fontWeight: 500 }}>קרן השתלמות</span>
+                                {formData.right_toggles.training_fund?.enabled !== false && (
+                                  <span style={{ color: '#88D8E0', marginRight: 8 }}>
+                                    ({(formData.training_fund_tiers || []).length} מדרגות)
+                                  </span>
+                                )}
+                                {formData.right_toggles.training_fund?.enabled !== false && formData.industry === 'construction' && (
+                                  <Checkbox
+                                    checked={formData.is_construction_foreman || false}
+                                    onChange={(e) => updateField('is_construction_foreman', e.target.checked)}
+                                    style={{ marginRight: 16 }}
+                                  >
+                                    מנהל עבודה מוסמך
+                                  </Checkbox>
+                                )}
+                              </Space>
+                            ),
+                            children: (
+                            <div>
                                 <div style={{ marginBottom: 12, fontSize: 12, color: '#88D8E0' }}>
                                   מדרגות חוזה אישי עוקפות את ברירת המחדל הענפית לפי טווח ותק.
                                   ותק שאינו מכוסה על ידי מדרגה חוזר לברירת מחדל.
@@ -2051,7 +2058,6 @@ function App() {
                             },
                           ]}
                         />
-                      )}
                     </Col>
                   </Row>
                   </>
