@@ -1950,12 +1950,11 @@ function App() {
                             </div>
                           )}
                           <Collapse
-                            size="small"
-                            style={{ marginTop: 16 }}
+                            style={{ marginTop: 16, width: '100%' }}
                             items={[
                               {
                                 key: 'training_fund_tiers',
-                                label: <span style={{ whiteSpace: 'nowrap' }}>{`קרן השתלמות — חוזה אישי (${(formData.training_fund_tiers || []).length})`}</span>,
+                                label: `קרן השתלמות — חוזה אישי (${(formData.training_fund_tiers || []).length})`,
                             children: (
                               <div>
                                 <div style={{ marginBottom: 12, fontSize: 12, color: '#88D8E0' }}>
