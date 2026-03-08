@@ -530,6 +530,12 @@ function App() {
   // SNAP selection state: keyed by pattern/tier ID
   const [snapSelections, setSnapSelections] = useState<Record<string, number[]>>({});
 
+  // Week-level clipboard for cyclic pattern copy/paste
+  const [copiedWeek, setCopiedWeek] = useState<{
+    workDays: number[];
+    perDay: Record<number, PerDayShifts>;
+  } | null>(null);
+
   // Helper: toggle period selection for SNAP
   const toggleSnapSelection = (id: string, periodIndex: number) => {
     setSnapSelections((prev) => {
@@ -749,6 +755,31 @@ function App() {
     const cycle = levelB.cycle.filter((_, i) => i !== weekIndex);
     levelB.cycle = cycle;
     levelB.cycle_length = cycle.reduce((sum, w) => sum + (w.repeats || 1), 0);
+    updated[patternIndex] = { ...updated[patternIndex], level_b: levelB };
+    updateField('work_patterns', updated);
+  };
+
+  // Copy a week from cyclic pattern to clipboard
+  const copyWeek = (patternIndex: number, weekIndex: number) => {
+    const week = formData.work_patterns[patternIndex].level_b!.cycle[weekIndex];
+    setCopiedWeek({
+      workDays: [...(week.work_days || [])],
+      perDay: JSON.parse(JSON.stringify(week.per_day || {})),
+    });
+  };
+
+  // Paste week from clipboard to cyclic pattern
+  const pasteWeek = (patternIndex: number, weekIndex: number) => {
+    if (!copiedWeek) return;
+    const updated = [...formData.work_patterns];
+    const levelB = { ...updated[patternIndex].level_b! };
+    const cycle = [...levelB.cycle];
+    cycle[weekIndex] = {
+      ...cycle[weekIndex],
+      work_days: [...copiedWeek.workDays],
+      per_day: JSON.parse(JSON.stringify(copiedWeek.perDay)),
+    };
+    levelB.cycle = cycle;
     updated[patternIndex] = { ...updated[patternIndex], level_b: levelB };
     updateField('work_patterns', updated);
   };
@@ -1536,6 +1567,10 @@ function App() {
                                     inputMode={pattern.input_mode || 'time_range'}
                                     onInputModeChange={(mode) => updateWorkPattern(pIndex, 'input_mode', mode)}
                                     onChange={(wd, pd) => updateCycleWeek(pIndex, wIndex, wd, pd)}
+                                    weekIndex={wIndex}
+                                    onCopyWeek={() => copyWeek(pIndex, wIndex)}
+                                    onPasteWeek={() => pasteWeek(pIndex, wIndex)}
+                                    hasCopiedWeek={copiedWeek !== null}
                                   />
                                 ),
                               }))}
@@ -1864,6 +1899,7 @@ function App() {
                 key: 'toggles',
                 label: 'זכויות נתבעות',
                 children: (
+                  <>
                   <Row gutter={24}>
                     <Col span={6}>
                       <div style={{ marginBottom: 16 }}>
@@ -1937,25 +1973,27 @@ function App() {
                           <span style={{ fontWeight: 500 }}>קרן השתלמות</span>
                         </Space>
                       </div>
-                      {formData.right_toggles.training_fund?.enabled !== false && (
-                        <>
-                          {formData.industry === 'construction' && (
-                            <div style={{ marginBottom: 16 }}>
-                              <Checkbox
-                                checked={formData.is_construction_foreman || false}
-                                onChange={(e) => updateField('is_construction_foreman', e.target.checked)}
-                              >
-                                מנהל עבודה מוסמך
-                              </Checkbox>
-                            </div>
-                          )}
-                          <Collapse
-                            style={{ marginTop: 16, width: '100%' }}
-                            items={[
-                              {
-                                key: 'training_fund_tiers',
-                                label: `קרן השתלמות — חוזה אישי (${(formData.training_fund_tiers || []).length})`,
-                            children: (
+                      {formData.right_toggles.training_fund?.enabled !== false && formData.industry === 'construction' && (
+                        <div style={{ marginBottom: 16 }}>
+                          <Checkbox
+                            checked={formData.is_construction_foreman || false}
+                            onChange={(e) => updateField('is_construction_foreman', e.target.checked)}
+                          >
+                            מנהל עבודה מוסמך
+                          </Checkbox>
+                        </div>
+                      )}
+                    </Col>
+                  </Row>
+                  {formData.right_toggles.training_fund?.enabled !== false && (
+                    <Row style={{ marginTop: 16 }}>
+                      <Col span={24}>
+                        <Collapse
+                          items={[
+                            {
+                              key: 'training_fund_tiers',
+                              label: `קרן השתלמות — חוזה אישי (${(formData.training_fund_tiers || []).length})`,
+                              children: (
                               <div>
                                 <div style={{ marginBottom: 12, fontSize: 12, color: '#88D8E0' }}>
                                   מדרגות חוזה אישי עוקפות את ברירת המחדל הענפית לתקופה המוגדרת.
@@ -1979,8 +2017,8 @@ function App() {
                                         />
                                       </Form.Item>
                                     </Col>
-                                    <Col span={4}>
-                                      <Form.Item label="% מעסיק" style={{ marginBottom: 0 }}>
+                                    <Col span={6}>
+                                      <Form.Item label="אחוז הפרשה" style={{ marginBottom: 0 }}>
                                         <InputNumber
                                           value={parseFloat(tier.employer_rate) * 100 || undefined}
                                           onChange={(v) => updateTrainingFundTier(index, 'employer_rate', String((v || 0) / 100))}
@@ -1992,20 +2030,7 @@ function App() {
                                         />
                                       </Form.Item>
                                     </Col>
-                                    <Col span={4}>
-                                      <Form.Item label="% עובד" style={{ marginBottom: 0 }}>
-                                        <InputNumber
-                                          value={parseFloat(tier.employee_rate) * 100 || undefined}
-                                          onChange={(v) => updateTrainingFundTier(index, 'employee_rate', String((v || 0) / 100))}
-                                          min={0}
-                                          max={100}
-                                          step={0.5}
-                                          addonAfter="%"
-                                          style={{ width: '100%' }}
-                                        />
-                                      </Form.Item>
-                                    </Col>
-                                    <Col span={2} style={{ paddingTop: 30 }}>
+                                    <Col span={4} style={{ paddingTop: 30 }}>
                                       <Button danger icon={<DeleteOutlined />} onClick={() => removeTrainingFundTier(index)} />
                                     </Col>
                                   </Row>
@@ -2015,13 +2040,13 @@ function App() {
                                 </Button>
                               </div>
                             ),
-                          },
-                            ]}
-                          />
-                        </>
-                      )}
-                    </Col>
-                  </Row>
+                            },
+                          ]}
+                        />
+                      </Col>
+                    </Row>
+                  )}
+                  </>
                 ),
               },
               {

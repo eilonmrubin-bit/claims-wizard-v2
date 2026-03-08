@@ -3,11 +3,14 @@
  * Used for Level A (weekly_simple) and Level B (cyclic) patterns.
  */
 
-import React, { useState } from 'react';
-import { Checkbox, Radio, InputNumber, Select, Button, Row, Col, Tooltip } from 'antd';
-import { DeleteOutlined, PlusOutlined } from '@ant-design/icons';
+import React, { useState, useRef, useEffect } from 'react';
+import { Checkbox, Radio, InputNumber, Select, Button, Row, Col, Tooltip, Dropdown } from 'antd';
+import type { MenuProps } from 'antd';
+import { DeleteOutlined, PlusOutlined, CopyOutlined, SnippetsOutlined, EllipsisOutlined } from '@ant-design/icons';
 import TimeInput from './TimeInput';
 import type { PerDayShifts, ShiftInputMode, ShiftType, RestDay, ShiftEntry } from '../types';
+
+const deepClone = <T,>(obj: T): T => JSON.parse(JSON.stringify(obj));
 
 const DAY_NAMES: Record<number, string> = {
   0: 'ראשון',
@@ -26,6 +29,11 @@ interface WeekPanelProps {
   inputMode: ShiftInputMode;                    // 'time_range' | 'duration'
   onInputModeChange: (mode: ShiftInputMode) => void;
   onChange: (workDays: number[], perDay: Record<number, PerDayShifts>) => void;
+  // Week-level copy/paste (for cyclic patterns)
+  weekIndex?: number;                           // index of this week in cyclic pattern
+  onCopyWeek?: () => void;                      // callback to copy this week
+  onPasteWeek?: () => void;                     // callback to paste clipboard week
+  hasCopiedWeek?: boolean;                      // whether clipboard has a week
 }
 
 const DEFAULT_SHIFT: ShiftEntry = {
@@ -82,8 +90,30 @@ export const WeekPanel: React.FC<WeekPanelProps> = ({
   inputMode,
   onInputModeChange,
   onChange,
+  weekIndex: _weekIndex,
+  onCopyWeek,
+  onPasteWeek,
+  hasCopiedWeek,
 }) => {
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
+
+  // Day-level clipboard state
+  const [copiedDay, setCopiedDay] = useState<PerDayShifts | null>(null);
+  const [copySourceDay, setCopySourceDay] = useState<number | null>(null);
+  const weekPanelRef = useRef<HTMLDivElement>(null);
+
+  // Clear clipboard on click outside
+  useEffect(() => {
+    if (!copiedDay) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (weekPanelRef.current && !weekPanelRef.current.contains(e.target as Node)) {
+        setCopiedDay(null);
+        setCopySourceDay(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [copiedDay]);
 
   const toggleDay = (day: number, checked: boolean) => {
     let newWorkDays: number[];
@@ -178,8 +208,62 @@ export const WeekPanel: React.FC<WeekPanelProps> = ({
   const isWorkDay = (day: number) => workDays.includes(day);
   const dayData = (day: number): PerDayShifts => perDay[day] || { shifts: [{ ...DEFAULT_SHIFT }] };
 
+  // Paste day from clipboard
+  const pasteToDay = (targetDay: number) => {
+    if (!copiedDay) return;
+    const newPerDay = { ...perDay };
+    const newWorkDays = workDays.includes(targetDay)
+      ? workDays
+      : [...workDays, targetDay].sort((a, b) => a - b);
+    newPerDay[targetDay] = deepClone(copiedDay);
+    onChange(newWorkDays, newPerDay);
+    // Don't clear clipboard — allow pasting to multiple days
+  };
+
+  // Context menu for day cell
+  const dayContextMenu = (day: number): MenuProps => ({
+    items: [
+      isWorkDay(day) ? {
+        key: 'copy',
+        label: 'העתק יום',
+        icon: <CopyOutlined />,
+        onClick: () => {
+          setCopiedDay(deepClone(dayData(day)));
+          setCopySourceDay(day);
+        },
+      } : null,
+      copiedDay && day !== copySourceDay ? {
+        key: 'paste',
+        label: 'הדבק יום',
+        icon: <SnippetsOutlined />,
+        onClick: () => pasteToDay(day),
+      } : null,
+      isWorkDay(day) ? {
+        key: 'clear',
+        label: 'נקה יום',
+        icon: <DeleteOutlined />,
+        danger: true,
+        onClick: () => toggleDay(day, false),
+      } : null,
+    ].filter(Boolean) as MenuProps['items'],
+  });
+
   return (
-    <div className="week-panel">
+    <div className="week-panel" ref={weekPanelRef}>
+      {/* Week-level copy/paste buttons (for cyclic patterns) */}
+      {onCopyWeek && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 4, marginBottom: 8 }}>
+          <Button size="small" icon={<CopyOutlined />} onClick={onCopyWeek}>
+            העתק שבוע
+          </Button>
+          {hasCopiedWeek && (
+            <Button size="small" icon={<SnippetsOutlined />} type="primary" ghost onClick={onPasteWeek}>
+              הדבק שבוע
+            </Button>
+          )}
+        </div>
+      )}
+
       {/* 7-day cell row */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 16 }}>
         {[0, 1, 2, 3, 4, 5, 6].map(day => {
@@ -187,64 +271,102 @@ export const WeekPanel: React.FC<WeekPanelProps> = ({
           const statusTag = getStatusTag(day, restDay);
           const data = dayData(day);
           const isSelected = selectedDay === day;
+          const isSource = copySourceDay === day;
+          const isTarget = copiedDay !== null && day !== copySourceDay;
+
+          // Determine cell styling based on clipboard state
+          let cellBorder = '1px solid #303030';
+          let cellBackground = active ? '#1a3a1a' : '#1f1f1f';
+          let cellCursor = 'pointer';
+
+          if (isSelected) {
+            cellBorder = '2px solid #1890ff';
+          } else if (isSource) {
+            cellBorder = '2px solid #1890ff';
+          } else if (isTarget) {
+            cellBorder = '1px dashed #52c41a';
+            cellBackground = active ? '#1a3a1a' : '#1a2a1a';
+            cellCursor = 'copy';
+          }
 
           return (
-            <Tooltip key={day} title="לחץ לעריכה">
-              <div
-                onClick={() => handleCellClick(day)}
-                style={{
-                  flex: 1,
-                  padding: '8px 4px',
-                  textAlign: 'center',
-                  cursor: 'pointer',
-                  borderRadius: 6,
-                  border: isSelected ? '2px solid #1890ff' : '1px solid #303030',
-                  background: active ? '#1a3a1a' : '#1f1f1f',
-                  opacity: active ? 1 : 0.6,
-                  minHeight: 80,
-                  display: 'flex',
-                  flexDirection: 'column',
-                  justifyContent: 'flex-start',
-                }}
-              >
-                <div style={{ fontWeight: 600, marginBottom: 4 }}>{DAY_NAMES[day]}</div>
-                {statusTag && (
-                  <div style={{
-                    fontSize: 10,
-                    color: statusTag === 'מנוחה' ? '#ff7875' : '#faad14',
-                    marginBottom: 4,
-                  }}>
-                    {statusTag}
-                  </div>
-                )}
-                {active ? (
-                  <>
-                    {[...data.shifts]
-                      .sort((a, b) => {
-                        const aKey = a.anchor === 'ends_here' ? '00:00:00' : a.start_time;
-                        const bKey = b.anchor === 'ends_here' ? '00:00:00' : b.start_time;
-                        return aKey.localeCompare(bKey);
-                      })
-                      .map((s, i) => (
-                        <div key={i} style={{ fontSize: 11 }}>
-                          {isOvernightShift(s) && (s.anchor || 'starts_here') === 'starts_here' && (
-                            <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', backgroundColor: '#69c0ff', marginLeft: 4, verticalAlign: 'middle' }} />
-                          )}
-                          {formatShiftSummary(s)}
-                          {isOvernightShift(s) && s.anchor === 'ends_here' && (
-                            <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', backgroundColor: '#69c0ff', marginRight: 4, verticalAlign: 'middle' }} />
-                          )}
-                          {s.break_minutes > 0 && (
-                            <span style={{ fontSize: 10, color: '#888' }}> הפ{s.break_minutes}'</span>
-                          )}
-                        </div>
-                      ))}
-                  </>
-                ) : (
-                  <div style={{ fontSize: 18, color: '#555' }}>—</div>
-                )}
-              </div>
-            </Tooltip>
+            <Dropdown key={day} menu={dayContextMenu(day)} trigger={['contextMenu']}>
+              <Tooltip title={isTarget ? 'לחץ להדביק' : 'לחץ לעריכה'}>
+                <div
+                  onClick={() => isTarget ? pasteToDay(day) : handleCellClick(day)}
+                  style={{
+                    flex: 1,
+                    padding: '8px 4px',
+                    textAlign: 'center',
+                    cursor: cellCursor,
+                    borderRadius: 6,
+                    border: cellBorder,
+                    background: cellBackground,
+                    opacity: active ? 1 : 0.6,
+                    minHeight: 80,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'flex-start',
+                    position: 'relative',
+                  }}
+                >
+                  {/* Action menu button for active days */}
+                  {active && (
+                    <Dropdown menu={dayContextMenu(day)} trigger={['click']}>
+                      <Button
+                        size="small"
+                        type="text"
+                        icon={<EllipsisOutlined />}
+                        style={{ position: 'absolute', top: 2, left: 2, fontSize: 10, padding: 2, minWidth: 20, height: 20 }}
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    </Dropdown>
+                  )}
+
+                  {/* Source badge */}
+                  {isSource && (
+                    <div style={{ position: 'absolute', top: 2, right: 2, fontSize: 9, color: '#1890ff' }}>✓ מועתק</div>
+                  )}
+
+                  <div style={{ fontWeight: 600, marginBottom: 4 }}>{DAY_NAMES[day]}</div>
+                  {statusTag && (
+                    <div style={{
+                      fontSize: 10,
+                      color: statusTag === 'מנוחה' ? '#ff7875' : '#faad14',
+                      marginBottom: 4,
+                    }}>
+                      {statusTag}
+                    </div>
+                    )}
+                  {active ? (
+                    <>
+                      {[...data.shifts]
+                        .sort((a, b) => {
+                          const aKey = a.anchor === 'ends_here' ? '00:00:00' : a.start_time;
+                          const bKey = b.anchor === 'ends_here' ? '00:00:00' : b.start_time;
+                          return aKey.localeCompare(bKey);
+                        })
+                        .map((s, i) => (
+                          <div key={i} style={{ fontSize: 11 }}>
+                            {isOvernightShift(s) && (s.anchor || 'starts_here') === 'starts_here' && (
+                              <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', backgroundColor: '#69c0ff', marginLeft: 4, verticalAlign: 'middle' }} />
+                            )}
+                            {formatShiftSummary(s)}
+                            {isOvernightShift(s) && s.anchor === 'ends_here' && (
+                              <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', backgroundColor: '#69c0ff', marginRight: 4, verticalAlign: 'middle' }} />
+                            )}
+                            {s.break_minutes > 0 && (
+                              <span style={{ fontSize: 10, color: '#888' }}> הפ{s.break_minutes}'</span>
+                            )}
+                          </div>
+                        ))}
+                    </>
+                  ) : (
+                    <div style={{ fontSize: 18, color: '#555' }}>—</div>
+                  )}
+                </div>
+              </Tooltip>
+            </Dropdown>
           );
         })}
       </div>
