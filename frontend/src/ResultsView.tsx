@@ -1956,7 +1956,23 @@ const OvertimeBreakdown: React.FC<{
 // ד. HolidaysBreakdown - פירוט דמי חגים
 // ============================================================================
 
-const HolidaysBreakdown: React.FC<{ holidays: HolidaysResult }> = ({ holidays }) => {
+interface HolidaysBreakdownProps {
+  holidays: HolidaysResult;
+  limitation?: LimitationRightResult;
+  generalWindow?: LimitationWindow;
+  filingDate?: string;
+}
+
+const HolidaysBreakdown: React.FC<HolidaysBreakdownProps> = ({ holidays, limitation, generalWindow, filingDate }) => {
+  // Helper: check if a year is within the limitation window
+  const isYearClaimable = (year: number): boolean => {
+    if (!generalWindow?.effective_window_start) return true;
+    const windowStart = new Date(generalWindow.effective_window_start);
+    // Check if Dec 31 of the year is after the window start
+    const yearEnd = new Date(year, 11, 31);
+    return yearEnd >= windowStart;
+  };
+
   const renderEntitlement = (entry: HolidayEntry) => {
     if (!entry.employed_on_date) {
       return <Tag color="default">לא הועסק</Tag>;
@@ -2045,18 +2061,32 @@ const HolidaysBreakdown: React.FC<{ holidays: HolidaysResult }> = ({ holidays })
     const allBeforeSeniority = employedHolidays.length > 0 &&
       employedHolidays.every((h) => h.before_seniority);
     const hasEntitledDays = year.total_entitled_days > 0;
+    const excluded = !isYearClaimable(year.year);
 
     return {
       key: String(year.year),
       label: (
         <Space>
-          <span>{year.year}</span>
-          <Tag color={hasEntitledDays ? 'green' : 'default'}>
+          {excluded
+            ? <Tooltip title="מחוץ לחלון ההתיישנות — התיישן"><ClockCircleOutlined style={{ color: '#FF6B6B' }} /></Tooltip>
+            : <Tooltip title="בתוך חלון ההתיישנות — ניתן לתבוע"><CheckCircleOutlined style={{ color: '#4ECDC4' }} /></Tooltip>
+          }
+          <span style={{ color: excluded ? '#888' : undefined }}>{year.year}</span>
+          <Tag color={hasEntitledDays && !excluded ? 'green' : 'default'}>
             {year.total_entitled_days} ימים
           </Tag>
-          <span className="ltr-number">{formatCurrency(year.total_claim)}</span>
+          <span
+            className="ltr-number"
+            style={{
+              color: excluded ? '#888' : undefined,
+              textDecoration: excluded ? 'line-through' : 'none',
+            }}
+          >
+            {formatCurrency(year.total_claim)}
+          </span>
         </Space>
       ),
+      className: excluded ? 'row-excluded' : '',
       children: (
         <div>
           {allBeforeSeniority && (
@@ -2567,10 +2597,20 @@ const RECREATION_DAYS_TABLES: Record<string, { range: string; days: number }[]> 
 interface RecreationBreakdownProps {
   recreation: RecreationResult;
   limitation?: LimitationRightResult;
+  generalWindow?: LimitationWindow;
+  filingDate?: string;
 }
 
-const RecreationBreakdown: React.FC<RecreationBreakdownProps> = ({ recreation, limitation }) => {
+const RecreationBreakdown: React.FC<RecreationBreakdownProps> = ({ recreation, limitation, generalWindow, filingDate }) => {
   const [showDaysTable, setShowDaysTable] = useState(false);
+
+  // Helper: check if a year is within the limitation window
+  const isYearClaimable = (yearStart: string): boolean => {
+    if (!generalWindow?.effective_window_start) return true;
+    const windowStart = new Date(generalWindow.effective_window_start);
+    const yearStartDate = new Date(yearStart);
+    return yearStartDate >= windowStart;
+  };
 
   const industryLabels: Record<string, string> = {
     general: 'כללי',
@@ -2612,6 +2652,16 @@ const RecreationBreakdown: React.FC<RecreationBreakdownProps> = ({ recreation, l
 
   // Year details
   const yearColumns = [
+    {
+      title: '',
+      key: 'status',
+      width: 32,
+      render: (_: unknown, record: RecreationYearData) => (
+        isYearClaimable(record.year_start)
+          ? <Tooltip title="בתוך חלון ההתיישנות — ניתן לתבוע"><CheckCircleOutlined style={{ color: '#4ECDC4' }} /></Tooltip>
+          : <Tooltip title="מחוץ לחלון ההתיישנות — התיישן"><ClockCircleOutlined style={{ color: '#FF6B6B' }} /></Tooltip>
+      ),
+    },
     { title: 'שנה', dataIndex: 'year_number', key: 'year_number', width: 60 },
     {
       title: 'תקופה',
@@ -2645,9 +2695,20 @@ const RecreationBreakdown: React.FC<RecreationBreakdownProps> = ({ recreation, l
       title: 'שווי',
       key: 'entitled_value',
       width: 100,
-      render: (_: unknown, record: RecreationYearData) => (
-        <span className="ltr-number">{formatCurrency(record.entitled_value)}</span>
-      ),
+      render: (_: unknown, record: RecreationYearData) => {
+        const excluded = !isYearClaimable(record.year_start);
+        return (
+          <span
+            className="ltr-number"
+            style={{
+              color: excluded ? '#888' : '#4ECDC4',
+              textDecoration: excluded ? 'line-through' : 'none',
+            }}
+          >
+            {formatCurrency(record.entitled_value)}
+          </span>
+        );
+      },
     },
   ];
 
@@ -2776,6 +2837,7 @@ const RecreationBreakdown: React.FC<RecreationBreakdownProps> = ({ recreation, l
           expandedRowRender,
           rowExpandable: (record) => record.segments.length > 1,
         }}
+        rowClassName={(record) => !isYearClaimable(record.year_start) ? 'row-excluded' : ''}
       />
     </Card>
 
@@ -2827,9 +2889,11 @@ const PENSION_RATE_LABELS: Record<string, string> = {
 interface PensionBreakdownProps {
   pension: PensionResult;
   limitation?: LimitationRightResult;
+  generalWindow?: LimitationWindow;
+  filingDate?: string;
 }
 
-const PensionBreakdown: React.FC<PensionBreakdownProps> = ({ pension, limitation }) => {
+const PensionBreakdown: React.FC<PensionBreakdownProps> = ({ pension, limitation, generalWindow, filingDate }) => {
   const [expandedYears, setExpandedYears] = useState<number[]>([]);
 
   const industryLabels: Record<string, string> = {
@@ -2873,6 +2937,21 @@ const PensionBreakdown: React.FC<PensionBreakdownProps> = ({ pension, limitation
   }
   const years = Object.keys(monthsByYear).map(Number).sort((a, b) => a - b);
 
+  // Helper: check if a month is within the limitation window
+  const isMonthClaimable = (month: [number, number]): boolean => {
+    if (!generalWindow?.effective_window_start) return true;
+    const windowStart = new Date(generalWindow.effective_window_start);
+    const monthDate = new Date(month[0], month[1] - 1, 1);
+    return monthDate >= windowStart;
+  };
+
+  // Helper: check if entire year is excluded (all months before limitation window)
+  const isYearFullyExcluded = (year: number): boolean => {
+    if (!generalWindow?.effective_window_start) return false;
+    const yearMonths = monthsByYear[year] || [];
+    return yearMonths.length > 0 && yearMonths.every(m => !isMonthClaimable(m.month));
+  };
+
   // Calculate yearly summaries
   const yearSummaries = years.map(year => {
     const yearMonths = monthsByYear[year];
@@ -2890,6 +2969,16 @@ const PensionBreakdown: React.FC<PensionBreakdownProps> = ({ pension, limitation
 
   // Month columns for expanded view
   const monthColumns = [
+    {
+      title: '',
+      key: 'status',
+      width: 32,
+      render: (_: unknown, record: PensionMonthData) => (
+        isMonthClaimable(record.month)
+          ? <Tooltip title="בתוך חלון ההתיישנות"><CheckCircleOutlined style={{ color: '#4ECDC4' }} /></Tooltip>
+          : <Tooltip title="התיישן"><ClockCircleOutlined style={{ color: '#FF6B6B' }} /></Tooltip>
+      ),
+    },
     {
       title: 'חודש',
       key: 'month',
@@ -2924,14 +3013,35 @@ const PensionBreakdown: React.FC<PensionBreakdownProps> = ({ pension, limitation
       title: 'שווי',
       key: 'value',
       width: 100,
-      render: (_: unknown, record: PensionMonthData) => (
-        <span className="ltr-number">{formatCurrency(record.month_value)}</span>
-      ),
+      render: (_: unknown, record: PensionMonthData) => {
+        const excluded = !isMonthClaimable(record.month);
+        return (
+          <span
+            className="ltr-number"
+            style={{
+              color: excluded ? '#888' : '#4ECDC4',
+              textDecoration: excluded ? 'line-through' : 'none',
+            }}
+          >
+            {formatCurrency(record.month_value)}
+          </span>
+        );
+      },
     },
   ];
 
   // Year columns for summary table
   const yearColumns = [
+    {
+      title: '',
+      key: 'status',
+      width: 32,
+      render: (_: unknown, record: typeof yearSummaries[0]) => (
+        isYearFullyExcluded(record.year)
+          ? <Tooltip title="מחוץ לחלון ההתיישנות — התיישן"><ClockCircleOutlined style={{ color: '#FF6B6B' }} /></Tooltip>
+          : <Tooltip title="בתוך חלון ההתיישנות — ניתן לתבוע"><CheckCircleOutlined style={{ color: '#4ECDC4' }} /></Tooltip>
+      ),
+    },
     { title: 'שנה', dataIndex: 'year', key: 'year', width: 80 },
     { title: 'חודשים', dataIndex: 'monthsCount', key: 'months', width: 80 },
     {
@@ -2954,9 +3064,20 @@ const PensionBreakdown: React.FC<PensionBreakdownProps> = ({ pension, limitation
       title: 'שווי',
       key: 'totalValue',
       width: 120,
-      render: (_: unknown, record: typeof yearSummaries[0]) => (
-        <span className="ltr-number">{formatCurrency(record.totalValue)}</span>
-      ),
+      render: (_: unknown, record: typeof yearSummaries[0]) => {
+        const excluded = isYearFullyExcluded(record.year);
+        return (
+          <span
+            className="ltr-number"
+            style={{
+              color: excluded ? '#888' : '#4ECDC4',
+              textDecoration: excluded ? 'line-through' : 'none',
+            }}
+          >
+            {formatCurrency(record.totalValue)}
+          </span>
+        );
+      },
     },
   ];
 
@@ -2970,6 +3091,7 @@ const PensionBreakdown: React.FC<PensionBreakdownProps> = ({ pension, limitation
         pagination={false}
         size="small"
         style={{ margin: 0 }}
+        rowClassName={(record) => !isMonthClaimable(record.month) ? 'row-excluded' : ''}
       />
     );
   };
@@ -3034,6 +3156,7 @@ const PensionBreakdown: React.FC<PensionBreakdownProps> = ({ pension, limitation
             );
           },
         }}
+        rowClassName={(record) => isYearFullyExcluded(record.year) ? 'row-excluded' : ''}
       />
     </Card>
   );
@@ -3053,9 +3176,11 @@ const TRAINING_FUND_INDUSTRY_LABELS: Record<string, string> = {
 interface TrainingFundBreakdownProps {
   trainingFund: TrainingFundResult;
   limitation?: LimitationRightResult;
+  generalWindow?: LimitationWindow;
+  filingDate?: string;
 }
 
-const TrainingFundBreakdown: React.FC<TrainingFundBreakdownProps> = ({ trainingFund, limitation }) => {
+const TrainingFundBreakdown: React.FC<TrainingFundBreakdownProps> = ({ trainingFund, limitation, generalWindow, filingDate }) => {
   const [expandedYears, setExpandedYears] = useState<number[]>([]);
 
   if (!trainingFund.eligible) {
@@ -3092,6 +3217,21 @@ const TrainingFundBreakdown: React.FC<TrainingFundBreakdownProps> = ({ trainingF
   }
   const years = Object.keys(monthsByYear).map(Number).sort((a, b) => a - b);
 
+  // Helper: check if a month is within the limitation window
+  const isMonthClaimable = (month: [number, number]): boolean => {
+    if (!generalWindow?.effective_window_start) return true;
+    const windowStart = new Date(generalWindow.effective_window_start);
+    const monthDate = new Date(month[0], month[1] - 1, 1);
+    return monthDate >= windowStart;
+  };
+
+  // Helper: check if entire year is excluded
+  const isYearFullyExcluded = (year: number): boolean => {
+    if (!generalWindow?.effective_window_start) return false;
+    const yearMonths = monthsByYear[year] || [];
+    return yearMonths.length > 0 && yearMonths.every(m => !isMonthClaimable(m.month));
+  };
+
   // Helper to get effective rate from segments (weighted average)
   const getEffectiveRate = (m: TrainingFundMonthDetail): number => {
     if (!m.segments || m.segments.length === 0) return 0;
@@ -3123,6 +3263,16 @@ const TrainingFundBreakdown: React.FC<TrainingFundBreakdownProps> = ({ trainingF
 
   // Month columns for expanded view
   const monthColumns = [
+    {
+      title: '',
+      key: 'status',
+      width: 32,
+      render: (_: unknown, record: TrainingFundMonthDetail) => (
+        isMonthClaimable(record.month)
+          ? <Tooltip title="בתוך חלון ההתיישנות"><CheckCircleOutlined style={{ color: '#4ECDC4' }} /></Tooltip>
+          : <Tooltip title="התיישן"><ClockCircleOutlined style={{ color: '#FF6B6B' }} /></Tooltip>
+      ),
+    },
     {
       title: 'חודש',
       key: 'month',
@@ -3195,14 +3345,35 @@ const TrainingFundBreakdown: React.FC<TrainingFundBreakdownProps> = ({ trainingF
       title: 'נדרש',
       key: 'required',
       width: 100,
-      render: (_: unknown, record: TrainingFundMonthDetail) => (
-        <span className="ltr-number">{formatCurrency(record.month_required)}</span>
-      ),
+      render: (_: unknown, record: TrainingFundMonthDetail) => {
+        const excluded = !isMonthClaimable(record.month);
+        return (
+          <span
+            className="ltr-number"
+            style={{
+              color: excluded ? '#888' : '#4ECDC4',
+              textDecoration: excluded ? 'line-through' : 'none',
+            }}
+          >
+            {formatCurrency(record.month_required)}
+          </span>
+        );
+      },
     },
   ];
 
   // Year columns for summary table
   const yearColumns = [
+    {
+      title: '',
+      key: 'status',
+      width: 32,
+      render: (_: unknown, record: typeof yearSummaries[0]) => (
+        isYearFullyExcluded(record.year)
+          ? <Tooltip title="מחוץ לחלון ההתיישנות — התיישן"><ClockCircleOutlined style={{ color: '#FF6B6B' }} /></Tooltip>
+          : <Tooltip title="בתוך חלון ההתיישנות — ניתן לתבוע"><CheckCircleOutlined style={{ color: '#4ECDC4' }} /></Tooltip>
+      ),
+    },
     { title: 'שנה', dataIndex: 'year', key: 'year', width: 70 },
     { title: 'חודשים', dataIndex: 'monthsCount', key: 'months', width: 70 },
     { title: 'זכאים', dataIndex: 'eligibleCount', key: 'eligible', width: 70 },
@@ -3226,9 +3397,20 @@ const TrainingFundBreakdown: React.FC<TrainingFundBreakdownProps> = ({ trainingF
       title: 'שווי',
       key: 'totalValue',
       width: 110,
-      render: (_: unknown, record: typeof yearSummaries[0]) => (
-        <span className="ltr-number">{formatCurrency(record.totalValue)}</span>
-      ),
+      render: (_: unknown, record: typeof yearSummaries[0]) => {
+        const excluded = isYearFullyExcluded(record.year);
+        return (
+          <span
+            className="ltr-number"
+            style={{
+              color: excluded ? '#888' : '#4ECDC4',
+              textDecoration: excluded ? 'line-through' : 'none',
+            }}
+          >
+            {formatCurrency(record.totalValue)}
+          </span>
+        );
+      },
     },
   ];
 
@@ -3242,7 +3424,7 @@ const TrainingFundBreakdown: React.FC<TrainingFundBreakdownProps> = ({ trainingF
         pagination={false}
         size="small"
         style={{ margin: 0 }}
-        rowClassName={(record) => !record.eligible_this_month ? 'row-disabled' : ''}
+        rowClassName={(record) => !isMonthClaimable(record.month) ? 'row-excluded' : (!record.eligible_this_month ? 'row-disabled' : '')}
       />
     );
   };
@@ -3336,6 +3518,7 @@ const TrainingFundBreakdown: React.FC<TrainingFundBreakdownProps> = ({ trainingF
             );
           },
         }}
+        rowClassName={(record) => isYearFullyExcluded(record.year) ? 'row-excluded' : ''}
       />
     </Card>
   );
@@ -4053,6 +4236,10 @@ const ResultsView: React.FC<ResultsViewProps> = ({ ssot }) => {
     month_aggregates,
   } = ssot;
 
+  // Extract limitation windows for passing to components
+  const generalWindow = limitation_results?.windows?.find(w => w.type_id === 'general');
+  const filingDate = limitation_results?.timeline_data?.filing_date;
+
   return (
     <div className="results-view">
       <Title level={2} style={{ color: '#FFD93D', textAlign: 'center', marginBottom: 24 }}>
@@ -4099,7 +4286,14 @@ const ResultsView: React.FC<ResultsViewProps> = ({ ssot }) => {
 
       {/* ה. Holidays Breakdown */}
       {rights_results?.holidays && (
-        <div style={{ marginBottom: 24 }}><HolidaysBreakdown holidays={rights_results.holidays} /></div>
+        <div style={{ marginBottom: 24 }}>
+          <HolidaysBreakdown
+            holidays={rights_results.holidays}
+            limitation={limitation_results?.per_right?.holidays}
+            generalWindow={generalWindow}
+            filingDate={filingDate}
+          />
+        </div>
       )}
 
       {/* ו. Severance Breakdown */}
@@ -4118,6 +4312,8 @@ const ResultsView: React.FC<ResultsViewProps> = ({ ssot }) => {
           <RecreationBreakdown
             recreation={rights_results.recreation}
             limitation={limitation_results?.per_right?.recreation}
+            generalWindow={generalWindow}
+            filingDate={filingDate}
           />
         </div>
       )}
@@ -4128,6 +4324,8 @@ const ResultsView: React.FC<ResultsViewProps> = ({ ssot }) => {
           <PensionBreakdown
             pension={rights_results.pension}
             limitation={limitation_results?.per_right?.pension}
+            generalWindow={generalWindow}
+            filingDate={filingDate}
           />
         </div>
       )}
@@ -4138,6 +4336,8 @@ const ResultsView: React.FC<ResultsViewProps> = ({ ssot }) => {
           <TrainingFundBreakdown
             trainingFund={rights_results.training_fund}
             limitation={limitation_results?.per_right?.training_fund}
+            generalWindow={generalWindow}
+            filingDate={filingDate}
           />
         </div>
       )}

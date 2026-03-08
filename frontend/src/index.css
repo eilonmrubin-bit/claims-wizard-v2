@@ -566,3 +566,8 @@ body {
 .vacation-year-excluded td {
   opacity: 0.45;
 }
+
+/* Generic row excluded (limitation) - for all rights */
+.row-excluded td {
+  opacity: 0.45;
+}
