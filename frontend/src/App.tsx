@@ -918,7 +918,7 @@ function App() {
   const addTrainingFundTier = () => {
     updateField('training_fund_tiers', [
       ...(formData.training_fund_tiers || []),
-      { seniority_type: 'industry' as const, from_months: 0, to_months: 12, employer_rate: '0.075' }
+      { seniority_type: 'industry' as const, from_months: 0, to_months: null, employer_rate: '0.075' }
     ]);
   };
 
