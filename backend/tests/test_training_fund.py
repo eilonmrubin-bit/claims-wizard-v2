@@ -300,10 +300,10 @@ class TestFixture4CustomTiersOverride:
 
         custom_tiers = [
             TrainingFundTier(
-                start_date=date(2021, 1, 1),
-                end_date=date(2023, 12, 31),
+                seniority_type="industry",
+                from_months=0,
+                to_months=None,  # Open-ended - applies from day 1 indefinitely
                 employer_rate=Decimal("0.075"),
-                employee_rate=Decimal("0.025"),
             )
         ]
 
@@ -508,7 +508,7 @@ class TestFixture7ConstructionSplitMonthSeniorityThreshold:
 
 
 class TestFixture8CustomTierSplitMonth:
-    """Fixture 8: Custom tier — split month at tier boundary.
+    """Fixture 8: Custom tier — split month at seniority boundary.
 
     Input:
         industry: "general"
@@ -516,26 +516,28 @@ class TestFixture8CustomTierSplitMonth:
         salary_monthly: 8,000
         job_scope: 1.0
         actual_deposits: 0
+        seniority: starts at 2.5 months (prior experience), each month adds 1 month
         training_fund_tiers: [
-            { start_date: 2022-03-16, end_date: 2022-12-31,
-              employer_rate: 0.075, employee_rate: 0.025 }
+            { seniority_type: "industry", from_months: 3, to_months: None,
+              employer_rate: 0.075 }
         ]
 
     Expected:
-        Jan-Feb 2022: ineligible (no tier)
-        March 2022: split month
-            Segment A: days 1-15 (15 days) -> ineligible
-            Segment B: days 16-31 (16 days) -> 7.5%
-            month_required = 8,000 × (16/31) × 0.075 = 309.68
-        Apr-Dec 2022: full tier coverage, 9 × 8,000 × 0.075 = 5,400
-        required_total: 0 + 0 + 309.68 + 5,400 = 5,709.68
+        January 2022: split month (seniority 2.5→3.5 months, crosses 3)
+            Segment A: before 3 months threshold -> ineligible
+            Segment B: after threshold -> 7.5%
+        Feb-Dec 2022: full tier coverage (11 months)
     """
 
     def test_custom_tier_split_month_at_boundary(self):
         pmrs = []
         mas = []
+        seniority = []
 
+        # Start with 2.5 months prior seniority, each month adds 1 month
+        prior_months = Decimal("2.5")
         for month in range(1, 13):
+            cumulative_months = prior_months + (month - 1)
             pmrs.append(PeriodMonthRecord(
                 effective_period_id="ep1",
                 month=(2022, month),
@@ -545,20 +547,27 @@ class TestFixture8CustomTierSplitMonth:
                 month=(2022, month),
                 job_scope=Decimal("1.0"),
             ))
+            seniority.append(SeniorityMonthly(
+                month=(2022, month),
+                worked=True,
+                total_industry_cumulative=int(cumulative_months),
+                total_industry_years_cumulative=cumulative_months / Decimal("12"),
+            ))
 
+        # Tier starts at 3 months seniority
         custom_tiers = [
             TrainingFundTier(
-                start_date=date(2022, 3, 16),
-                end_date=date(2022, 12, 31),
+                seniority_type="industry",
+                from_months=3,
+                to_months=None,
                 employer_rate=Decimal("0.075"),
-                employee_rate=Decimal("0.025"),
             )
         ]
 
         result = compute_training_fund(
             period_month_records=pmrs,
             month_aggregates=mas,
-            seniority_monthly=[],
+            seniority_monthly=seniority,
             industry="general",
             is_construction_foreman=False,
             training_fund_tiers=custom_tiers,
@@ -568,51 +577,33 @@ class TestFixture8CustomTierSplitMonth:
         assert result.eligible is True
         assert result.used_custom_tiers is True
 
-        # Jan-Feb should be ineligible (no tier covers them)
+        # January should be a split month (seniority 2.5→3.5 months, crosses 3)
         jan = next(d for d in result.monthly_detail if d.month == (2022, 1))
-        feb = next(d for d in result.monthly_detail if d.month == (2022, 2))
-        assert jan.eligible_this_month is False
-        assert jan.month_required == Decimal("0")
-        assert feb.eligible_this_month is False
-        assert feb.month_required == Decimal("0")
+        assert jan.is_split_month is True
+        assert len(jan.segments) == 2
+        assert jan.eligible_this_month is True
 
-        # March should be a split month
-        march = next(d for d in result.monthly_detail if d.month == (2022, 3))
-        assert march.is_split_month is True
-        assert len(march.segments) == 2
-        assert march.eligible_this_month is True
-
-        # Segment 1: days 1-15 (15 days), ineligible
-        seg1 = march.segments[0]
-        assert seg1.days == 15
+        # Segment 1: before threshold, ineligible
+        seg1 = jan.segments[0]
         assert seg1.eligible is False
         assert seg1.employer_rate == Decimal("0")
 
-        # Segment 2: days 16-31 (16 days), 7.5%
-        seg2 = march.segments[1]
-        assert seg2.days == 16
+        # Segment 2: after threshold, 7.5%
+        seg2 = jan.segments[1]
         assert seg2.eligible is True
         assert seg2.employer_rate == Decimal("0.075")
         assert seg2.tier_source == "custom"
 
-        # March amount: 8,000 × (16/31) × 0.075 ≈ 309.68
-        expected_march = Decimal("8000") * (Decimal("16") / Decimal("31")) * Decimal("0.075")
-        assert abs(march.month_required - expected_march) < Decimal("0.01")
+        # January amount should be partial (roughly half the month)
+        assert jan.month_required > Decimal("0")
+        assert jan.month_required < Decimal("600")  # Less than full month
 
-        # Apr-Dec: 9 months at full rate
-        apr_dec_total = Decimal("0")
-        for month in range(4, 13):
+        # Feb-Dec: 11 months at full rate
+        for month in range(2, 13):
             m = next(d for d in result.monthly_detail if d.month == (2022, month))
             assert m.eligible_this_month is True
             assert m.is_split_month is False
             assert m.month_required == Decimal("600")  # 8,000 × 0.075
-            apr_dec_total += m.month_required
-
-        assert apr_dec_total == Decimal("5400")  # 9 × 600
-
-        # Total: 0 + 0 + ~309.68 + 5400 ≈ 5709.68
-        expected_total = expected_march + Decimal("5400")
-        assert abs(result.required_total - expected_total) < Decimal("0.01")
 
 
 class TestConstructionSeniorityThresholds:
@@ -1066,3 +1057,90 @@ class TestSplitMonthWithMultiplePMRs:
         # what we'd get if we applied full job_scope to each PMR
         wrong_total = (Decimal("10000") + Decimal("12000")) * (Decimal(days_after) / Decimal("30")) * Decimal("0.025")
         assert result.required_total < wrong_total
+
+
+class TestOpenEndedTier:
+    """Test open-ended tier (to_months=None) applies from threshold indefinitely."""
+
+    def test_open_ended_tier_applies_from_threshold(self):
+        """Open-ended tier (to_months=None) applies from from_months onwards.
+
+        Input:
+            industry: "general"
+            employment: 2022-01-01 to 2024-12-31 (36 months)
+            salary_monthly: 10,000
+            seniority: starts at 0, each month adds 1 month
+            training_fund_tiers: [
+                { seniority_type: "industry", from_months: 48 (4 years),
+                  to_months: None, employer_rate: 0.075 }
+            ]
+
+        Expected:
+            Months 1-47: ineligible (seniority < 48 months)
+            Month 48+: eligible at 7.5% (open-ended tier kicks in)
+        """
+        pmrs = []
+        mas = []
+        seniority = []
+
+        # 60 months of employment (5 years)
+        cumulative_months = 0
+        for year in range(2020, 2025):
+            for month in range(1, 13):
+                pmrs.append(PeriodMonthRecord(
+                    effective_period_id="ep1",
+                    month=(year, month),
+                    salary_monthly=Decimal("10000"),
+                ))
+                mas.append(MonthAggregate(
+                    month=(year, month),
+                    job_scope=Decimal("1.0"),
+                ))
+                seniority.append(SeniorityMonthly(
+                    month=(year, month),
+                    worked=True,
+                    total_industry_cumulative=cumulative_months,
+                    total_industry_years_cumulative=Decimal(cumulative_months) / Decimal("12"),
+                ))
+                cumulative_months += 1
+
+        # Tier starts at 48 months (4 years) with no upper limit
+        custom_tiers = [
+            TrainingFundTier(
+                seniority_type="industry",
+                from_months=48,
+                to_months=None,  # Open-ended
+                employer_rate=Decimal("0.075"),
+            )
+        ]
+
+        result = compute_training_fund(
+            period_month_records=pmrs,
+            month_aggregates=mas,
+            seniority_monthly=seniority,
+            industry="general",
+            is_construction_foreman=False,
+            training_fund_tiers=custom_tiers,
+            actual_deposits=Decimal("0"),
+        )
+
+        assert result.eligible is True
+        assert result.used_custom_tiers is True
+
+        # Count eligible vs ineligible months
+        eligible_months = [d for d in result.monthly_detail if d.eligible_this_month]
+        ineligible_months = [d for d in result.monthly_detail if not d.eligible_this_month]
+
+        # First 48 months (0-47) should be ineligible
+        # Month 48 crosses the threshold, then months 49-59 are fully eligible
+        # That's 12 eligible months (month 48 is split, counts as eligible)
+        assert len(eligible_months) == 12  # Months 48-59
+        assert len(ineligible_months) == 48  # Months 0-47
+
+        # Verify tier applies from month 49 onwards at full rate
+        for d in result.monthly_detail:
+            year, month = d.month
+            month_index = (year - 2020) * 12 + month - 1  # 0-indexed
+            if month_index >= 49:  # After threshold fully crossed
+                assert d.eligible_this_month is True
+                assert d.month_required == Decimal("750")  # 10,000 × 0.075

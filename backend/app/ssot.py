@@ -190,11 +190,18 @@ class SeniorityInput:
 
 @dataclass
 class TrainingFundTier:
-    """Custom training fund tier from personal contract."""
-    start_date: date
-    end_date: date
+    """Custom training fund tier from personal contract.
+
+    Defines employer contribution rate for a seniority range.
+    seniority_type: 'industry' (ותק ענפי) | 'employer' (ותק אצל מעסיק)
+    from_months: inclusive lower bound in months
+    to_months: exclusive upper bound in months. None = no upper limit (open-ended)
+    employer_rate: Decimal, e.g. Decimal("0.075") for 7.5%
+    """
+    seniority_type: str = "industry"       # "industry" | "employer"
+    from_months: int = 0
+    to_months: int | None = None           # None = ללא הגבלה עליונה
     employer_rate: Decimal = Decimal("0")
-    employee_rate: Decimal = Decimal("0")
 
 
 @dataclass
@@ -835,7 +842,6 @@ class TrainingFundSegment:
     days: int = 0
     days_total: int = 0
     employer_rate: Decimal = Decimal("0")
-    employee_rate: Decimal = Decimal("0")
     eligible: bool = True
     tier_source: str = "industry"  # "industry" | "custom"
     segment_required: Decimal = Decimal("0")

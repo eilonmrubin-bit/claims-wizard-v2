@@ -38,14 +38,20 @@ Add to `SSOT.input`:
 
 ```
 training_fund_tiers: List<{
-  start_date: date
-  end_date: date
+  seniority_type: "industry" | "employer"   // ותק ענפי או ותק אצל מעסיק
+  from_months: integer                       // גבול תחתון כולל בחודשים
+  to_months: integer | null                  // גבול עליון לא-כולל. null = ללא הגבלה
   employer_rate: decimal
-  employee_rate: decimal
 }>?
 ```
 
-This field is **optional**. If provided, it overrides the industry default rates for the specified date ranges. If not provided, the system uses industry defaults from `settings.training_fund_config`.
+This field is **optional**. If provided, it overrides the industry default rates when the worker's seniority falls within the specified range. If not provided, the system uses industry defaults from `settings.training_fund_config`.
+
+**Seniority types:**
+- `"industry"` — uses total industry seniority (`SSOT.seniority.total_industry_years_cumulative`)
+- `"employer"` — uses seniority at the specific employer (`SSOT.seniority.at_defendant_years_cumulative`)
+
+**Open-ended tiers:** Set `to_months: null` to create a tier that applies from `from_months` onwards indefinitely.
 
 **UI label:** "מדרגות קרן השתלמות לפי חוזה אישי"
 
@@ -159,12 +165,14 @@ employer_rate: 0.075, employee_rate: 0.025, eligible: true (from day 1)
 
 ### Custom tiers override
 ```
-function get_rate_for_month(month, custom_tiers, industry_defaults):
-  // Check if a custom tier covers this month
+function get_rate_for_month(month, seniority_years, custom_tiers, industry_defaults):
+  // Check if a custom tier covers this seniority level
+  seniority_months = seniority_years * 12
   for tier in custom_tiers:
-    if tier.start_date <= first_day_of(month) and tier.end_date >= last_day_of(month):
-      return { employer_rate: tier.employer_rate,
-               employee_rate: tier.employee_rate, eligible: true }
+    if tier.seniority_type matches the seniority being checked:
+      if seniority_months >= tier.from_months:
+        if tier.to_months is null or seniority_months < tier.to_months:
+          return { employer_rate: tier.employer_rate, eligible: true }
 
   // Fall back to industry defaults
   return industry_defaults.get_rate(month)
@@ -175,7 +183,7 @@ function get_rate_for_month(month, custom_tiers, industry_defaults):
 A **split month** occurs when a rate transition falls mid-month. Two cases:
 
 1. **Seniority threshold crossing (construction)** — the day the worker crosses 3 or 6 years of industry seniority falls inside a calendar month.
-2. **Custom tier boundary** — a `training_fund_tier.start_date` or `end_date` falls inside a calendar month.
+2. **Custom tier seniority boundary** — a `training_fund_tier.from_months` or `to_months` threshold is crossed mid-month based on the worker's seniority progression.
 
 In both cases, compute the month proportionally:
 
@@ -268,9 +276,9 @@ TrainingFundData {
       days: integer
       days_total: integer
       employer_rate: decimal
-      employee_rate: decimal
       eligible: boolean
-      segment_required: decimal          // salary_base × job_scope × (days/days_total) × employer_rate
+      tier_source: "industry" | "custom"
+      segment_required: decimal          // salary_base × hours_weight × (days/days_total) × employer_rate
     }>
   }>
 
@@ -398,6 +406,7 @@ Update `right_limitation_mapping`:
 7. **DO NOT** make construction entitlement retroactive when crossing 3/6 year threshold. Forward only.
 8. **DO NOT** compute general industry without custom tiers. It is not a default.
 9. **DO NOT** apply a single rate to an entire month when a threshold or tier boundary crosses mid-month. Use proportional day-based calculation (split month logic).
+10. **DO NOT** use date-based tier matching. Tiers are always seniority-based (`from_months`, `to_months`).
 
 ---
 
@@ -471,12 +480,13 @@ Input:
   job_scope: 1.0
   actual_deposits: 0
   training_fund_tiers: [
-    { start_date: 2021-01-01, end_date: 2023-12-31,
-      employer_rate: 0.075, employee_rate: 0.025 }
+    { seniority_type: "industry", from_months: 0, to_months: null,
+      employer_rate: 0.075 }
   ]
 
 Expected:
-  Custom tier covers all months → employer_rate = 7.5% for all months
+  Custom tier applies from day 1 (from_months=0) with no upper limit (to_months=null)
+  → employer_rate = 7.5% for all months
   required_total = 10,000 × 0.075 × 36 = 27,000
   claim_before_deductions = 27,000
 ```
@@ -539,7 +549,7 @@ Expected for April 2020:
   month_required: 133.33
 ```
 
-### Fixture 8: Custom tier — split month at tier boundary
+### Fixture 8: Custom tier — split month at seniority threshold
 
 ```
 Input:
@@ -548,23 +558,23 @@ Input:
   salary_monthly: 8,000
   job_scope: 1.0
   actual_deposits: 0
+  prior_industry_seniority: 2.5 months
   training_fund_tiers: [
-    { start_date: 2022-03-16, end_date: 2022-12-31,
-      employer_rate: 0.075, employee_rate: 0.025 }
+    { seniority_type: "industry", from_months: 3, to_months: null,
+      employer_rate: 0.075 }
   ]
 
 Explanation:
-  Jan–Feb 2022: no tier covers → industry default (general, no tiers) → eligible = false, amount = 0
-  March 2022: tier starts 2022-03-16 → split month (31 days):
-    Segment A: 2022-03-01 to 2022-03-15 → 15 days → rate = 0% (no tier, general ineligible)
-    Segment B: 2022-03-16 to 2022-03-31 → 16 days → rate = 7.5%
-    month_required = 8,000 × 1.0 × ((15/31) × 0.0 + (16/31) × 0.075)
-                   = 8,000 × 0.03871 = 309.68
-  Apr–Dec 2022: full tier coverage, 9 months × 8,000 × 0.075 = 5,400
+  Seniority progression: Jan starts at 2.5 months, ends at 3.5 months
+  January 2022: seniority crosses 3-month threshold mid-month → split month (31 days):
+    Segment A: before threshold → rate = 0% (seniority < 3 months, no tier matches)
+    Segment B: after threshold → rate = 7.5%
+    month_required = partial amount based on days after threshold
+  Feb–Dec 2022: full tier coverage, 11 months × 8,000 × 0.075 = 6,600
 
 Expected:
-  March 2022 is_split_month: true
-  March 2022 month_required: 309.68
-  required_total: 0 + 0 + 309.68 + 5,400 = 5,709.68
-  claim_before_deductions: 5,709.68
+  January 2022 is_split_month: true
+  January 2022 month_required: partial amount (< 600)
+  required_total: partial + 6,600
+  claim_before_deductions: same as required_total
 ```

@@ -99,14 +99,21 @@ def _get_construction_rate_for_seniority(
         return Decimal("0.05"), Decimal("0.025"), True
 
 
-def _find_custom_tier_for_date(
-    d: date,
+def _find_custom_tier_for_seniority(
+    seniority_years: Decimal,
     training_fund_tiers: list[TrainingFundTier],
+    seniority_type: str,  # "industry" | "employer"
 ) -> TrainingFundTier | None:
-    """Find the custom tier that covers a specific date, if any."""
+    """Find the custom tier that covers a specific seniority level."""
+    seniority_months = seniority_years * 12
     for tier in training_fund_tiers:
-        if tier.start_date <= d <= tier.end_date:
-            return tier
+        if tier.seniority_type != seniority_type:
+            continue
+        if seniority_months < tier.from_months:
+            continue
+        if tier.to_months is not None and seniority_months >= tier.to_months:
+            continue
+        return tier
     return None
 
 
@@ -171,11 +178,13 @@ def _build_month_segments(
     training_fund_tiers: list[TrainingFundTier],
     seniority_at_start: Decimal | None,
     seniority_at_end: Decimal | None,
-) -> list[tuple[date, date, Decimal, Decimal, bool, str]]:
+    employer_seniority_at_start: Decimal | None = None,
+    employer_seniority_at_end: Decimal | None = None,
+) -> list[tuple[date, date, Decimal, bool, str]]:
     """Build segments for a month based on rate transitions.
 
     Returns a list of segments, each as:
-    (start_date, end_date, employer_rate, employee_rate, eligible, tier_source)
+    (start_date, end_date, employer_rate, eligible, tier_source)
     """
     first_day = date(year, month, 1)
     last_day = _get_last_day_of_month(year, month)
@@ -192,21 +201,42 @@ def _build_month_segments(
             if crossing_date and first_day < crossing_date <= last_day:
                 transition_points.append(crossing_date)
 
-    # Custom tier boundaries
-    for tier in training_fund_tiers:
-        # Tier start: if it falls within the month (not on first day)
-        if first_day < tier.start_date <= last_day:
-            transition_points.append(tier.start_date)
-        # Tier end + 1 day: if the tier ends mid-month, the day after is a transition
-        tier_end_plus_one = tier.end_date + timedelta(days=1)
-        if first_day < tier_end_plus_one <= last_day:
-            transition_points.append(tier_end_plus_one)
+    # Custom tier seniority thresholds
+    if training_fund_tiers and seniority_at_start is not None and seniority_at_end is not None:
+        for tier in training_fund_tiers:
+            # Determine which seniority to use based on tier type
+            if tier.seniority_type == "employer":
+                tier_sen_start = employer_seniority_at_start
+                tier_sen_end = employer_seniority_at_end
+            else:  # "industry"
+                tier_sen_start = seniority_at_start
+                tier_sen_end = seniority_at_end
+
+            if tier_sen_start is None or tier_sen_end is None:
+                continue
+
+            # Check from_months threshold
+            threshold_years = Decimal(tier.from_months) / 12
+            crossing_date = _find_threshold_crossing_date(
+                threshold_years, tier_sen_start, tier_sen_end, first_day, last_day
+            )
+            if crossing_date and first_day < crossing_date <= last_day:
+                transition_points.append(crossing_date)
+
+            # Check to_months threshold (if defined)
+            if tier.to_months is not None:
+                threshold_years = Decimal(tier.to_months) / 12
+                crossing_date = _find_threshold_crossing_date(
+                    threshold_years, tier_sen_start, tier_sen_end, first_day, last_day
+                )
+                if crossing_date and first_day < crossing_date <= last_day:
+                    transition_points.append(crossing_date)
 
     # Sort and deduplicate
     transition_points = sorted(set(transition_points))
 
     # Build segments
-    segments: list[tuple[date, date, Decimal, Decimal, bool, str]] = []
+    segments: list[tuple[date, date, Decimal, bool, str]] = []
 
     for i, seg_start in enumerate(transition_points):
         if i + 1 < len(transition_points):
@@ -214,42 +244,49 @@ def _build_month_segments(
         else:
             seg_end = last_day
 
+        # Calculate seniority at segment start
+        if seniority_at_start is not None and seniority_at_end is not None:
+            seg_industry_seniority = _calculate_seniority_at_date(
+                seg_start, seniority_at_start, seniority_at_end, first_day, last_day
+            )
+        else:
+            seg_industry_seniority = Decimal("0")
+
+        if employer_seniority_at_start is not None and employer_seniority_at_end is not None:
+            seg_employer_seniority = _calculate_seniority_at_date(
+                seg_start, employer_seniority_at_start, employer_seniority_at_end, first_day, last_day
+            )
+        else:
+            seg_employer_seniority = Decimal("0")
+
         # Determine rate for this segment
-        # First check custom tier
-        tier = _find_custom_tier_for_date(seg_start, training_fund_tiers)
+        # First check custom tier (try industry seniority, then employer seniority)
+        tier = _find_custom_tier_for_seniority(seg_industry_seniority, training_fund_tiers, "industry")
+        if tier is None:
+            tier = _find_custom_tier_for_seniority(seg_employer_seniority, training_fund_tiers, "employer")
+
         if tier:
             employer_rate = tier.employer_rate
-            employee_rate = tier.employee_rate
             eligible = employer_rate > 0
             tier_source = "custom"
         else:
             # Industry defaults
             if industry == "construction":
-                # Calculate seniority at segment start
-                if seniority_at_start is not None and seniority_at_end is not None:
-                    seg_seniority = _calculate_seniority_at_date(
-                        seg_start, seniority_at_start, seniority_at_end, first_day, last_day
-                    )
-                else:
-                    seg_seniority = Decimal("0")
-
-                employer_rate, employee_rate, eligible = _get_construction_rate_for_seniority(
-                    seg_seniority, is_foreman
+                employer_rate, _, eligible = _get_construction_rate_for_seniority(
+                    seg_industry_seniority, is_foreman
                 )
                 tier_source = "industry"
             elif industry == "cleaning":
                 employer_rate = Decimal("0.075")
-                employee_rate = Decimal("0.025")
                 eligible = True
                 tier_source = "industry"
             else:
                 # General without custom tier - not eligible
                 employer_rate = Decimal("0")
-                employee_rate = Decimal("0")
                 eligible = False
                 tier_source = "industry"
 
-        segments.append((seg_start, seg_end, employer_rate, employee_rate, eligible, tier_source))
+        segments.append((seg_start, seg_end, employer_rate, eligible, tier_source))
 
     return segments
 
@@ -345,29 +382,35 @@ def compute_training_fund(
         # Get seniority data for this month
         seniority_data = seniority_lookup.get(pmr.month)
         seniority_at_start = seniority_data.total_industry_years_cumulative if seniority_data else None
+        employer_seniority_at_start = seniority_data.at_defendant_years_cumulative if seniority_data else None
 
         # Get next month's seniority for interpolation
         next_month = (year, month + 1) if month < 12 else (year + 1, 1)
         next_seniority_data = seniority_lookup.get(next_month)
         if next_seniority_data:
             seniority_at_end = next_seniority_data.total_industry_years_cumulative
+            employer_seniority_at_end = next_seniority_data.at_defendant_years_cumulative
         elif seniority_at_start is not None:
             # Approximate: add 1/12 year
             seniority_at_end = seniority_at_start + Decimal("1") / Decimal("12")
+            employer_seniority_at_end = (employer_seniority_at_start + Decimal("1") / Decimal("12")
+                                         if employer_seniority_at_start is not None else None)
         else:
             seniority_at_end = None
+            employer_seniority_at_end = None
 
         # Build segments for this month
         raw_segments = _build_month_segments(
             year, month, industry, is_construction_foreman,
-            training_fund_tiers, seniority_at_start, seniority_at_end
+            training_fund_tiers, seniority_at_start, seniority_at_end,
+            employer_seniority_at_start, employer_seniority_at_end
         )
 
         days_total = _get_days_in_month(year, month)
         segments: list[TrainingFundSegment] = []
         month_required = Decimal("0")
 
-        for seg_start, seg_end, emp_rate, ee_rate, eligible, tier_source in raw_segments:
+        for seg_start, seg_end, emp_rate, eligible, tier_source in raw_segments:
             seg_days = (seg_end - seg_start).days + 1
 
             if eligible:
@@ -381,7 +424,6 @@ def compute_training_fund(
                 days=seg_days,
                 days_total=days_total,
                 employer_rate=emp_rate,
-                employee_rate=ee_rate,
                 eligible=eligible,
                 tier_source=tier_source,
                 segment_required=segment_required,
