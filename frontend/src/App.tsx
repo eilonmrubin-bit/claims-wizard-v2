@@ -1900,94 +1900,86 @@ function App() {
                 label: 'זכויות נתבעות',
                 children: (
                   <>
+                  {/* Row 1: 4 toggles */}
+                  <Row gutter={24} style={{ marginBottom: 16 }}>
+                    <Col span={6}>
+                      <Space>
+                        <Switch
+                          checked={formData.right_toggles.overtime?.enabled !== false}
+                          onChange={(checked) => updateRightToggle('overtime', 'enabled', checked)}
+                        />
+                        <span style={{ fontWeight: 500 }}>שעות נוספות</span>
+                      </Space>
+                    </Col>
+                    <Col span={6}>
+                      <Space>
+                        <Switch
+                          checked={formData.right_toggles.holidays?.enabled !== false}
+                          onChange={(checked) => updateRightToggle('holidays', 'enabled', checked)}
+                        />
+                        <span style={{ fontWeight: 500 }}>חגים</span>
+                      </Space>
+                    </Col>
+                    <Col span={6}>
+                      <Space>
+                        <Switch
+                          checked={formData.right_toggles.severance?.enabled !== false}
+                          onChange={(checked) => updateRightToggle('severance', 'enabled', checked)}
+                        />
+                        <span style={{ fontWeight: 500 }}>פיצויי פיטורין</span>
+                      </Space>
+                    </Col>
+                    <Col span={6}>
+                      <Space>
+                        <Switch
+                          checked={formData.right_toggles.recreation?.enabled !== false}
+                          onChange={(checked) => updateRightToggle('recreation', 'enabled', checked)}
+                        />
+                        <span style={{ fontWeight: 500 }}>הבראה</span>
+                      </Space>
+                    </Col>
+                  </Row>
+                  {/* Row 2: 2 toggles */}
+                  <Row gutter={24} style={{ marginBottom: 16 }}>
+                    <Col span={6}>
+                      <Space>
+                        <Switch
+                          checked={formData.right_toggles.vacation?.enabled !== false}
+                          onChange={(checked) => updateRightToggle('vacation', 'enabled', checked)}
+                        />
+                        <span style={{ fontWeight: 500 }}>חופשה</span>
+                      </Space>
+                    </Col>
+                    <Col span={6}>
+                      <Space>
+                        <Switch
+                          checked={formData.right_toggles.pension?.enabled !== false}
+                          onChange={(checked) => updateRightToggle('pension', 'enabled', checked)}
+                        />
+                        <span style={{ fontWeight: 500 }}>פנסיה</span>
+                      </Space>
+                    </Col>
+                  </Row>
+                  {/* Row 3: Training fund toggle + Collapse */}
                   <Row gutter={24}>
-                    <Col span={6}>
-                      <div style={{ marginBottom: 16 }}>
-                        <Space>
-                          <Switch
-                            checked={formData.right_toggles.overtime?.enabled !== false}
-                            onChange={(checked) => updateRightToggle('overtime', 'enabled', checked)}
-                          />
-                          <span style={{ fontWeight: 500 }}>שעות נוספות</span>
-                        </Space>
-                      </div>
-                    </Col>
-                    <Col span={6}>
-                      <div style={{ marginBottom: 16 }}>
-                        <Space>
-                          <Switch
-                            checked={formData.right_toggles.holidays?.enabled !== false}
-                            onChange={(checked) => updateRightToggle('holidays', 'enabled', checked)}
-                          />
-                          <span style={{ fontWeight: 500 }}>חגים</span>
-                        </Space>
-                      </div>
-                    </Col>
-                    <Col span={6}>
-                      <div style={{ marginBottom: 16 }}>
-                        <Space>
-                          <Switch
-                            checked={formData.right_toggles.severance?.enabled !== false}
-                            onChange={(checked) => updateRightToggle('severance', 'enabled', checked)}
-                          />
-                          <span style={{ fontWeight: 500 }}>פיצויי פיטורין</span>
-                        </Space>
-                      </div>
-                    </Col>
-                    <Col span={6}>
-                      <div style={{ marginBottom: 16 }}>
-                        <Space>
-                          <Switch
-                            checked={formData.right_toggles.recreation?.enabled !== false}
-                            onChange={(checked) => updateRightToggle('recreation', 'enabled', checked)}
-                          />
-                          <span style={{ fontWeight: 500 }}>הבראה</span>
-                        </Space>
-                      </div>
-                    </Col>
-                    <Col span={6}>
-                      <div style={{ marginBottom: 16 }}>
-                        <Space>
-                          <Switch
-                            checked={formData.right_toggles.vacation?.enabled !== false}
-                            onChange={(checked) => updateRightToggle('vacation', 'enabled', checked)}
-                          />
-                          <span style={{ fontWeight: 500 }}>חופשה</span>
-                        </Space>
-                      </div>
-                      <div style={{ marginBottom: 16 }}>
-                        <Space>
-                          <Switch
-                            checked={formData.right_toggles.pension?.enabled !== false}
-                            onChange={(checked) => updateRightToggle('pension', 'enabled', checked)}
-                          />
-                          <span style={{ fontWeight: 500 }}>פנסיה</span>
-                        </Space>
-                      </div>
-                      <div style={{ marginBottom: 16 }}>
-                        <Space>
-                          <Switch
-                            checked={formData.right_toggles.training_fund?.enabled !== false}
-                            onChange={(checked) => updateRightToggle('training_fund', 'enabled', checked)}
-                          />
-                          <span style={{ fontWeight: 500 }}>קרן השתלמות</span>
-                        </Space>
-                      </div>
-                      {formData.right_toggles.training_fund?.enabled !== false && formData.industry === 'construction' && (
-                        <div style={{ marginBottom: 16 }}>
+                    <Col span={24}>
+                      <Space style={{ marginBottom: formData.right_toggles.training_fund?.enabled !== false ? 12 : 0 }}>
+                        <Switch
+                          checked={formData.right_toggles.training_fund?.enabled !== false}
+                          onChange={(checked) => updateRightToggle('training_fund', 'enabled', checked)}
+                        />
+                        <span style={{ fontWeight: 500 }}>קרן השתלמות</span>
+                        {formData.right_toggles.training_fund?.enabled !== false && formData.industry === 'construction' && (
                           <Checkbox
                             checked={formData.is_construction_foreman || false}
                             onChange={(e) => updateField('is_construction_foreman', e.target.checked)}
+                            style={{ marginRight: 16 }}
                           >
                             מנהל עבודה מוסמך
                           </Checkbox>
-                        </div>
-                      )}
-                    </Col>
-                  </Row>
-                  {formData.right_toggles.training_fund?.enabled !== false && (
-                    <Row style={{ marginTop: 16 }}>
-                      <Col span={24}>
+                        )}
+                      </Space>
+                      {formData.right_toggles.training_fund?.enabled !== false && (
                         <Collapse
                           items={[
                             {
@@ -2059,9 +2051,9 @@ function App() {
                             },
                           ]}
                         />
-                      </Col>
-                    </Row>
-                  )}
+                      )}
+                    </Col>
+                  </Row>
                   </>
                 ),
               },
