@@ -2080,14 +2080,19 @@ function App() {
                                     <Col span={5}>
                                       <Form.Item label="עד ותק (חודשים)" style={{ marginBottom: 0 }}>
                                         <Space.Compact style={{ width: '100%' }}>
-                                          <InputNumber
-                                            value={tier.to_months === null ? undefined : tier.to_months}
-                                            onChange={(v) => updateTrainingFundTier(index, 'to_months', v ?? 0)}
-                                            min={0}
-                                            disabled={tier.to_months === null}
-                                            placeholder={tier.to_months === null ? '∞' : undefined}
-                                            style={{ width: 'calc(100% - 32px)' }}
-                                          />
+                                          <div
+                                            style={{ width: 'calc(100% - 32px)', cursor: tier.to_months === null ? 'pointer' : 'default' }}
+                                            onClick={() => tier.to_months === null && updateTrainingFundTier(index, 'to_months', 0)}
+                                          >
+                                            <InputNumber
+                                              value={tier.to_months === null ? undefined : tier.to_months}
+                                              onChange={(v) => updateTrainingFundTier(index, 'to_months', v ?? 0)}
+                                              min={0}
+                                              disabled={tier.to_months === null}
+                                              placeholder={tier.to_months === null ? '∞' : undefined}
+                                              style={{ width: '100%', pointerEvents: tier.to_months === null ? 'none' : 'auto' }}
+                                            />
+                                          </div>
                                           <Button
                                             type={tier.to_months === null ? 'primary' : 'default'}
                                             onClick={() => updateTrainingFundTier(index, 'to_months', tier.to_months === null ? 0 : null)}
