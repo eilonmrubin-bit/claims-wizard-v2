@@ -6,7 +6,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Checkbox, Radio, InputNumber, Select, Button, Row, Col, Tooltip, Dropdown } from 'antd';
 import type { MenuProps } from 'antd';
-import { DeleteOutlined, PlusOutlined, CopyOutlined, SnippetsOutlined, EllipsisOutlined } from '@ant-design/icons';
+import { DeleteOutlined, PlusOutlined, CopyOutlined, SnippetsOutlined, EllipsisOutlined, ClearOutlined } from '@ant-design/icons';
 import TimeInput from './TimeInput';
 import type { PerDayShifts, ShiftInputMode, ShiftType, RestDay, ShiftEntry } from '../types';
 
@@ -220,6 +220,14 @@ export const WeekPanel: React.FC<WeekPanelProps> = ({
     // Don't clear clipboard — allow pasting to multiple days
   };
 
+  // Clear all days
+  const clearAllDays = () => {
+    onChange([], {});
+    setSelectedDay(null);
+    setCopiedDay(null);
+    setCopySourceDay(null);
+  };
+
   // Context menu for day cell
   const dayContextMenu = (day: number): MenuProps => ({
     items: [
@@ -250,19 +258,26 @@ export const WeekPanel: React.FC<WeekPanelProps> = ({
 
   return (
     <div className="week-panel" ref={weekPanelRef}>
-      {/* Week-level copy/paste buttons (for cyclic patterns) */}
-      {onCopyWeek && (
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 4, marginBottom: 8 }}>
-          <Button size="small" icon={<CopyOutlined />} onClick={onCopyWeek}>
-            העתק שבוע
-          </Button>
-          {hasCopiedWeek && (
-            <Button size="small" icon={<SnippetsOutlined />} type="primary" ghost onClick={onPasteWeek}>
-              הדבק שבוע
+      {/* Week-level buttons */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 4, marginBottom: 8 }}>
+        {onCopyWeek && (
+          <>
+            <Button size="small" icon={<CopyOutlined />} onClick={onCopyWeek}>
+              העתק שבוע
             </Button>
-          )}
-        </div>
-      )}
+            {hasCopiedWeek && (
+              <Button size="small" icon={<SnippetsOutlined />} type="primary" ghost onClick={onPasteWeek}>
+                הדבק שבוע
+              </Button>
+            )}
+          </>
+        )}
+        {workDays.length > 0 && (
+          <Button size="small" icon={<ClearOutlined />} danger onClick={clearAllDays}>
+            נקה הכל
+          </Button>
+        )}
+      </div>
 
       {/* 7-day cell row */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 16 }}>
