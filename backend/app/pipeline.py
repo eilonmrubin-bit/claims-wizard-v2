@@ -542,6 +542,7 @@ def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
                 is_construction_foreman=ssot.input.is_construction_foreman,
                 training_fund_tiers=ssot.input.training_fund_tiers,
                 actual_deposits=ssot.input.deductions_input.get("training_fund", Decimal("0")),
+                right_toggles=ssot.input.right_toggles,
             )
             ssot.rights_results.training_fund = training_fund_result
 

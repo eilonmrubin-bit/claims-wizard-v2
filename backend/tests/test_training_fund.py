@@ -860,3 +860,209 @@ class TestSegmentStructure:
         assert len(m.segments) == 1
         assert m.segments[0].days == 31  # January has 31 days
         assert m.segments[0].days_total == 31
+
+
+class TestRightToggles:
+    """Tests for right_toggles support."""
+
+    def test_disabled_toggle_returns_ineligible(self):
+        """When training_fund.enabled is False, should return ineligible."""
+        pmrs = [PeriodMonthRecord(
+            effective_period_id="ep1",
+            month=(2022, 1),
+            salary_monthly=Decimal("10000"),
+        )]
+        mas = [MonthAggregate(month=(2022, 1), job_scope=Decimal("1.0"))]
+
+        result = compute_training_fund(
+            period_month_records=pmrs,
+            month_aggregates=mas,
+            seniority_monthly=[],
+            industry="cleaning",
+            is_construction_foreman=False,
+            training_fund_tiers=[],
+            actual_deposits=Decimal("0"),
+            right_toggles={"training_fund": {"enabled": False}},
+        )
+
+        assert result.eligible is False
+        assert len(result.monthly_detail) == 0
+        assert result.required_total == Decimal("0")
+
+    def test_enabled_toggle_calculates_normally(self):
+        """When training_fund.enabled is True, should calculate normally."""
+        pmrs = [PeriodMonthRecord(
+            effective_period_id="ep1",
+            month=(2022, 1),
+            salary_monthly=Decimal("10000"),
+        )]
+        mas = [MonthAggregate(month=(2022, 1), job_scope=Decimal("1.0"))]
+
+        result = compute_training_fund(
+            period_month_records=pmrs,
+            month_aggregates=mas,
+            seniority_monthly=[],
+            industry="cleaning",
+            is_construction_foreman=False,
+            training_fund_tiers=[],
+            actual_deposits=Decimal("0"),
+            right_toggles={"training_fund": {"enabled": True}},
+        )
+
+        assert result.eligible is True
+        assert result.required_total == Decimal("750")  # 10,000 × 0.075
+
+    def test_no_toggles_calculates_normally(self):
+        """When right_toggles is None, should calculate normally."""
+        pmrs = [PeriodMonthRecord(
+            effective_period_id="ep1",
+            month=(2022, 1),
+            salary_monthly=Decimal("10000"),
+        )]
+        mas = [MonthAggregate(month=(2022, 1), job_scope=Decimal("1.0"))]
+
+        result = compute_training_fund(
+            period_month_records=pmrs,
+            month_aggregates=mas,
+            seniority_monthly=[],
+            industry="cleaning",
+            is_construction_foreman=False,
+            training_fund_tiers=[],
+            actual_deposits=Decimal("0"),
+            right_toggles=None,
+        )
+
+        assert result.eligible is True
+        assert result.required_total == Decimal("750")
+
+
+class TestSplitMonthWithMultiplePMRs:
+    """Test combined scenario: split month at seniority threshold + two PMRs."""
+
+    def test_split_month_with_two_pmrs_construction(self):
+        """Split month + two PMRs: each PMR gets same segments but weighted by hours.
+
+        Input:
+            industry: "construction"
+            is_construction_foreman: false
+            Month: April 2023 (30 days)
+            Two PMRs:
+                PMR A: salary_monthly=10,000 | total_regular_hours=60
+                PMR B: salary_monthly=12,000 | total_regular_hours=90
+            month_total_regular_hours: 150
+            Seniority at start of April: 2.9 years
+            Seniority at end of April: 3.0 years → threshold crossed mid-April
+
+        Expected:
+            hours_weight_A = 60/150 = 0.4
+            hours_weight_B = 90/150 = 0.6
+            Both PMRs get is_split_month=True with same segments
+            Segment before threshold: rate=0%, amount=0
+            Segment after threshold: rate=2.5%
+            PMR A month_required = 10,000 × 0.4 × (days_after/30) × 0.025
+            PMR B month_required = 12,000 × 0.6 × (days_after/30) × 0.025
+            required_total = sum of both (no double-count)
+        """
+        pmrs = [
+            PeriodMonthRecord(
+                effective_period_id="ep1",
+                month=(2023, 4),
+                salary_monthly=Decimal("10000"),
+                total_regular_hours=Decimal("60"),
+            ),
+            PeriodMonthRecord(
+                effective_period_id="ep2",
+                month=(2023, 4),
+                salary_monthly=Decimal("12000"),
+                total_regular_hours=Decimal("90"),
+            ),
+        ]
+
+        mas = [MonthAggregate(
+            month=(2023, 4),
+            total_regular_hours=Decimal("150"),
+            job_scope=Decimal("1.0"),
+        )]
+
+        # Seniority crosses 3-year threshold during April
+        # At start of April: 2.85 years (34.2 months)
+        # At start of May: 3.1 years (37.2 months)
+        # Threshold of 3.0 years crosses at approximately day 18 (60% through month)
+        seniority = [
+            SeniorityMonthly(
+                month=(2023, 4),
+                worked=True,
+                total_industry_cumulative=34,
+                total_industry_years_cumulative=Decimal("2.85"),
+            ),
+            SeniorityMonthly(
+                month=(2023, 5),
+                worked=True,
+                total_industry_cumulative=37,
+                total_industry_years_cumulative=Decimal("3.1"),
+            ),
+        ]
+
+        result = compute_training_fund(
+            period_month_records=pmrs,
+            month_aggregates=mas,
+            seniority_monthly=seniority,
+            industry="construction",
+            is_construction_foreman=False,
+            training_fund_tiers=[],
+            actual_deposits=Decimal("0"),
+        )
+
+        assert result.eligible is True
+        assert len(result.monthly_detail) == 2
+
+        # Find PMR A and PMR B
+        pmr_a = next(d for d in result.monthly_detail if d.salary_base == Decimal("10000"))
+        pmr_b = next(d for d in result.monthly_detail if d.salary_base == Decimal("12000"))
+
+        # Both should be split months
+        assert pmr_a.is_split_month is True
+        assert pmr_b.is_split_month is True
+
+        # Both should have 2 segments
+        assert len(pmr_a.segments) == 2
+        assert len(pmr_b.segments) == 2
+
+        # Verify hours_weight
+        assert pmr_a.hours_weight == Decimal("60") / Decimal("150")  # 0.4
+        assert pmr_b.hours_weight == Decimal("90") / Decimal("150")  # 0.6
+
+        # Both PMRs should have same segment structure
+        # Segment 1: before threshold (ineligible)
+        assert pmr_a.segments[0].eligible is False
+        assert pmr_a.segments[0].employer_rate == Decimal("0")
+        assert pmr_b.segments[0].eligible is False
+        assert pmr_b.segments[0].employer_rate == Decimal("0")
+
+        # Segment 2: after threshold (2.5%)
+        assert pmr_a.segments[1].eligible is True
+        assert pmr_a.segments[1].employer_rate == Decimal("0.025")
+        assert pmr_b.segments[1].eligible is True
+        assert pmr_b.segments[1].employer_rate == Decimal("0.025")
+
+        # Days should be the same for both PMRs
+        assert pmr_a.segments[0].days == pmr_b.segments[0].days
+        assert pmr_a.segments[1].days == pmr_b.segments[1].days
+        assert pmr_a.segments[0].days + pmr_a.segments[1].days == 30
+
+        # Calculate expected amounts
+        days_after = pmr_a.segments[1].days
+        expected_a = Decimal("10000") * Decimal("0.4") * (Decimal(days_after) / Decimal("30")) * Decimal("0.025")
+        expected_b = Decimal("12000") * Decimal("0.6") * (Decimal(days_after) / Decimal("30")) * Decimal("0.025")
+
+        assert abs(pmr_a.month_required - expected_a) < Decimal("0.01")
+        assert abs(pmr_b.month_required - expected_b) < Decimal("0.01")
+
+        # Total should be sum of both
+        expected_total = expected_a + expected_b
+        assert abs(result.required_total - expected_total) < Decimal("0.01")
+
+        # Verify no double-counting: total should be significantly less than
+        # what we'd get if we applied full job_scope to each PMR
+        wrong_total = (Decimal("10000") + Decimal("12000")) * (Decimal(days_after) / Decimal("30")) * Decimal("0.025")
+        assert result.required_total < wrong_total

@@ -263,6 +263,7 @@ def compute_training_fund(
     training_fund_tiers: list[TrainingFundTier],
     actual_deposits: Decimal,
     settings_path: Path | None = None,
+    right_toggles: dict | None = None,
 ) -> TrainingFundData:
     """Compute training fund contribution claims.
 
@@ -275,10 +276,15 @@ def compute_training_fund(
         training_fund_tiers: Optional custom contract tiers that override industry defaults
         actual_deposits: Actual employer deposits made (for display only)
         settings_path: Optional path to settings.json
+        right_toggles: Toggle settings (check training_fund.enabled)
 
     Returns:
         TrainingFundData with eligibility, monthly detail, and claim totals
     """
+    # Check if training fund is enabled
+    if right_toggles and right_toggles.get("training_fund", {}).get("enabled") is False:
+        return TrainingFundData(eligible=False, industry=industry)
+
     # Load industry configuration
     load_training_fund_config(settings_path)
 
