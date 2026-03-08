@@ -198,7 +198,7 @@ class TrainingFundTier:
     to_months: exclusive upper bound in months. None = no upper limit (open-ended)
     employer_rate: Decimal, e.g. Decimal("0.075") for 7.5%
     """
-    seniority_type: str = "industry"       # "industry" | "employer"
+    seniority_type: str = "employer"       # "employer" | "industry"
     from_months: int = 0
     to_months: int | None = None           # None = ללא הגבלה עליונה
     employer_rate: Decimal = Decimal("0")

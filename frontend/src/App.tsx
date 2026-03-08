@@ -922,7 +922,7 @@ function App() {
     ]);
   };
 
-  const updateTrainingFundTier = (index: number, field: keyof import('./types').TrainingFundTier, value: string | number) => {
+  const updateTrainingFundTier = (index: number, field: keyof import('./types').TrainingFundTier, value: string | number | null) => {
     const updated = [...(formData.training_fund_tiers || [])];
     updated[index] = { ...updated[index], [field]: value };
     updateField('training_fund_tiers', updated);
@@ -930,6 +930,57 @@ function App() {
 
   const removeTrainingFundTier = (index: number) => {
     updateField('training_fund_tiers', (formData.training_fund_tiers || []).filter((_, i) => i !== index));
+  };
+
+  // Training fund tier validation
+  const getTrainingFundTierErrors = (): string[] => {
+    const tiers = formData.training_fund_tiers || [];
+    const errors: string[] = [];
+
+    // Check for multiple infinity tiers per seniority type
+    const infinityByType: Record<string, number> = {};
+    tiers.forEach((tier, idx) => {
+      if (tier.to_months === null) {
+        const key = tier.seniority_type;
+        if (infinityByType[key] !== undefined) {
+          errors.push(`לא ניתן להגדיר שתי מדרגות "עד אינסוף" לאותו סוג ותק (שורות ${infinityByType[key] + 1} ו-${idx + 1})`);
+        } else {
+          infinityByType[key] = idx;
+        }
+      }
+    });
+
+    // Check for from >= to (only if to_months is not null)
+    tiers.forEach((tier, idx) => {
+      if (tier.to_months !== null && tier.from_months >= tier.to_months) {
+        errors.push(`שורה ${idx + 1}: "מותק" חייב להיות קטן מ"עד ותק"`);
+      }
+    });
+
+    // Check for overlapping ranges within same seniority type
+    const tiersByType: Record<string, Array<{ idx: number; from: number; to: number | null }>> = {};
+    tiers.forEach((tier, idx) => {
+      const key = tier.seniority_type;
+      if (!tiersByType[key]) tiersByType[key] = [];
+      tiersByType[key].push({ idx, from: tier.from_months, to: tier.to_months });
+    });
+
+    Object.entries(tiersByType).forEach(([_type, typeTiers]) => {
+      for (let i = 0; i < typeTiers.length; i++) {
+        for (let j = i + 1; j < typeTiers.length; j++) {
+          const a = typeTiers[i];
+          const b = typeTiers[j];
+          const aTo = a.to === null ? Infinity : a.to;
+          const bTo = b.to === null ? Infinity : b.to;
+          // Check if ranges overlap
+          if (a.from < bTo && b.from < aTo) {
+            errors.push(`חפיפה בין שורה ${a.idx + 1} לשורה ${b.idx + 1}`);
+          }
+        }
+      }
+    });
+
+    return errors;
   };
 
   // Deductions handlers
@@ -2028,12 +2079,23 @@ function App() {
                                     </Col>
                                     <Col span={5}>
                                       <Form.Item label="עד ותק (חודשים)" style={{ marginBottom: 0 }}>
-                                        <InputNumber
-                                          value={tier.to_months}
-                                          onChange={(v) => updateTrainingFundTier(index, 'to_months', v ?? 0)}
-                                          min={0}
-                                          style={{ width: '100%' }}
-                                        />
+                                        <Space.Compact style={{ width: '100%' }}>
+                                          <InputNumber
+                                            value={tier.to_months === null ? undefined : tier.to_months}
+                                            onChange={(v) => updateTrainingFundTier(index, 'to_months', v ?? 0)}
+                                            min={0}
+                                            disabled={tier.to_months === null}
+                                            placeholder={tier.to_months === null ? '∞' : undefined}
+                                            style={{ width: 'calc(100% - 32px)' }}
+                                          />
+                                          <Button
+                                            type={tier.to_months === null ? 'primary' : 'default'}
+                                            onClick={() => updateTrainingFundTier(index, 'to_months', tier.to_months === null ? 0 : null)}
+                                            style={{ fontWeight: 'bold' }}
+                                          >
+                                            ∞
+                                          </Button>
+                                        </Space.Compact>
                                       </Form.Item>
                                     </Col>
                                     <Col span={5}>
@@ -2057,6 +2119,13 @@ function App() {
                                 <Button type="dashed" onClick={addTrainingFundTier} icon={<PlusOutlined />} block>
                                   הוסף מדרגה
                                 </Button>
+                                {getTrainingFundTierErrors().length > 0 && (
+                                  <div style={{ marginTop: 12, padding: 8, background: 'rgba(255,77,79,0.1)', borderRadius: 4, border: '1px solid #ff4d4f' }}>
+                                    {getTrainingFundTierErrors().map((error, i) => (
+                                      <div key={i} style={{ color: '#ff4d4f', fontSize: 12 }}>⚠ {error}</div>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
                             ),
                             },

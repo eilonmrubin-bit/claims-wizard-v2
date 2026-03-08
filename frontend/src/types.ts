@@ -141,7 +141,7 @@ export type SeniorityType = 'industry' | 'employer';
 export interface TrainingFundTier {
   seniority_type: SeniorityType;  // industry = ותק ענפי, employer = ותק אצל מעסיק
   from_months: number;     // Starting seniority in months
-  to_months: number;       // Ending seniority in months
+  to_months: number | null;  // Ending seniority in months, null = infinity
   employer_rate: string;   // Decimal as string, e.g. "0.075"
 }
 
