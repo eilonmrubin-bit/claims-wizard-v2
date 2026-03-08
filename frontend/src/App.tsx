@@ -953,7 +953,7 @@ function App() {
     // Check for from >= to (only if to_months is not null)
     tiers.forEach((tier, idx) => {
       if (tier.to_months !== null && tier.from_months >= tier.to_months) {
-        errors.push(`שורה ${idx + 1}: "מותק" חייב להיות קטן מ"עד ותק"`);
+        errors.push(`שורה ${idx + 1}: "מ-ותק" חייב להיות קטן מ"עד ותק"`);
       }
     });
 
@@ -2068,7 +2068,7 @@ function App() {
                                       </Form.Item>
                                     </Col>
                                     <Col span={5}>
-                                      <Form.Item label="מותק (חודשים)" style={{ marginBottom: 0 }}>
+                                      <Form.Item label="מ-ותק (חודשים)" style={{ marginBottom: 0 }}>
                                         <InputNumber
                                           value={tier.from_months}
                                           onChange={(v) => updateTrainingFundTier(index, 'from_months', v ?? 0)}
