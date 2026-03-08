@@ -1955,7 +1955,7 @@ function App() {
                             items={[
                               {
                                 key: 'training_fund_tiers',
-                                label: `קרן השתלמות — חוזה אישי (${(formData.training_fund_tiers || []).length})`,
+                                label: <span style={{ whiteSpace: 'nowrap' }}>{`קרן השתלמות — חוזה אישי (${(formData.training_fund_tiers || []).length})`}</span>,
                             children: (
                               <div>
                                 <div style={{ marginBottom: 12, fontSize: 12, color: '#88D8E0' }}>
