@@ -918,11 +918,11 @@ function App() {
   const addTrainingFundTier = () => {
     updateField('training_fund_tiers', [
       ...(formData.training_fund_tiers || []),
-      { start_date: '', end_date: '', employer_rate: '0', employee_rate: '0' }
+      { seniority_type: 'industry' as const, from_months: 0, to_months: 12, employer_rate: '0.075' }
     ]);
   };
 
-  const updateTrainingFundTier = (index: number, field: keyof import('./types').TrainingFundTier, value: string) => {
+  const updateTrainingFundTier = (index: number, field: keyof import('./types').TrainingFundTier, value: string | number) => {
     const updated = [...(formData.training_fund_tiers || [])];
     updated[index] = { ...updated[index], [field]: value };
     updateField('training_fund_tiers', updated);
@@ -1996,28 +1996,44 @@ function App() {
                               children: (
                               <div>
                                 <div style={{ marginBottom: 12, fontSize: 12, color: '#88D8E0' }}>
-                                  מדרגות חוזה אישי עוקפות את ברירת המחדל הענפית לתקופה המוגדרת.
-                                  חודש שאינו מכוסה על ידי מדרגה חוזרת לברירת מחדל.
+                                  מדרגות חוזה אישי עוקפות את ברירת המחדל הענפית לפי טווח ותק.
+                                  ותק שאינו מכוסה על ידי מדרגה חוזר לברירת מחדל.
                                 </div>
                                 {(formData.training_fund_tiers || []).map((tier, index) => (
                                   <Row gutter={16} align="middle" key={index} style={{ marginBottom: 8 }}>
-                                    <Col span={6}>
-                                      <Form.Item label="מתאריך" style={{ marginBottom: 0 }}>
-                                        <DateInput
-                                          value={tier.start_date}
-                                          onChange={(v) => updateTrainingFundTier(index, 'start_date', v)}
+                                    <Col span={5}>
+                                      <Form.Item label="סוג ותק" style={{ marginBottom: 0 }}>
+                                        <Select
+                                          value={tier.seniority_type}
+                                          onChange={(v) => updateTrainingFundTier(index, 'seniority_type', v)}
+                                          style={{ width: '100%' }}
+                                        >
+                                          <Select.Option value="industry">ותק ענפי</Select.Option>
+                                          <Select.Option value="employer">ותק אצל מעסיק</Select.Option>
+                                        </Select>
+                                      </Form.Item>
+                                    </Col>
+                                    <Col span={5}>
+                                      <Form.Item label="מותק (חודשים)" style={{ marginBottom: 0 }}>
+                                        <InputNumber
+                                          value={tier.from_months}
+                                          onChange={(v) => updateTrainingFundTier(index, 'from_months', v ?? 0)}
+                                          min={0}
+                                          style={{ width: '100%' }}
                                         />
                                       </Form.Item>
                                     </Col>
-                                    <Col span={6}>
-                                      <Form.Item label="עד תאריך" style={{ marginBottom: 0 }}>
-                                        <DateInput
-                                          value={tier.end_date}
-                                          onChange={(v) => updateTrainingFundTier(index, 'end_date', v)}
+                                    <Col span={5}>
+                                      <Form.Item label="עד ותק (חודשים)" style={{ marginBottom: 0 }}>
+                                        <InputNumber
+                                          value={tier.to_months}
+                                          onChange={(v) => updateTrainingFundTier(index, 'to_months', v ?? 0)}
+                                          min={0}
+                                          style={{ width: '100%' }}
                                         />
                                       </Form.Item>
                                     </Col>
-                                    <Col span={6}>
+                                    <Col span={5}>
                                       <Form.Item label="אחוז הפרשה" style={{ marginBottom: 0 }}>
                                         <InputNumber
                                           value={parseFloat(tier.employer_rate) * 100 || undefined}
@@ -2030,7 +2046,7 @@ function App() {
                                         />
                                       </Form.Item>
                                     </Col>
-                                    <Col span={4} style={{ paddingTop: 30 }}>
+                                    <Col span={2} style={{ paddingTop: 30 }}>
                                       <Button danger icon={<DeleteOutlined />} onClick={() => removeTrainingFundTier(index)} />
                                     </Col>
                                   </Row>

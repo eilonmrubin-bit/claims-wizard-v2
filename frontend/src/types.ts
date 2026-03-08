@@ -136,11 +136,13 @@ export type District = 'jerusalem' | 'tel_aviv' | 'haifa' | 'south' | 'galil';
 
 export type TerminationReason = 'fired' | 'resigned_as_fired' | 'resigned';
 
+export type SeniorityType = 'industry' | 'employer';
+
 export interface TrainingFundTier {
-  start_date: string;  // YYYY-MM-DD
-  end_date: string;    // YYYY-MM-DD
-  employer_rate: string;  // Decimal as string, e.g. "0.075"
-  employee_rate: string;
+  seniority_type: SeniorityType;  // industry = ותק ענפי, employer = ותק אצל מעסיק
+  from_months: number;     // Starting seniority in months
+  to_months: number;       // Ending seniority in months
+  employer_rate: string;   // Decimal as string, e.g. "0.075"
 }
 
 export interface SSOTInput {
