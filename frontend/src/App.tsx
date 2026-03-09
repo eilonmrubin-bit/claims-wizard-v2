@@ -1998,7 +1998,7 @@ function App() {
                           <Radio value="total_plus_pattern">
                             סה״כ ותק ענפי + חישוב מדפוס
                           </Radio>
-                          <Radio value="matash_pdf">חילוץ מקובץ מת״ש (בקרוב)</Radio>
+                          <Radio value="matash_pdf" disabled>חילוץ מקובץ מת״ש (בקרוב)</Radio>
                         </Space>
                       </Radio.Group>
                     </Form.Item>
