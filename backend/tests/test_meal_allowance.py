@@ -4,7 +4,7 @@ Test cases from skill §13.
 """
 
 import pytest
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from app.modules.meal_allowance import compute_meal_allowance
@@ -14,6 +14,7 @@ from app.ssot import (
     VisitGroup,
     EmploymentPeriod,
     MealAllowanceData,
+    DailyRecord,
 )
 
 
@@ -75,6 +76,41 @@ def make_employment_period(
     )
 
 
+def make_daily_records(
+    start: date,
+    end: date,
+    work_days: list[int] = None,
+) -> list[DailyRecord]:
+    """Helper to create daily records for a date range.
+
+    Args:
+        start: Start date
+        end: End date
+        work_days: List of days of week that are work days (0=Sun..6=Sat).
+                   Default: [0,1,2,3,4] (Sun-Thu)
+
+    Returns:
+        List of DailyRecord objects
+    """
+    if work_days is None:
+        work_days = [0, 1, 2, 3, 4]  # Sun-Thu
+
+    records = []
+    current = start
+    while current <= end:
+        dow = (current.weekday() + 1) % 7  # Convert to Sun=0..Sat=6
+        is_work = dow in work_days
+        records.append(DailyRecord(
+            date=current,
+            effective_period_id="EP1",
+            day_of_week=dow,
+            is_work_day=is_work,
+            is_rest_day=(dow == 6),  # Saturday
+        ))
+        current += timedelta(days=1)
+    return records
+
+
 class TestCase1ConstructionWeeklyLodgingFullYear:
     """Case 1: Construction, weekly lodging, 4 nights/week, full year 2024.
 
@@ -110,10 +146,14 @@ class TestCase1ConstructionWeeklyLodgingFullYear:
         def get_rate(d: date) -> Decimal:
             return Decimal("143.50")
 
+        # Generate daily records for all work days (Sun-Thu)
+        daily_records = make_daily_records(date(2024, 1, 1), date(2024, 12, 31))
+
         result = compute_meal_allowance(
             industry="construction",
             lodging_input=lodging_input,
             employment_periods=employment_periods,
+            daily_records=daily_records,
             get_rate=get_rate,
             right_enabled=True,
         )
@@ -165,10 +205,14 @@ class TestCase2RateChangeMidEmployment:
             else:
                 return Decimal("124.20")
 
+        # Generate daily records for all work days (Sun-Thu)
+        daily_records = make_daily_records(date(2017, 1, 1), date(2017, 12, 31))
+
         result = compute_meal_allowance(
             industry="construction",
             lodging_input=lodging_input,
             employment_periods=employment_periods,
+            daily_records=daily_records,
             get_rate=get_rate,
             right_enabled=True,
         )
@@ -210,10 +254,14 @@ class TestCase3MonthlyLodging:
         def get_rate(d: date) -> Decimal:
             return Decimal("143.50")
 
+        # Monthly pattern doesn't use daily_records, but we pass empty list
+        daily_records: list[DailyRecord] = []
+
         result = compute_meal_allowance(
             industry="construction",
             lodging_input=lodging_input,
             employment_periods=employment_periods,
+            daily_records=daily_records,
             get_rate=get_rate,
             right_enabled=True,
         )
@@ -252,6 +300,7 @@ class TestNotConstruction:
             industry="general",
             lodging_input=lodging_input,
             employment_periods=employment_periods,
+            daily_records=[],
             get_rate=get_rate,
             right_enabled=True,
         )
@@ -275,6 +324,7 @@ class TestNoLodgingInput:
             industry="construction",
             lodging_input=None,
             employment_periods=employment_periods,
+            daily_records=[],
             get_rate=get_rate,
             right_enabled=True,
         )
@@ -310,6 +360,7 @@ class TestDisabled:
             industry="construction",
             lodging_input=lodging_input,
             employment_periods=employment_periods,
+            daily_records=[],
             get_rate=get_rate,
             right_enabled=False,
         )
@@ -343,6 +394,7 @@ class TestPatternTypeNone:
             industry="construction",
             lodging_input=lodging_input,
             employment_periods=employment_periods,
+            daily_records=[],
             get_rate=get_rate,
             right_enabled=True,
         )

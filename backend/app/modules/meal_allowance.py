@@ -21,12 +21,13 @@ from app.ssot import (
     EmploymentPeriod,
     MealAllowanceData,
     MealAllowanceMonthlyBreakdown,
+    DailyRecord,
     total_nights,
 )
 
 
 def count_work_weeks(start: date, end: date) -> Decimal:
-    """Count work weeks (as a decimal) that fall within the date range.
+    """Count calendar weeks (as a decimal) that fall within the date range.
 
     A week is counted proportionally based on how many days fall in the range.
     Uses Mon-Sun week boundaries.
@@ -36,7 +37,7 @@ def count_work_weeks(start: date, end: date) -> Decimal:
         end: End date (inclusive)
 
     Returns:
-        Decimal number of work weeks
+        Decimal number of calendar weeks
     """
     if start > end:
         return Decimal("0")
@@ -49,6 +50,101 @@ def count_work_weeks(start: date, end: date) -> Decimal:
     weeks = Decimal(total_days) / Decimal("7")
 
     return weeks
+
+
+def count_actual_work_weeks(
+    start: date,
+    end: date,
+    daily_records: list[DailyRecord],
+) -> Decimal:
+    """Count work weeks that have at least one work day in the date range.
+
+    For cyclic patterns, weeks without work days should not count for lodging.
+
+    Args:
+        start: Start date (inclusive)
+        end: End date (inclusive)
+        daily_records: List of daily records with is_work_day flag
+
+    Returns:
+        Decimal number of work weeks (weeks with at least one work day)
+    """
+    if start > end:
+        return Decimal("0")
+
+    # Group daily_records by week (Sun-Sat, using ISO week adjusted for Sun start)
+    # Week key = (year, week_number) where week starts on Sunday
+    def get_week_key(d: date) -> tuple[int, int]:
+        # Sunday = 0, so we use (date - days_since_sunday) as week start
+        days_since_sunday = (d.weekday() + 1) % 7
+        week_start = d - timedelta(days=days_since_sunday)
+        return (week_start.year, week_start.month, week_start.day)
+
+    # Find all weeks in the range
+    weeks_with_work: set[tuple[int, int, int]] = set()
+    all_weeks_in_range: set[tuple[int, int, int]] = set()
+
+    current = start
+    while current <= end:
+        week_key = get_week_key(current)
+        all_weeks_in_range.add(week_key)
+        current += timedelta(days=1)
+
+    # Check which weeks have work days
+    for record in daily_records:
+        if record.date < start or record.date > end:
+            continue
+        if record.is_work_day:
+            week_key = get_week_key(record.date)
+            weeks_with_work.add(week_key)
+
+    # For weeks that span the boundaries, we need to pro-rate
+    # For simplicity, count full weeks with work
+    # A more accurate method would count partial weeks proportionally
+
+    # Count full work weeks
+    work_week_count = len(weeks_with_work)
+
+    # Handle partial weeks at boundaries
+    # For start boundary: count fraction of first week in range
+    # For end boundary: count fraction of last week in range
+    first_week_key = get_week_key(start)
+    last_week_key = get_week_key(end)
+
+    # If the range spans multiple weeks, handle boundary fractions
+    if first_week_key != last_week_key:
+        # First week: what fraction is in range?
+        days_since_sunday_start = (start.weekday() + 1) % 7
+        days_in_first_week = 7 - days_since_sunday_start
+        first_week_fraction = Decimal(days_in_first_week) / Decimal(7)
+
+        # Last week: what fraction is in range?
+        days_since_sunday_end = (end.weekday() + 1) % 7
+        days_in_last_week = days_since_sunday_end + 1
+        last_week_fraction = Decimal(days_in_last_week) / Decimal(7)
+
+        # Adjust count: subtract 2 full weeks, add back partial fractions
+        if first_week_key in weeks_with_work and last_week_key in weeks_with_work:
+            # Both boundary weeks have work
+            total_weeks = Decimal(work_week_count - 2) + first_week_fraction + last_week_fraction
+        elif first_week_key in weeks_with_work:
+            # Only first boundary week has work
+            total_weeks = Decimal(work_week_count - 1) + first_week_fraction
+        elif last_week_key in weeks_with_work:
+            # Only last boundary week has work
+            total_weeks = Decimal(work_week_count - 1) + last_week_fraction
+        else:
+            # Neither boundary week has work (both were subtracted from count already)
+            total_weeks = Decimal(work_week_count)
+    else:
+        # Single week range
+        days_in_range = (end - start).days + 1
+        if first_week_key in weeks_with_work:
+            total_weeks = Decimal(days_in_range) / Decimal(7)
+        else:
+            total_weeks = Decimal(0)
+
+    return total_weeks
 
 
 def get_months_in_range(start: date, end: date) -> list[tuple[int, int]]:
@@ -110,6 +206,7 @@ def compute_meal_allowance(
     industry: str,
     lodging_input: LodgingInput | None,
     employment_periods: list[EmploymentPeriod],
+    daily_records: list[DailyRecord],
     get_rate: Callable[[date], Decimal],
     right_enabled: bool,
 ) -> MealAllowanceData:
@@ -119,6 +216,7 @@ def compute_meal_allowance(
         industry: Industry identifier
         lodging_input: Lodging input with periods
         employment_periods: List of employment periods
+        daily_records: List of daily records (for checking work days in weekly patterns)
         get_rate: Function to look up nightly rate by date
         right_enabled: Whether meal allowance right is enabled
 
@@ -201,8 +299,9 @@ def compute_meal_allowance(
                     Decimal(days_in_clip) / Decimal(days_in_full_month)
                 )
             elif period.pattern_type == "weekly":
-                # Count work weeks in clip
-                weeks_in_clip = count_work_weeks(clipped_start, clipped_end)
+                # Count actual work weeks (weeks with at least one work day)
+                # This handles cyclic patterns where some weeks have no work
+                weeks_in_clip = count_actual_work_weeks(clipped_start, clipped_end, daily_records)
                 nights_this_month = Decimal(nights_per_unit) * weeks_in_clip
             else:
                 nights_this_month = Decimal("0")

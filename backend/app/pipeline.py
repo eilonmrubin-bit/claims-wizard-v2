@@ -573,6 +573,7 @@ def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
                 industry=ssot.input.industry,
                 lodging_input=ssot.input.lodging_input,
                 employment_periods=ssot.input.employment_periods,
+                daily_records=ssot.daily_records or [],
                 get_rate=lambda d: static_data.get_meal_allowance_rate(d, ssot.input.industry),
                 right_enabled=meal_enabled,
             )
