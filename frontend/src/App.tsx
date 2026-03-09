@@ -2362,7 +2362,7 @@ function App() {
                             ];
                             const { totalNights, totalVisits } = computeLodgingTotals(period.visit_groups);
                             const unitLabel = period.pattern_type === 'weekly' ? 'שבוע' : 'חודש';
-                            const maxNights = period.pattern_type === 'weekly' ? 7 : 31;
+                            const maxNights = period.pattern_type === 'weekly' ? 7 : 28;
                             const isOverLimit = totalNights > maxNights;
                             return (
                               <div
@@ -2456,45 +2456,65 @@ function App() {
                                 {period.pattern_type !== 'none' && (
                                   <>
                                     {/* Visit Groups */}
-                                    {period.visit_groups.map((vg, vgIdx) => (
-                                      <Row key={vg.id} gutter={8} align="middle" style={{ marginBottom: 8 }}>
-                                        <Col span={8}>
-                                          <Space>
-                                            <InputNumber
-                                              value={vg.nights_per_visit}
-                                              onChange={(v) => updateVisitGroup(idx, vgIdx, 'nights_per_visit', v ?? 1)}
-                                              min={1}
-                                              max={period.pattern_type === 'weekly' ? 7 : 31}
-                                              style={{ width: 60 }}
+                                    {period.visit_groups.map((vg, vgIdx) => {
+                                      // Calculate nights from other groups (excluding current)
+                                      const otherGroupsNights = period.visit_groups
+                                        .filter((_, i) => i !== vgIdx)
+                                        .reduce((sum, g) => sum + g.nights_per_visit * g.count, 0);
+                                      const availableNights = maxNights - otherGroupsNights;
+
+                                      return (
+                                        <Row key={vg.id} gutter={8} align="middle" style={{ marginBottom: 8 }}>
+                                          <Col span={8}>
+                                            <Space>
+                                              <InputNumber
+                                                value={vg.nights_per_visit}
+                                                onChange={(v) => {
+                                                  const newNights = v ?? 1;
+                                                  // Limit so total doesn't exceed max
+                                                  const maxAllowed = Math.floor(availableNights / vg.count);
+                                                  const limitedNights = Math.min(Math.max(1, newNights), Math.max(1, maxAllowed));
+                                                  updateVisitGroup(idx, vgIdx, 'nights_per_visit', limitedNights);
+                                                }}
+                                                min={1}
+                                                max={Math.max(1, Math.floor(availableNights / vg.count))}
+                                                style={{ width: 60 }}
+                                              />
+                                              <span style={{ fontSize: 12 }}>לילות לרצף</span>
+                                            </Space>
+                                          </Col>
+                                          <Col span={2} style={{ textAlign: 'center' }}>×</Col>
+                                          <Col span={8}>
+                                            <Space>
+                                              <InputNumber
+                                                value={vg.count}
+                                                onChange={(v) => {
+                                                  const newCount = v ?? 1;
+                                                  // Limit so total doesn't exceed max
+                                                  const maxAllowed = Math.floor(availableNights / vg.nights_per_visit);
+                                                  const limitedCount = Math.min(Math.max(1, newCount), Math.max(1, maxAllowed));
+                                                  updateVisitGroup(idx, vgIdx, 'count', limitedCount);
+                                                }}
+                                                min={1}
+                                                max={Math.max(1, Math.floor(availableNights / vg.nights_per_visit))}
+                                                style={{ width: 60 }}
+                                              />
+                                              <span style={{ fontSize: 12 }}>רצפים ל{unitLabel}</span>
+                                            </Space>
+                                          </Col>
+                                          <Col span={6} style={{ textAlign: 'left' }}>
+                                            <Button
+                                              type="text"
+                                              danger
+                                              size="small"
+                                              icon={<DeleteOutlined />}
+                                              onClick={() => removeVisitGroup(idx, vgIdx)}
+                                              disabled={period.visit_groups.length <= 1}
                                             />
-                                            <span style={{ fontSize: 12 }}>לילות לרצף</span>
-                                          </Space>
-                                        </Col>
-                                        <Col span={2} style={{ textAlign: 'center' }}>×</Col>
-                                        <Col span={8}>
-                                          <Space>
-                                            <InputNumber
-                                              value={vg.count}
-                                              onChange={(v) => updateVisitGroup(idx, vgIdx, 'count', v ?? 1)}
-                                              min={1}
-                                              max={period.pattern_type === 'weekly' ? 7 : 31}
-                                              style={{ width: 60 }}
-                                            />
-                                            <span style={{ fontSize: 12 }}>רצפים ל{unitLabel}</span>
-                                          </Space>
-                                        </Col>
-                                        <Col span={6} style={{ textAlign: 'left' }}>
-                                          <Button
-                                            type="text"
-                                            danger
-                                            size="small"
-                                            icon={<DeleteOutlined />}
-                                            onClick={() => removeVisitGroup(idx, vgIdx)}
-                                            disabled={period.visit_groups.length <= 1}
-                                          />
-                                        </Col>
-                                      </Row>
-                                    ))}
+                                          </Col>
+                                        </Row>
+                                      );
+                                    })}
                                     <Row style={{ marginBottom: 8 }}>
                                       <Col>
                                         <Button
