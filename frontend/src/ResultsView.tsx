@@ -38,7 +38,7 @@ import {
   SafetyOutlined,
   CarOutlined,
 } from '@ant-design/icons';
-import type { LodgingInput, LodgingPeriod, EmploymentPeriod } from './types';
+import type { LodgingInput, LodgingPeriod, EmploymentPeriod, WorkPattern } from './types';
 
 const { Title, Text } = Typography;
 
@@ -584,6 +584,7 @@ interface ResultsViewProps {
   input?: {
     lodging_input?: LodgingInput | null;
     employment_periods?: EmploymentPeriod[];
+    work_patterns?: WorkPattern[];
   };
 }
 
@@ -3650,9 +3651,12 @@ interface TravelBreakdownProps {
   travel: TravelResult;
   limitation?: LimitationRightResult;
   generalWindow?: LimitationWindow;
+  lodgingInput?: LodgingInput | null;
+  employmentPeriods?: EmploymentPeriod[];
+  workPatterns?: WorkPattern[];
 }
 
-const TravelBreakdown: React.FC<TravelBreakdownProps> = ({ travel, limitation, generalWindow }) => {
+const TravelBreakdown: React.FC<TravelBreakdownProps> = ({ travel, limitation, generalWindow, lodgingInput, employmentPeriods, workPatterns }) => {
   const industryLabels: Record<string, string> = {
     general: 'כללי',
     construction: 'בניין',
@@ -3717,6 +3721,140 @@ const TravelBreakdown: React.FC<TravelBreakdownProps> = ({ travel, limitation, g
       },
     },
   ];
+
+  // Calendar helpers for expandable row
+  const dayHeaders = ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש'];
+
+  const isWithinEmployment = (date: Date): boolean => {
+    if (!employmentPeriods || employmentPeriods.length === 0) return true;
+    const dateStr = date.toISOString().split('T')[0];
+    return employmentPeriods.some(ep => dateStr >= ep.start && dateStr <= ep.end);
+  };
+
+  const isWorkDay = (date: Date): boolean => {
+    if (!isWithinEmployment(date)) return false;
+    const dateStr = date.toISOString().split('T')[0];
+    // Find active work pattern for this date
+    const pattern = workPatterns?.find(wp => dateStr >= wp.start && dateStr <= wp.end);
+    if (!pattern) return false;
+    const dayOfWeek = date.getDay(); // 0=Sunday
+    return pattern.work_days.includes(dayOfWeek);
+  };
+
+  const findLodgingPeriod = (date: Date): LodgingPeriod | null => {
+    if (!lodgingInput?.periods) return null;
+    const dateStr = date.toISOString().split('T')[0];
+    return lodgingInput.periods.find(p =>
+      p.start && p.end && dateStr >= p.start && dateStr <= p.end && p.pattern_type !== 'none'
+    ) || null;
+  };
+
+  const getTotalNights = (period: LodgingPeriod): number => {
+    return period.visit_groups.reduce((sum, vg) => sum + vg.nights_per_visit * vg.count, 0);
+  };
+
+  const isLodgingNight = (date: Date, period: LodgingPeriod): boolean => {
+    const totalNights = getTotalNights(period);
+    if (totalNights === 0) return false;
+    if (period.pattern_type === 'monthly') {
+      return date.getDate() <= totalNights;
+    } else if (period.pattern_type === 'weekly') {
+      const jsDay = date.getDay();
+      const weekDay = jsDay === 0 ? 6 : jsDay - 1; // Mon=0, Sun=6
+      return weekDay < totalNights;
+    }
+    return false;
+  };
+
+  const isRestDay = (date: Date): boolean => date.getDay() === 6;
+
+  type TravelDayType = 'travel' | 'lodging' | 'rest' | 'outside';
+
+  const getTravelDayType = (date: Date): TravelDayType => {
+    if (!isWithinEmployment(date)) return 'outside';
+    if (isRestDay(date)) return 'rest';
+    if (!isWorkDay(date)) return 'rest';
+    const period = findLodgingPeriod(date);
+    if (period && isLodgingNight(date, period)) return 'lodging';
+    return 'travel';
+  };
+
+  const getTravelDayStyle = (dayType: TravelDayType): React.CSSProperties => {
+    const base: React.CSSProperties = {
+      width: 32, height: 32, borderRadius: 6,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      fontSize: 12, fontWeight: 500, cursor: 'default',
+    };
+    switch (dayType) {
+      case 'travel': return { ...base, background: '#1668dc', color: '#fff' };
+      case 'lodging': return { ...base, background: '#7c3aed', color: '#fff' };
+      case 'rest': return { ...base, background: 'transparent', color: '#4b5563' };
+      case 'outside': return { ...base, background: 'transparent', color: 'transparent' };
+    }
+  };
+
+  const getTravelDayTooltip = (dayType: TravelDayType): string => {
+    switch (dayType) {
+      case 'travel': return 'יום נסיעה';
+      case 'lodging': return 'לילת לינה';
+      case 'rest': return 'יום מנוחה';
+      case 'outside': return 'מחוץ לתקופה';
+    }
+  };
+
+  const generateMonthCalendar = (year: number, month: number): (Date | null)[][] => {
+    const firstDay = new Date(year, month - 1, 1);
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const startDayOfWeek = firstDay.getDay();
+    const weeks: (Date | null)[][] = [];
+    let currentWeek: (Date | null)[] = [];
+    for (let i = 0; i < startDayOfWeek; i++) currentWeek.push(null);
+    for (let day = 1; day <= daysInMonth; day++) {
+      currentWeek.push(new Date(year, month - 1, day));
+      if (currentWeek.length === 7) { weeks.push(currentWeek); currentWeek = []; }
+    }
+    while (currentWeek.length > 0 && currentWeek.length < 7) currentWeek.push(null);
+    if (currentWeek.length > 0) weeks.push(currentWeek);
+    return weeks;
+  };
+
+  const countTravelDays = (year: number, month: number): number => {
+    let count = 0;
+    const daysInMonth = new Date(year, month, 0).getDate();
+    for (let day = 1; day <= daysInMonth; day++) {
+      if (getTravelDayType(new Date(year, month - 1, day)) === 'travel') count++;
+    }
+    return count;
+  };
+
+  const expandedRowRender = (record: TravelMonthlyBreakdown & { key: number }) => {
+    const [year, month] = record.month;
+    const weeks = generateMonthCalendar(year, month);
+    const travelDaysCount = countTravelDays(year, month);
+
+    return (
+      <div style={{ padding: '8px 0' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 32px)', gap: 2, justifyContent: 'center', marginBottom: 4 }}>
+          {dayHeaders.map((d, i) => (
+            <div key={i} style={{ width: 32, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: '#6b7280', fontWeight: 500 }}>{d}</div>
+          ))}
+        </div>
+        {weeks.map((week, wi) => (
+          <div key={wi} style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 32px)', gap: 2, justifyContent: 'center', marginBottom: 2 }}>
+            {week.map((date, di) => {
+              const dayType = date ? getTravelDayType(date) : 'outside';
+              return (
+                <Tooltip key={di} title={date ? getTravelDayTooltip(dayType) : ''}>
+                  <div style={getTravelDayStyle(dayType)}>{date ? date.getDate() : ''}</div>
+                </Tooltip>
+              );
+            })}
+          </div>
+        ))}
+        <div style={{ textAlign: 'center', fontSize: 12, color: '#88D8E0', marginTop: 8 }}>{travelDaysCount} ימי נסיעה</div>
+      </div>
+    );
+  };
 
   return (
     <Card
@@ -3809,6 +3947,7 @@ const TravelBreakdown: React.FC<TravelBreakdownProps> = ({ travel, limitation, g
                 pagination={false}
                 size="small"
                 style={{ marginTop: 8 }}
+                expandable={{ expandedRowRender }}
               />
             ),
           },
@@ -3826,9 +3965,10 @@ interface MealAllowanceBreakdownProps {
   generalWindow?: LimitationWindow;
   lodgingInput?: LodgingInput | null;
   employmentPeriods?: EmploymentPeriod[];
+  workPatterns?: WorkPattern[];
 }
 
-const MealAllowanceBreakdown: React.FC<MealAllowanceBreakdownProps> = ({ mealAllowance, limitation, generalWindow, lodgingInput, employmentPeriods }) => {
+const MealAllowanceBreakdown: React.FC<MealAllowanceBreakdownProps> = ({ mealAllowance, limitation, generalWindow, lodgingInput, employmentPeriods, workPatterns }) => {
   // Helper: check if a month is within the limitation window
   const isMonthClaimable = (month: [number, number]): boolean => {
     if (!generalWindow?.effective_window_start) return true;
@@ -3888,6 +4028,138 @@ const MealAllowanceBreakdown: React.FC<MealAllowanceBreakdownProps> = ({ mealAll
       },
     },
   ];
+
+  // Calendar helpers for expandable row (אש"ל)
+  const dayHeaders = ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש'];
+
+  const isWithinEmployment = (date: Date): boolean => {
+    if (!employmentPeriods || employmentPeriods.length === 0) return true;
+    const dateStr = date.toISOString().split('T')[0];
+    return employmentPeriods.some(ep => dateStr >= ep.start && dateStr <= ep.end);
+  };
+
+  const isWorkDay = (date: Date): boolean => {
+    if (!isWithinEmployment(date)) return false;
+    const dateStr = date.toISOString().split('T')[0];
+    const pattern = workPatterns?.find(wp => dateStr >= wp.start && dateStr <= wp.end);
+    if (!pattern) return false;
+    return pattern.work_days.includes(date.getDay());
+  };
+
+  const findLodgingPeriod = (date: Date): LodgingPeriod | null => {
+    if (!lodgingInput?.periods) return null;
+    const dateStr = date.toISOString().split('T')[0];
+    return lodgingInput.periods.find(p =>
+      p.start && p.end && dateStr >= p.start && dateStr <= p.end && p.pattern_type !== 'none'
+    ) || null;
+  };
+
+  const getTotalNights = (period: LodgingPeriod): number => {
+    return period.visit_groups.reduce((sum, vg) => sum + vg.nights_per_visit * vg.count, 0);
+  };
+
+  const isLodgingNight = (date: Date, period: LodgingPeriod): boolean => {
+    const totalNights = getTotalNights(period);
+    if (totalNights === 0) return false;
+    if (period.pattern_type === 'monthly') {
+      return date.getDate() <= totalNights;
+    } else if (period.pattern_type === 'weekly') {
+      const jsDay = date.getDay();
+      const weekDay = jsDay === 0 ? 6 : jsDay - 1;
+      return weekDay < totalNights;
+    }
+    return false;
+  };
+
+  const isRestDay = (date: Date): boolean => date.getDay() === 6;
+
+  type MealDayType = 'lodging' | 'work' | 'rest' | 'outside';
+
+  const getMealDayType = (date: Date): MealDayType => {
+    if (!isWithinEmployment(date)) return 'outside';
+    if (isRestDay(date)) return 'rest';
+    const period = findLodgingPeriod(date);
+    if (period && isLodgingNight(date, period)) return 'lodging';
+    if (isWorkDay(date)) return 'work';
+    return 'rest';
+  };
+
+  const getMealDayStyle = (dayType: MealDayType): React.CSSProperties => {
+    const base: React.CSSProperties = {
+      width: 32, height: 32, borderRadius: 6,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      fontSize: 12, fontWeight: 500, cursor: 'default',
+    };
+    switch (dayType) {
+      case 'lodging': return { ...base, background: '#7c3aed', color: '#fff' };
+      case 'work': return { ...base, background: '#1f2937', color: '#9ca3af' };
+      case 'rest': return { ...base, background: 'transparent', color: '#4b5563' };
+      case 'outside': return { ...base, background: 'transparent', color: 'transparent' };
+    }
+  };
+
+  const getMealDayTooltip = (dayType: MealDayType): string => {
+    switch (dayType) {
+      case 'lodging': return 'לילת לינה';
+      case 'work': return 'יום עבודה';
+      case 'rest': return 'יום מנוחה';
+      case 'outside': return 'מחוץ לתקופה';
+    }
+  };
+
+  const generateMonthCalendar = (year: number, month: number): (Date | null)[][] => {
+    const firstDay = new Date(year, month - 1, 1);
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const startDayOfWeek = firstDay.getDay();
+    const weeks: (Date | null)[][] = [];
+    let currentWeek: (Date | null)[] = [];
+    for (let i = 0; i < startDayOfWeek; i++) currentWeek.push(null);
+    for (let day = 1; day <= daysInMonth; day++) {
+      currentWeek.push(new Date(year, month - 1, day));
+      if (currentWeek.length === 7) { weeks.push(currentWeek); currentWeek = []; }
+    }
+    while (currentWeek.length > 0 && currentWeek.length < 7) currentWeek.push(null);
+    if (currentWeek.length > 0) weeks.push(currentWeek);
+    return weeks;
+  };
+
+  const countLodgingNights = (year: number, month: number): number => {
+    let count = 0;
+    const daysInMonth = new Date(year, month, 0).getDate();
+    for (let day = 1; day <= daysInMonth; day++) {
+      if (getMealDayType(new Date(year, month - 1, day)) === 'lodging') count++;
+    }
+    return count;
+  };
+
+  const mealExpandedRowRender = (record: MealAllowanceMonthlyBreakdown & { key: number }) => {
+    const [year, month] = record.month;
+    const weeks = generateMonthCalendar(year, month);
+    const lodgingCount = countLodgingNights(year, month);
+
+    return (
+      <div style={{ padding: '8px 0' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 32px)', gap: 2, justifyContent: 'center', marginBottom: 4 }}>
+          {dayHeaders.map((d, i) => (
+            <div key={i} style={{ width: 32, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: '#6b7280', fontWeight: 500 }}>{d}</div>
+          ))}
+        </div>
+        {weeks.map((week, wi) => (
+          <div key={wi} style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 32px)', gap: 2, justifyContent: 'center', marginBottom: 2 }}>
+            {week.map((date, di) => {
+              const dayType = date ? getMealDayType(date) : 'outside';
+              return (
+                <Tooltip key={di} title={date ? getMealDayTooltip(dayType) : ''}>
+                  <div style={getMealDayStyle(dayType)}>{date ? date.getDate() : ''}</div>
+                </Tooltip>
+              );
+            })}
+          </div>
+        ))}
+        <div style={{ textAlign: 'center', fontSize: 12, color: '#88D8E0', marginTop: 8 }}>{lodgingCount} לילות לינה</div>
+      </div>
+    );
+  };
 
   if (!mealAllowance.entitled) {
     return (
@@ -3989,272 +4261,13 @@ const MealAllowanceBreakdown: React.FC<MealAllowanceBreakdownProps> = ({ mealAll
                 size="small"
                 style={{ marginTop: 8 }}
                 rowClassName={(record) => !isMonthClaimable(record.month) ? 'row-excluded' : ''}
+                expandable={{ expandedRowRender: mealExpandedRowRender }}
               />
             ),
           },
         ]}
       />
-
-      {/* Calendar view of lodging nights */}
-      <MealAllowanceCalendar
-        months={mealAllowance.monthly_breakdown.map(m => m.month)}
-        lodgingInput={lodgingInput}
-        employmentPeriods={employmentPeriods}
-      />
     </Card>
-  );
-};
-
-// ====== Meal Allowance Calendar Component ======
-
-interface MealAllowanceCalendarProps {
-  months: [number, number][];
-  lodgingInput?: LodgingInput | null;
-  employmentPeriods?: EmploymentPeriod[];
-}
-
-const MealAllowanceCalendar: React.FC<MealAllowanceCalendarProps> = ({ months, lodgingInput, employmentPeriods }) => {
-  console.log('MealAllowanceCalendar:', { months, lodgingInput });
-
-  const hebrewMonthNames = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
-  const dayHeaders = ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש']; // RTL: Sunday first (leftmost)
-
-  // Check if a date is within employment periods
-  const isWithinEmployment = (date: Date): boolean => {
-    if (!employmentPeriods || employmentPeriods.length === 0) return true;
-    const dateStr = date.toISOString().split('T')[0];
-    return employmentPeriods.some(ep => dateStr >= ep.start && dateStr <= ep.end);
-  };
-
-  // Find active lodging period for a date
-  const findLodgingPeriod = (date: Date): LodgingPeriod | null => {
-    if (!lodgingInput?.periods) return null;
-    const dateStr = date.toISOString().split('T')[0];
-    return lodgingInput.periods.find(p =>
-      p.start && p.end && dateStr >= p.start && dateStr <= p.end && p.pattern_type !== 'none'
-    ) || null;
-  };
-
-  // Calculate total nights per unit from visit groups
-  const getTotalNights = (period: LodgingPeriod): number => {
-    return period.visit_groups.reduce((sum, vg) => sum + vg.nights_per_visit * vg.count, 0);
-  };
-
-  // Determine if a day is a lodging night based on pattern
-  const isLodgingNight = (date: Date, period: LodgingPeriod): boolean => {
-    const totalNights = getTotalNights(period);
-    if (totalNights === 0) return false;
-
-    if (period.pattern_type === 'monthly') {
-      // Mark first N days of the month as lodging nights
-      const dayOfMonth = date.getDate();
-      return dayOfMonth <= totalNights;
-    } else if (period.pattern_type === 'weekly') {
-      // Mark first N days of each week (Mon-Sun) as lodging nights
-      // getDay(): 0=Sunday, 1=Monday, ..., 6=Saturday
-      // For weekly pattern, week starts Monday (day 1)
-      const jsDay = date.getDay();
-      // Convert to Mon=0, Tue=1, ..., Sun=6
-      const weekDay = jsDay === 0 ? 6 : jsDay - 1;
-      return weekDay < totalNights;
-    }
-    return false;
-  };
-
-  // Check if day is a rest day (Saturday for most workers)
-  const isRestDay = (date: Date): boolean => {
-    return date.getDay() === 6; // Saturday
-  };
-
-  // Generate calendar data for a month
-  const generateMonthCalendar = (year: number, month: number) => {
-    const firstDay = new Date(year, month - 1, 1);
-    const lastDay = new Date(year, month, 0);
-    const daysInMonth = lastDay.getDate();
-    const startDayOfWeek = firstDay.getDay(); // 0=Sunday
-
-    const weeks: (Date | null)[][] = [];
-    let currentWeek: (Date | null)[] = [];
-
-    // Pad start of first week
-    for (let i = 0; i < startDayOfWeek; i++) {
-      currentWeek.push(null);
-    }
-
-    // Fill in days
-    for (let day = 1; day <= daysInMonth; day++) {
-      const date = new Date(year, month - 1, day);
-      currentWeek.push(date);
-
-      if (currentWeek.length === 7) {
-        weeks.push(currentWeek);
-        currentWeek = [];
-      }
-    }
-
-    // Pad end of last week
-    while (currentWeek.length > 0 && currentWeek.length < 7) {
-      currentWeek.push(null);
-    }
-    if (currentWeek.length > 0) {
-      weeks.push(currentWeek);
-    }
-
-    return weeks;
-  };
-
-  // Get day style based on type
-  const getDayStyle = (date: Date | null): React.CSSProperties => {
-    const baseStyle: React.CSSProperties = {
-      width: 28,
-      height: 28,
-      borderRadius: 4,
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      fontSize: 12,
-      fontWeight: 500,
-    };
-
-    if (!date) {
-      return { ...baseStyle, background: 'transparent', color: 'transparent' };
-    }
-
-    if (!isWithinEmployment(date)) {
-      return { ...baseStyle, background: 'transparent', color: 'transparent' };
-    }
-
-    const period = findLodgingPeriod(date);
-    if (period && isLodgingNight(date, period)) {
-      return { ...baseStyle, background: '#1668dc', color: '#fff' };
-    }
-
-    if (isRestDay(date)) {
-      return { ...baseStyle, background: 'transparent', color: '#4b5563' };
-    }
-
-    // Regular work day
-    return { ...baseStyle, background: '#1f2937', color: '#9ca3af' };
-  };
-
-  // Count lodging nights in a month
-  const countLodgingNights = (year: number, month: number): number => {
-    let count = 0;
-    const daysInMonth = new Date(year, month, 0).getDate();
-    for (let day = 1; day <= daysInMonth; day++) {
-      const date = new Date(year, month - 1, day);
-      if (isWithinEmployment(date)) {
-        const period = findLodgingPeriod(date);
-        if (period && isLodgingNight(date, period)) {
-          count++;
-        }
-      }
-    }
-    return count;
-  };
-
-  return (
-    <Collapse
-      size="small"
-      style={{ marginTop: 12 }}
-      items={[
-        {
-          key: 'calendar',
-          label: <span style={{ fontWeight: 500 }}>לוח שנה — לינות לפי חודש</span>,
-          children: (
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))',
-              gap: 16,
-              marginTop: 8,
-            }}>
-              {months.map(([year, month]) => {
-                const weeks = generateMonthCalendar(year, month);
-                const lodgingNightsCount = countLodgingNights(year, month);
-
-                return (
-                  <div
-                    key={`${year}-${month}`}
-                    style={{
-                      background: '#111827',
-                      borderRadius: 8,
-                      padding: 12,
-                    }}
-                  >
-                    {/* Month header */}
-                    <div style={{
-                      color: '#E8F4F8',
-                      fontWeight: 600,
-                      marginBottom: 8,
-                      textAlign: 'center',
-                    }}>
-                      {hebrewMonthNames[month - 1]} {year}
-                    </div>
-
-                    {/* Day headers - RTL: Sunday first */}
-                    <div style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(7, 28px)',
-                      gap: 2,
-                      justifyContent: 'center',
-                      marginBottom: 4,
-                    }}>
-                      {dayHeaders.map((day, i) => (
-                        <div
-                          key={i}
-                          style={{
-                            width: 28,
-                            height: 20,
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: 11,
-                            color: '#6b7280',
-                            fontWeight: 500,
-                          }}
-                        >
-                          {day}
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* Calendar grid */}
-                    {weeks.map((week, weekIdx) => (
-                      <div
-                        key={weekIdx}
-                        style={{
-                          display: 'grid',
-                          gridTemplateColumns: 'repeat(7, 28px)',
-                          gap: 2,
-                          justifyContent: 'center',
-                          marginBottom: 2,
-                        }}
-                      >
-                        {week.map((date, dayIdx) => (
-                          <div key={dayIdx} style={getDayStyle(date)}>
-                            {date ? date.getDate() : ''}
-                          </div>
-                        ))}
-                      </div>
-                    ))}
-
-                    {/* Nights count */}
-                    <div style={{
-                      marginTop: 8,
-                      textAlign: 'center',
-                      fontSize: 12,
-                      color: '#88D8E0',
-                    }}>
-                      {lodgingNightsCount} לילות החודש
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ),
-        },
-      ]}
-    />
   );
 };
 
@@ -5038,6 +5051,9 @@ const ResultsView: React.FC<ResultsViewProps> = ({ ssot, input }) => {
             travel={rights_results.travel}
             limitation={limitation_results?.per_right?.travel}
             generalWindow={generalWindow}
+            lodgingInput={input?.lodging_input}
+            employmentPeriods={input?.employment_periods}
+            workPatterns={input?.work_patterns}
           />
         </div>
       )}
@@ -5051,6 +5067,7 @@ const ResultsView: React.FC<ResultsViewProps> = ({ ssot, input }) => {
             generalWindow={generalWindow}
             lodgingInput={input?.lodging_input}
             employmentPeriods={input?.employment_periods}
+            workPatterns={input?.work_patterns}
           />
         </div>
       )}
