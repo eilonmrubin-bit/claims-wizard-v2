@@ -3741,29 +3741,12 @@ const TravelBreakdown: React.FC<TravelBreakdownProps> = ({ travel, limitation, g
     return pattern.work_days.includes(dayOfWeek);
   };
 
-  const findLodgingPeriod = (date: Date): LodgingPeriod | null => {
-    if (!lodgingInput?.periods) return null;
+  const findWeekDetail = (date: Date): TravelWeekDetail | null => {
+    if (!travel.weekly_detail) return null;
     const dateStr = date.toISOString().split('T')[0];
-    return lodgingInput.periods.find(p =>
-      p.start && p.end && dateStr >= p.start && dateStr <= p.end && p.pattern_type !== 'none'
+    return travel.weekly_detail.find(w =>
+      w.week_start && w.week_end && dateStr >= w.week_start && dateStr <= w.week_end
     ) || null;
-  };
-
-  const getTotalNights = (period: LodgingPeriod): number => {
-    return period.visit_groups.reduce((sum, vg) => sum + vg.nights_per_visit * vg.count, 0);
-  };
-
-  const isLodgingNight = (date: Date, period: LodgingPeriod): boolean => {
-    const totalNights = getTotalNights(period);
-    if (totalNights === 0) return false;
-    if (period.pattern_type === 'monthly') {
-      return date.getDate() <= totalNights;
-    } else if (period.pattern_type === 'weekly') {
-      const jsDay = date.getDay();
-      const weekDay = jsDay === 0 ? 6 : jsDay - 1; // Mon=0, Sun=6
-      return weekDay < totalNights;
-    }
-    return false;
   };
 
   const isRestDay = (date: Date): boolean => date.getDay() === 6;
@@ -3774,9 +3757,30 @@ const TravelBreakdown: React.FC<TravelBreakdownProps> = ({ travel, limitation, g
     if (!isWithinEmployment(date)) return 'outside';
     if (isRestDay(date)) return 'rest';
     if (!isWorkDay(date)) return 'rest';
-    const period = findLodgingPeriod(date);
-    if (period && isLodgingNight(date, period)) return 'lodging';
-    return 'travel';
+
+    // Find the week detail from SSOT
+    const weekDetail = findWeekDetail(date);
+    if (!weekDetail) return 'travel'; // No detail, assume travel
+
+    // If no lodging pattern, all work days are travel
+    if (weekDetail.week_pattern === 'no_lodging') return 'travel';
+
+    // With lodging: lodging_work_days = work_days - travel_days
+    // These are days when worker stays on site (not traveling)
+    const lodgingWorkDays = weekDetail.work_days - weekDetail.travel_days;
+    if (lodgingWorkDays <= 0) return 'travel';
+
+    // Count which work day index this date is within the week
+    const weekStart = new Date(weekDetail.week_start);
+    let workDayIndex = 0;
+    for (let d = new Date(weekStart); d <= date; d.setDate(d.getDate() + 1)) {
+      if (d < date && isWorkDay(d)) {
+        workDayIndex++;
+      }
+    }
+
+    // First lodgingWorkDays work days are lodging (staying on site), rest are travel
+    return workDayIndex < lodgingWorkDays ? 'lodging' : 'travel';
   };
 
   const getTravelDayStyle = (dayType: TravelDayType): React.CSSProperties => {
@@ -3818,19 +3822,11 @@ const TravelBreakdown: React.FC<TravelBreakdownProps> = ({ travel, limitation, g
     return weeks;
   };
 
-  const countTravelDays = (year: number, month: number): number => {
-    let count = 0;
-    const daysInMonth = new Date(year, month, 0).getDate();
-    for (let day = 1; day <= daysInMonth; day++) {
-      if (getTravelDayType(new Date(year, month - 1, day)) === 'travel') count++;
-    }
-    return count;
-  };
-
   const expandedRowRender = (record: TravelMonthlyBreakdown & { key: number }) => {
     const [year, month] = record.month;
     const weeks = generateMonthCalendar(year, month);
-    const travelDaysCount = countTravelDays(year, month);
+    // Use the travel_days from SSOT monthly breakdown directly
+    const travelDaysCount = record.travel_days;
 
     return (
       <div style={{ padding: '8px 0' }}>
@@ -4046,42 +4042,26 @@ const MealAllowanceBreakdown: React.FC<MealAllowanceBreakdownProps> = ({ mealAll
     return pattern.work_days.includes(date.getDay());
   };
 
-  const findLodgingPeriod = (date: Date): LodgingPeriod | null => {
-    if (!lodgingInput?.periods) return null;
-    const dateStr = date.toISOString().split('T')[0];
-    return lodgingInput.periods.find(p =>
-      p.start && p.end && dateStr >= p.start && dateStr <= p.end && p.pattern_type !== 'none'
-    ) || null;
-  };
-
-  const getTotalNights = (period: LodgingPeriod): number => {
-    return period.visit_groups.reduce((sum, vg) => sum + vg.nights_per_visit * vg.count, 0);
-  };
-
-  const isLodgingNight = (date: Date, period: LodgingPeriod): boolean => {
-    const totalNights = getTotalNights(period);
-    if (totalNights === 0) return false;
-    if (period.pattern_type === 'monthly') {
-      return date.getDate() <= totalNights;
-    } else if (period.pattern_type === 'weekly') {
-      const jsDay = date.getDay();
-      const weekDay = jsDay === 0 ? 6 : jsDay - 1;
-      return weekDay < totalNights;
-    }
-    return false;
-  };
-
   const isRestDay = (date: Date): boolean => date.getDay() === 6;
 
   type MealDayType = 'lodging' | 'work' | 'rest' | 'outside';
 
-  const getMealDayType = (date: Date): MealDayType => {
+  // Get day type for a specific month's SSOT data
+  const getMealDayTypeForMonth = (date: Date, monthNights: number, year: number, month: number): MealDayType => {
     if (!isWithinEmployment(date)) return 'outside';
     if (isRestDay(date)) return 'rest';
-    const period = findLodgingPeriod(date);
-    if (period && isLodgingNight(date, period)) return 'lodging';
-    if (isWorkDay(date)) return 'work';
-    return 'rest';
+    if (!isWorkDay(date)) return 'rest';
+
+    // Count work days before this date in the month to determine lodging
+    const monthStart = new Date(year, month - 1, 1);
+    let workDayIndex = 0;
+    for (let d = new Date(monthStart); d < date; d.setDate(d.getDate() + 1)) {
+      if (isWorkDay(d)) workDayIndex++;
+    }
+
+    // First monthNights work days are lodging nights (from SSOT)
+    // We use Math.floor since nights can be fractional
+    return workDayIndex < Math.floor(monthNights) ? 'lodging' : 'work';
   };
 
   const getMealDayStyle = (dayType: MealDayType): React.CSSProperties => {
@@ -4123,19 +4103,11 @@ const MealAllowanceBreakdown: React.FC<MealAllowanceBreakdownProps> = ({ mealAll
     return weeks;
   };
 
-  const countLodgingNights = (year: number, month: number): number => {
-    let count = 0;
-    const daysInMonth = new Date(year, month, 0).getDate();
-    for (let day = 1; day <= daysInMonth; day++) {
-      if (getMealDayType(new Date(year, month - 1, day)) === 'lodging') count++;
-    }
-    return count;
-  };
-
   const mealExpandedRowRender = (record: MealAllowanceMonthlyBreakdown & { key: number }) => {
     const [year, month] = record.month;
     const weeks = generateMonthCalendar(year, month);
-    const lodgingCount = countLodgingNights(year, month);
+    // Use the nights from SSOT monthly breakdown directly
+    const lodgingCount = record.nights;
 
     return (
       <div style={{ padding: '8px 0' }}>
@@ -4147,7 +4119,7 @@ const MealAllowanceBreakdown: React.FC<MealAllowanceBreakdownProps> = ({ mealAll
         {weeks.map((week, wi) => (
           <div key={wi} style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 32px)', gap: 2, justifyContent: 'center', marginBottom: 2 }}>
             {week.map((date, di) => {
-              const dayType = date ? getMealDayType(date) : 'outside';
+              const dayType = date ? getMealDayTypeForMonth(date, lodgingCount, year, month) : 'outside';
               return (
                 <Tooltip key={di} title={date ? getMealDayTooltip(dayType) : ''}>
                   <div style={getMealDayStyle(dayType)}>{date ? date.getDate() : ''}</div>
@@ -4156,7 +4128,7 @@ const MealAllowanceBreakdown: React.FC<MealAllowanceBreakdownProps> = ({ mealAll
             })}
           </div>
         ))}
-        <div style={{ textAlign: 'center', fontSize: 12, color: '#88D8E0', marginTop: 8 }}>{lodgingCount} לילות לינה</div>
+        <div style={{ textAlign: 'center', fontSize: 12, color: '#88D8E0', marginTop: 8 }}>{Math.round(lodgingCount)} לילות לינה</div>
       </div>
     );
   };
