@@ -2789,8 +2789,9 @@ function App() {
                           { key: 'general_recreation', label: 'כללי — הבראה + התיישנות' },
                           { key: 'general_vacation', label: 'כללי — חופשה + התיישנות' },
                           { key: 'construction_vacation', label: 'בנייה — חופשה, שבוע מעורב, גיל 55' },
+                          { key: 'construction_meal_allowance', label: 'בניין — אש"ל + VisitGroups' },
                         ],
-                        onClick: ({ key }) => loadExample(key as 'main' | 'rest_window' | 'cleaning_recreation' | 'general_recreation' | 'general_vacation' | 'construction_vacation'),
+                        onClick: ({ key }) => loadExample(key as 'main' | 'rest_window' | 'cleaning_recreation' | 'general_recreation' | 'general_vacation' | 'construction_vacation' | 'construction_meal_allowance'),
                       }}
                     >
                       <Button>טען דוגמה ▾</Button>
