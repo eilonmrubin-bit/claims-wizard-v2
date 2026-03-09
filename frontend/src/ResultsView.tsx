@@ -434,6 +434,24 @@ interface TravelResult {
   claim_before_deductions: number;
 }
 
+// Meal Allowance (אש"ל) types
+interface MealAllowanceMonthlyBreakdown {
+  month: [number, number];
+  nights: number;
+  nightly_rate: number;
+  claim_amount: number;
+}
+
+interface MealAllowanceResult {
+  entitled: boolean;
+  not_entitled_reason: string | null;  // "not_construction" | "no_lodging_input" | "disabled"
+  industry: string;
+  monthly_breakdown: MealAllowanceMonthlyBreakdown[];
+  grand_total_nights: number;
+  grand_total_value: number;
+  claim_before_deductions: number;
+}
+
 interface FreezePeriodApplied {
   name: string;
   start_date: string;
@@ -551,6 +569,7 @@ interface ResultsViewProps {
       pension?: PensionResult;
       training_fund?: TrainingFundResult;
       travel?: TravelResult;
+      meal_allowance?: MealAllowanceResult;
     };
     limitation_results?: LimitationResults;
     total_employment?: TotalEmployment;
@@ -3800,6 +3819,184 @@ const TravelBreakdown: React.FC<TravelBreakdownProps> = ({ travel, limitation, g
   );
 };
 
+// ====== Meal Allowance Breakdown ======
+
+interface MealAllowanceBreakdownProps {
+  mealAllowance: MealAllowanceResult;
+  limitation?: LimitationRightResult;
+  generalWindow?: LimitationWindow;
+}
+
+const MealAllowanceBreakdown: React.FC<MealAllowanceBreakdownProps> = ({ mealAllowance, limitation, generalWindow }) => {
+  // Helper: check if a month is within the limitation window
+  const isMonthClaimable = (month: [number, number]): boolean => {
+    if (!generalWindow?.effective_window_start) return true;
+    const windowStart = new Date(generalWindow.effective_window_start);
+    const monthStart = new Date(month[0], month[1] - 1, 1);
+    return monthStart >= windowStart;
+  };
+
+  const monthColumns = [
+    {
+      title: '',
+      key: 'status',
+      width: 32,
+      render: (_: unknown, record: MealAllowanceMonthlyBreakdown) => (
+        isMonthClaimable(record.month)
+          ? <Tooltip title="בתוך חלון ההתיישנות — ניתן לתבוע"><CheckCircleOutlined style={{ color: '#4ECDC4' }} /></Tooltip>
+          : <Tooltip title="מחוץ לחלון ההתיישנות — התיישן"><ClockCircleOutlined style={{ color: '#FF6B6B' }} /></Tooltip>
+      ),
+    },
+    {
+      title: <span style={{ color: '#88D8E0' }}>חודש</span>,
+      key: 'month',
+      render: (_: unknown, record: MealAllowanceMonthlyBreakdown) => (
+        <span style={{ color: '#E8F4F8' }}>{formatMonth(record.month)}</span>
+      ),
+    },
+    {
+      title: <span style={{ color: '#88D8E0' }}>לילות</span>,
+      key: 'nights',
+      render: (_: unknown, record: MealAllowanceMonthlyBreakdown) => (
+        <span className="ltr-number" style={{ color: '#E8F4F8' }}>{record.nights.toFixed(1)}</span>
+      ),
+    },
+    {
+      title: <span style={{ color: '#88D8E0' }}>תעריף</span>,
+      key: 'rate',
+      render: (_: unknown, record: MealAllowanceMonthlyBreakdown) => (
+        <span className="ltr-number" style={{ color: '#E8F4F8' }}>{formatCurrency(record.nightly_rate)}</span>
+      ),
+    },
+    {
+      title: <span style={{ color: '#88D8E0' }}>סכום</span>,
+      key: 'amount',
+      render: (_: unknown, record: MealAllowanceMonthlyBreakdown) => {
+        const excluded = !isMonthClaimable(record.month);
+        return (
+          <span
+            className="ltr-number"
+            style={{
+              color: excluded ? '#888' : '#4ECDC4',
+              textDecoration: excluded ? 'line-through' : 'none',
+            }}
+          >
+            {formatCurrency(record.claim_amount)}
+          </span>
+        );
+      },
+    },
+  ];
+
+  if (!mealAllowance.entitled) {
+    return (
+      <Card
+        title={
+          <span>
+            <GiftOutlined style={{ marginLeft: 8 }} />
+            אש״ל (לינה באתר)
+          </span>
+        }
+        size="small"
+        style={{
+          borderRadius: 8,
+          boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+          background: 'linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%)',
+        }}
+      >
+        <Alert
+          type="warning"
+          showIcon
+          message={
+            mealAllowance.not_entitled_reason === 'not_construction'
+              ? 'אש״ל מגיע רק לעובדי בניין'
+              : mealAllowance.not_entitled_reason === 'no_lodging_input'
+                ? 'לא הוזנו תקופות לינה'
+                : 'הזכות מושבתת'
+          }
+        />
+      </Card>
+    );
+  }
+
+  return (
+    <Card
+      title={
+        <Space>
+          <span>
+            <GiftOutlined style={{ marginLeft: 8 }} />
+            אש״ל (לינה באתר)
+          </span>
+        </Space>
+      }
+      size="small"
+      style={{
+        borderRadius: 8,
+        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+        background: 'linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%)',
+      }}
+    >
+      {/* Summary Statistics */}
+      <Row gutter={16} style={{ marginBottom: 16 }}>
+        <Col span={8}>
+          <Statistic
+            title={<span style={{ color: '#88D8E0' }}>סה״כ לילות</span>}
+            value={mealAllowance.grand_total_nights}
+            precision={1}
+            valueStyle={{ color: '#E8F4F8' }}
+          />
+        </Col>
+        <Col span={8}>
+          <Statistic
+            title={<span style={{ color: '#88D8E0' }}>שווי לפני התיישנות</span>}
+            value={mealAllowance.grand_total_value}
+            precision={2}
+            suffix="₪"
+            valueStyle={{ color: '#4ECDC4', fontWeight: 'bold' }}
+          />
+        </Col>
+        {limitation && (
+          <Col span={8}>
+            <Statistic
+              title={<span style={{ color: '#88D8E0' }}>לאחר התיישנות</span>}
+              value={limitation.claimable_amount || 0}
+              precision={2}
+              suffix="₪"
+              valueStyle={{ color: '#FFD93D' }}
+            />
+            {limitation.excluded_amount !== undefined && limitation.excluded_amount > 0 && (
+              <div style={{ fontSize: 12, color: '#FF6B6B', marginTop: 4 }}>
+                התיישן: <span dir="ltr">{formatCurrency(limitation.excluded_amount)}</span>
+              </div>
+            )}
+          </Col>
+        )}
+      </Row>
+
+      {/* Monthly breakdown */}
+      <Collapse
+        size="small"
+        items={[
+          {
+            key: 'monthly',
+            label: <span style={{ fontWeight: 500 }}>פירוט חודשי</span>,
+            children: (
+              <Table
+                dataSource={mealAllowance.monthly_breakdown.map((m, i) => ({ ...m, key: i }))}
+                columns={monthColumns}
+                pagination={false}
+                size="small"
+                style={{ marginTop: 8 }}
+                rowClassName={(record) => !isMonthClaimable(record.month) ? 'row-excluded' : ''}
+              />
+            ),
+          },
+        ]}
+      />
+    </Card>
+  );
+};
+
 interface VacationBreakdownProps {
   vacation: VacationResult;
   limitation?: LimitationRightResult;
@@ -4579,6 +4776,17 @@ const ResultsView: React.FC<ResultsViewProps> = ({ ssot }) => {
           <TravelBreakdown
             travel={rights_results.travel}
             limitation={limitation_results?.per_right?.travel}
+            generalWindow={generalWindow}
+          />
+        </div>
+      )}
+
+      {/* ז5. Meal Allowance Breakdown */}
+      {rights_results?.meal_allowance?.entitled && (
+        <div style={{ marginBottom: 24 }}>
+          <MealAllowanceBreakdown
+            mealAllowance={rights_results.meal_allowance}
+            limitation={limitation_results?.per_right?.meal_allowance}
             generalWindow={generalWindow}
           />
         </div>

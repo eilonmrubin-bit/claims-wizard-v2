@@ -145,18 +145,22 @@ export interface TrainingFundTier {
   employer_rate: string;   // Decimal as string, e.g. "0.075"
 }
 
-// Travel allowance types
-export type LodgingPattern = 'full_lodging' | 'daily_return';
+// Travel allowance types - Period-based LodgingInput
+export type LodgingPatternType = 'none' | 'weekly' | 'monthly';
 
-export interface LodgingWeek {
-  week_in_cycle: number;  // 1-based index within the cycle
-  pattern: LodgingPattern;
+export interface LodgingPeriod {
+  id: string;
+  start: string | null;      // YYYY-MM-DD or null
+  end: string | null;        // YYYY-MM-DD or null
+  snap_to: 'employment_period' | 'work_pattern' | null;
+  snap_ref_id: string | null;
+  pattern_type: LodgingPatternType;
+  nights_per_unit: number;   // 0-31, nights per week or month
+  visits_per_unit: number;   // 1 to nights_per_unit
 }
 
 export interface LodgingInput {
-  has_lodging: boolean;
-  cycle_weeks: number;  // 1, 2, 3, or 4
-  cycle: LodgingWeek[];
+  periods: LodgingPeriod[];
 }
 
 export interface SSOTInput {
