@@ -213,7 +213,7 @@ const createEmptyInput = (): SSOTInput => ({
     overtime: { enabled: true },
     holidays: { enabled: true },
     severance: { enabled: true },
-    training_fund: { enabled: true },
+    training_fund: { enabled: false },
     travel: { enabled: true },
   },
   deductions_input: {},
