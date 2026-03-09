@@ -2955,12 +2955,6 @@ const RecreationBreakdown: React.FC<RecreationBreakdownProps> = ({ recreation, l
 // ז. PensionBreakdown - פירוט פנסיה
 // ============================================================================
 
-const PENSION_RATE_LABELS: Record<string, string> = {
-  general: 'כללי (6.5%)',
-  agriculture: 'חקלאות (6.5%)',
-  cleaning: 'ניקיון (7.5%)',
-  construction: 'בניין (6% / 7.1%)',
-};
 
 interface PensionBreakdownProps {
   pension: PensionResult;
@@ -3172,6 +3166,13 @@ const PensionBreakdown: React.FC<PensionBreakdownProps> = ({ pension, limitation
     );
   };
 
+  // Get unique pension rates from claimable months only
+  const claimableMonths = pension.months.filter(m => isMonthClaimable(m.month));
+  const uniqueRates = [...new Set(claimableMonths.map(m => m.pension_rate))].sort((a, b) => a - b);
+  const ratesLabel = uniqueRates.length > 0
+    ? uniqueRates.map(r => `${(r * 100).toFixed(1)}%`).join(' / ')
+    : '';
+
   return (
     <Card
       title={
@@ -3180,7 +3181,7 @@ const PensionBreakdown: React.FC<PensionBreakdownProps> = ({ pension, limitation
             <SafetyOutlined style={{ marginLeft: 8 }} />
             פנסיה — {industryLabels[pension.industry] || pension.industry}
           </span>
-          <Tag color="blue">{PENSION_RATE_LABELS[pension.industry] || pension.industry}</Tag>
+          {ratesLabel && <Tag color="blue">{ratesLabel}</Tag>}
         </Space>
       }
       size="small"
