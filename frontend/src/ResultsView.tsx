@@ -4014,6 +4014,8 @@ interface MealAllowanceCalendarProps {
 }
 
 const MealAllowanceCalendar: React.FC<MealAllowanceCalendarProps> = ({ months, lodgingInput, employmentPeriods }) => {
+  console.log('MealAllowanceCalendar:', { months, lodgingInput });
+
   const hebrewMonthNames = ['ינואר', 'פברואר', 'מרץ', 'אפריל', 'מאי', 'יוני', 'יולי', 'אוגוסט', 'ספטמבר', 'אוקטובר', 'נובמבר', 'דצמבר'];
   const dayHeaders = ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש']; // RTL: Sunday first (leftmost)
 
@@ -4150,10 +4152,6 @@ const MealAllowanceCalendar: React.FC<MealAllowanceCalendarProps> = ({ months, l
     }
     return count;
   };
-
-  if (!lodgingInput?.periods || lodgingInput.periods.length === 0) {
-    return null;
-  }
 
   return (
     <Collapse
