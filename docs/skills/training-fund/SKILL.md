@@ -389,7 +389,7 @@ Update `right_limitation_mapping`:
 
 7. **Cleaning — recreation pending.** Compute on `salary_monthly` only. Flag `recreation_pending = true`. Module recalculates when recreation module is built.
 
-8. **General industry — no custom tiers provided.** `eligible: false`, `ineligible_reason: "לא הוזנו מדרגות קרן השתלמות"`.
+8. **General industry — no custom tiers provided.** `eligible: false`, `ineligible_reason: "אין זכאות לקרן השתלמות"`.
 
 9. **Job scope < 1.0.** Applied to `month_required`. Job scope already reflects partial months naturally (same logic as severance).
 
@@ -512,7 +512,7 @@ Input:
 
 Expected:
   eligible: false
-  ineligible_reason: "לא הוזנו מדרגות קרן השתלמות"
+  ineligible_reason: "אין זכאות לקרן השתלמות"
 ```
 
 ### Fixture 7: Construction worker — split month at 3-year threshold

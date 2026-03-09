@@ -400,7 +400,7 @@ class TestFixture6GeneralWithoutCustomTiersIneligible:
         )
 
         assert result.eligible is False
-        assert result.ineligible_reason == "לא הוזנו מדרגות קרן השתלמות"
+        assert result.ineligible_reason == "אין זכאות לקרן השתלמות"
 
 
 class TestFixture7ConstructionSplitMonthSeniorityThreshold:

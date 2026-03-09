@@ -338,7 +338,7 @@ def compute_training_fund(
     if industry == "general" and not training_fund_tiers:
         return TrainingFundData(
             eligible=False,
-            ineligible_reason="לא הוזנו מדרגות קרן השתלמות",
+            ineligible_reason="אין זכאות לקרן השתלמות",
             industry=industry,
             is_construction_foreman=False,
         )
