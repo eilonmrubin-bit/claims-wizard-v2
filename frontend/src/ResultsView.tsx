@@ -425,8 +425,7 @@ interface TravelResult {
   distance_km: number | null;
   distance_tier: string | null;  // "standard" | "far" | null
   has_lodging: boolean;
-  lodging_cycle_weeks: number | null;
-  lodging_cycle: Array<{ week_in_cycle: number; pattern: string }> | null;
+  lodging_periods_count: number;
   weekly_detail: TravelWeekDetail[];
   monthly_breakdown: TravelMonthlyBreakdown[];
   grand_total_travel_days: number;
@@ -3666,12 +3665,7 @@ const TravelBreakdown: React.FC<TravelBreakdownProps> = ({ travel, limitation, g
 
   // Get lodging description
   const getLodgingDescription = (): string => {
-    if (!travel.has_lodging) return 'ללא לינה';
-    if (travel.lodging_cycle_weeks === 1) {
-      const pattern = travel.lodging_cycle?.[0]?.pattern;
-      return pattern === 'full_lodging' ? 'לינה שבועית' : 'חזרה יומית';
-    }
-    return `מחזור ${travel.lodging_cycle_weeks} שבועות`;
+    return travel.has_lodging ? 'עם לינה באתר' : 'ללא לינה';
   };
 
   const monthColumns = [
