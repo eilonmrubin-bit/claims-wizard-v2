@@ -101,22 +101,37 @@ def test_is_rest_day_sunday():
 # =============================================================================
 
 def test_is_work_day_in_pattern():
-    """Test work day when in pattern."""
+    """Test work day when in pattern (simple weekly, no daily_overrides)."""
     # Sunday (0) is in work_days [0,1,2,3,4]
-    assert is_work_day(0, [0, 1, 2, 3, 4], rest=False) is True
+    assert is_work_day(date(2024, 1, 7), 0, [0, 1, 2, 3, 4], None) is True
 
 
 def test_is_work_day_not_in_pattern():
-    """Test non-work day when not in pattern."""
+    """Test non-work day when not in pattern (simple weekly, no daily_overrides)."""
     # Friday (5) is not in work_days [0,1,2,3,4]
-    assert is_work_day(5, [0, 1, 2, 3, 4], rest=False) is False
+    assert is_work_day(date(2024, 1, 12), 5, [0, 1, 2, 3, 4], None) is False
 
 
 def test_is_work_day_rest_does_not_override_pattern():
     """Test rest day does NOT override pattern - both flags can be True."""
     # Saturday (6) in pattern with rest=True still means work day
     # The OT pipeline applies rest-day rates (150%/200%)
-    assert is_work_day(6, [0, 1, 2, 3, 4, 5, 6], rest=True) is True
+    assert is_work_day(date(2024, 1, 6), 6, [0, 1, 2, 3, 4, 5, 6], None) is True
+
+
+def test_is_work_day_with_daily_overrides():
+    """Test work day determined by daily_overrides when present (cyclic patterns)."""
+    # When daily_overrides is present, it's authoritative for work days
+    daily_overrides = {
+        date(2024, 1, 7): DayShifts(shifts=[], breaks=[]),  # Sunday
+        date(2024, 1, 8): DayShifts(shifts=[], breaks=[]),  # Monday
+    }
+    # Jan 7 is in daily_overrides → work day
+    assert is_work_day(date(2024, 1, 7), 0, [0, 1, 2, 3, 4], daily_overrides) is True
+    # Jan 8 is in daily_overrides → work day
+    assert is_work_day(date(2024, 1, 8), 1, [0, 1, 2, 3, 4], daily_overrides) is True
+    # Jan 9 is NOT in daily_overrides → NOT a work day (even though dow=2 is in work_days)
+    assert is_work_day(date(2024, 1, 9), 2, [0, 1, 2, 3, 4], daily_overrides) is False
 
 
 # =============================================================================
@@ -219,13 +234,26 @@ def test_per_day_shifts():
 
 
 def test_daily_override_shifts():
-    """Test daily override shifts have priority."""
-    # Override for specific date
+    """Test daily override shifts are used for cyclic patterns.
+
+    When daily_overrides is present, it's authoritative for:
+    1. Which days are work days (only dates in daily_overrides)
+    2. What shifts those days have
+    """
+    # Complete daily_overrides for all work days (like cyclic pattern output)
     daily_overrides = {
-        date(2024, 1, 8): DayShifts(
-            shifts=[TimeRange(time(6, 0), time(14, 0))],
+        date(2024, 1, 7): DayShifts(
+            shifts=[TimeRange(time(7, 0), time(16, 0))],  # Default-like
             breaks=[]
-        )
+        ),
+        date(2024, 1, 8): DayShifts(
+            shifts=[TimeRange(time(6, 0), time(14, 0))],  # Different shift
+            breaks=[]
+        ),
+        date(2024, 1, 9): DayShifts(
+            shifts=[TimeRange(time(8, 0), time(17, 0))],  # Another different shift
+            breaks=[]
+        ),
     }
 
     ep = make_ep(
@@ -237,14 +265,27 @@ def test_daily_override_shifts():
 
     records = generate_daily_records([ep], "saturday")
 
-    # Jan 8 should have override
+    # All 3 days are work days (in daily_overrides)
+    work_records = [r for r in records if r.is_work_day]
+    assert len(work_records) == 3
+
+    # Jan 7 (Sunday) - 07:00-16:00
+    jan7_record = [r for r in records if r.date == date(2024, 1, 7)][0]
+    assert jan7_record.is_work_day is True
+    assert jan7_record.shift_templates[0].start_time == time(7, 0)
+    assert jan7_record.shift_templates[0].end_time == time(16, 0)
+
+    # Jan 8 (Monday) - 06:00-14:00
     jan8_record = [r for r in records if r.date == date(2024, 1, 8)][0]
+    assert jan8_record.is_work_day is True
     assert jan8_record.shift_templates[0].start_time == time(6, 0)
     assert jan8_record.shift_templates[0].end_time == time(14, 0)
 
-    # Other days should have default
-    jan7_record = [r for r in records if r.date == date(2024, 1, 7)][0]
-    assert jan7_record.shift_templates[0].start_time == time(7, 0)
+    # Jan 9 (Tuesday) - 08:00-17:00
+    jan9_record = [r for r in records if r.date == date(2024, 1, 9)][0]
+    assert jan9_record.is_work_day is True
+    assert jan9_record.shift_templates[0].start_time == time(8, 0)
+    assert jan9_record.shift_templates[0].end_time == time(17, 0)
 
 
 def test_day_segments_null_initially():

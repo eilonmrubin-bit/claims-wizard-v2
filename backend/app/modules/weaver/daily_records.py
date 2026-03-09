@@ -40,13 +40,27 @@ def day_of_week(d: date) -> int:
     return (d.weekday() + 1) % 7
 
 
-def is_work_day(dow: int, pattern_work_days: list[int], rest: bool) -> bool:
+def is_work_day(
+    d: date,
+    dow: int,
+    pattern_work_days: list[int],
+    pattern_daily_overrides: dict | None,
+) -> bool:
     """Check if the given day is a work day.
+
+    For cyclic patterns (Level B), daily_overrides is authoritative:
+    - If daily_overrides is present, a day is a work day IFF it's in daily_overrides
+    - If daily_overrides is None/empty, fall back to pattern_work_days
 
     If the pattern includes the rest day, both is_work_day and is_rest_day
     will be True. The OT pipeline will apply rest-day rates (150%/200%).
     Rest day does NOT override the pattern.
     """
+    # For cyclic patterns: daily_overrides is authoritative
+    if pattern_daily_overrides:
+        return d in pattern_daily_overrides
+
+    # For simple weekly patterns: use work_days
     return dow in pattern_work_days
 
 
@@ -125,7 +139,7 @@ def generate_daily_records(
         while current <= ep.end:
             dow = day_of_week(current)
             rest = is_rest_day(dow, rest_day)
-            work = is_work_day(dow, ep.pattern_work_days, rest)
+            work = is_work_day(current, dow, ep.pattern_work_days, ep.pattern_daily_overrides)
 
             # Get shift and break templates
             if work:
