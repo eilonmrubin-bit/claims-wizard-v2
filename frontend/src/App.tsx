@@ -74,6 +74,7 @@ import type {
   WeekPattern,
   PatternLevelB,
   TerminationReason,
+  LodgingWeek,
 } from './types';
 
 dayjs.locale('he');
@@ -213,11 +214,14 @@ const createEmptyInput = (): SSOTInput => ({
     holidays: { enabled: true },
     severance: { enabled: true },
     training_fund: { enabled: true },
+    travel: { enabled: true },
   },
   deductions_input: {},
   right_specific_inputs: {},
   is_construction_foreman: false,
   training_fund_tiers: [],
+  travel_distance_km: null,
+  lodging_input: null,
 });
 
 type SeniorityUnit = 'months' | 'years';
@@ -2141,6 +2145,148 @@ function App() {
                             },
                           ]}
                         />
+                    </Col>
+                  </Row>
+                  {/* Row 4: Travel Collapse */}
+                  <Row gutter={24} style={{ marginTop: 16 }}>
+                    <Col span={24}>
+                      <Collapse
+                        collapsible={formData.right_toggles.travel?.enabled !== false ? 'header' : 'disabled'}
+                        activeKey={formData.right_toggles.travel?.enabled !== false ? undefined : []}
+                        items={[
+                          {
+                            key: 'travel_settings',
+                            label: (
+                              <Space onClick={(e) => e.stopPropagation()}>
+                                <Switch
+                                  checked={formData.right_toggles.travel?.enabled !== false}
+                                  onChange={(checked) => updateRightToggle('travel', 'enabled', checked)}
+                                />
+                                <span style={{ fontWeight: 500 }}>דמי נסיעות</span>
+                                {formData.right_toggles.travel?.enabled !== false && formData.industry === 'construction' && (
+                                  <span style={{ color: '#88D8E0', marginRight: 8 }}>
+                                    ({formData.travel_distance_km !== null && formData.travel_distance_km !== undefined && formData.travel_distance_km >= 40 ? '39.6' : '26.4'} ₪/יום)
+                                  </span>
+                                )}
+                              </Space>
+                            ),
+                            children: (
+                              <div>
+                                {formData.industry !== 'construction' ? (
+                                  <div style={{ fontSize: 12, color: '#88D8E0' }}>
+                                    מחושב לפי ימי עבודה × תעריף יומי (22.6 ₪)
+                                  </div>
+                                ) : (
+                                  <>
+                                    <Row gutter={16} style={{ marginBottom: 16 }}>
+                                      <Col span={12}>
+                                        <Form.Item label="מרחק מהבית לאתר (ק״מ)" style={{ marginBottom: 8 }}>
+                                          <InputNumber
+                                            value={formData.travel_distance_km ?? undefined}
+                                            onChange={(v) => updateField('travel_distance_km', v ?? null)}
+                                            min={0}
+                                            style={{ width: '100%' }}
+                                            placeholder="הזן מרחק"
+                                          />
+                                        </Form.Item>
+                                        <div style={{ fontSize: 11, color: '#88D8E0' }}>
+                                          עד 40 ק״מ: 26.4 ₪ / יום | 40 ק״מ ומעלה: 39.6 ₪ / יום
+                                        </div>
+                                      </Col>
+                                      <Col span={12}>
+                                        <Form.Item style={{ marginBottom: 8 }}>
+                                          <Checkbox
+                                            checked={formData.lodging_input?.has_lodging || false}
+                                            onChange={(e) => {
+                                              if (e.target.checked) {
+                                                updateField('lodging_input', {
+                                                  has_lodging: true,
+                                                  cycle_weeks: 1,
+                                                  cycle: [{ week_in_cycle: 1, pattern: 'full_lodging' }]
+                                                });
+                                              } else {
+                                                updateField('lodging_input', null);
+                                              }
+                                            }}
+                                          >
+                                            העובד לן באתר
+                                          </Checkbox>
+                                        </Form.Item>
+                                      </Col>
+                                    </Row>
+                                    {formData.lodging_input?.has_lodging && (
+                                      <div style={{ background: 'rgba(78, 205, 196, 0.1)', padding: 12, borderRadius: 8 }}>
+                                        <div style={{ marginBottom: 8, fontWeight: 500 }}>דפוס לינה שבועי</div>
+                                        <Row gutter={16} align="middle" style={{ marginBottom: 12 }}>
+                                          <Col>
+                                            <span>מחזור של</span>
+                                          </Col>
+                                          <Col>
+                                            <Select
+                                              value={formData.lodging_input.cycle_weeks}
+                                              onChange={(v) => {
+                                                const newCycle: LodgingWeek[] = [];
+                                                for (let i = 1; i <= v; i++) {
+                                                  const existing = formData.lodging_input?.cycle.find(c => c.week_in_cycle === i);
+                                                  newCycle.push({
+                                                    week_in_cycle: i,
+                                                    pattern: existing?.pattern || 'full_lodging'
+                                                  });
+                                                }
+                                                updateField('lodging_input', {
+                                                  ...formData.lodging_input!,
+                                                  cycle_weeks: v,
+                                                  cycle: newCycle
+                                                });
+                                              }}
+                                              style={{ width: 80 }}
+                                            >
+                                              <Select.Option value={1}>1</Select.Option>
+                                              <Select.Option value={2}>2</Select.Option>
+                                              <Select.Option value={3}>3</Select.Option>
+                                              <Select.Option value={4}>4</Select.Option>
+                                            </Select>
+                                          </Col>
+                                          <Col>
+                                            <span>שבועות</span>
+                                          </Col>
+                                        </Row>
+                                        {formData.lodging_input.cycle.map((week, idx) => (
+                                          <Row gutter={16} align="middle" key={idx} style={{ marginBottom: 8 }}>
+                                            <Col span={6}>
+                                              <span>שבוע {week.week_in_cycle}:</span>
+                                            </Col>
+                                            <Col span={10}>
+                                              <Select
+                                                value={week.pattern}
+                                                onChange={(v) => {
+                                                  const newCycle = [...formData.lodging_input!.cycle];
+                                                  newCycle[idx] = { ...newCycle[idx], pattern: v };
+                                                  updateField('lodging_input', {
+                                                    ...formData.lodging_input!,
+                                                    cycle: newCycle
+                                                  });
+                                                }}
+                                                style={{ width: '100%' }}
+                                              >
+                                                <Select.Option value="full_lodging">לינה מלאה</Select.Option>
+                                                <Select.Option value="daily_return">חזרה יומית</Select.Option>
+                                              </Select>
+                                            </Col>
+                                          </Row>
+                                        ))}
+                                        <div style={{ fontSize: 11, color: '#88D8E0', marginTop: 8 }}>
+                                          לינה מלאה = 2 ימי נסיעה (הלוך+חזור). חזרה יומית = כל ימי עבודה.
+                                        </div>
+                                      </div>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+                            ),
+                          },
+                        ]}
+                      />
                     </Col>
                   </Row>
                   </>

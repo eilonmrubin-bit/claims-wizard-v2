@@ -36,6 +36,7 @@ import {
   PercentageOutlined,
   DownloadOutlined,
   SafetyOutlined,
+  CarOutlined,
 } from '@ant-design/icons';
 
 const { Title, Text } = Typography;
@@ -400,6 +401,39 @@ interface TrainingFundResult {
   monthly_breakdown: TrainingFundMonthlyBreakdown[];
 }
 
+interface TravelWeekDetail {
+  week_start: string;
+  week_end: string;
+  effective_period_id: string;
+  work_days: number;
+  cycle_position: number | null;
+  week_pattern: string;  // "full_lodging" | "daily_return" | "no_lodging"
+  travel_days: number;
+  daily_rate: number;
+  week_travel_value: number;
+}
+
+interface TravelMonthlyBreakdown {
+  month: [number, number];
+  travel_days: number;
+  claim_amount: number;
+}
+
+interface TravelResult {
+  industry: string;
+  daily_rate: number;
+  distance_km: number | null;
+  distance_tier: string | null;  // "standard" | "far" | null
+  has_lodging: boolean;
+  lodging_cycle_weeks: number | null;
+  lodging_cycle: Array<{ week_in_cycle: number; pattern: string }> | null;
+  weekly_detail: TravelWeekDetail[];
+  monthly_breakdown: TravelMonthlyBreakdown[];
+  grand_total_travel_days: number;
+  grand_total_value: number;
+  claim_before_deductions: number;
+}
+
 interface FreezePeriodApplied {
   name: string;
   start_date: string;
@@ -516,6 +550,7 @@ interface ResultsViewProps {
       vacation?: VacationResult;
       pension?: PensionResult;
       training_fund?: TrainingFundResult;
+      travel?: TravelResult;
     };
     limitation_results?: LimitationResults;
     total_employment?: TotalEmployment;
@@ -3586,6 +3621,185 @@ const VACATION_DAYS_TABLES: Record<string, { range: string; five_day: number; si
   ],
 };
 
+// ====== Travel Breakdown ======
+
+interface TravelBreakdownProps {
+  travel: TravelResult;
+  limitation?: LimitationRightResult;
+  generalWindow?: LimitationWindow;
+}
+
+const TravelBreakdown: React.FC<TravelBreakdownProps> = ({ travel, limitation, generalWindow }) => {
+  const industryLabels: Record<string, string> = {
+    general: 'כללי',
+    construction: 'בניין',
+    agriculture: 'חקלאות',
+    cleaning: 'ניקיון',
+  };
+
+  // Helper: check if a month is within the limitation window
+  const isMonthClaimable = (month: [number, number]): boolean => {
+    if (!generalWindow?.effective_window_start) return true;
+    const windowStart = new Date(generalWindow.effective_window_start);
+    const monthStart = new Date(month[0], month[1] - 1, 1);
+    return monthStart >= windowStart;
+  };
+
+  // Get lodging description
+  const getLodgingDescription = (): string => {
+    if (!travel.has_lodging) return 'ללא לינה';
+    if (travel.lodging_cycle_weeks === 1) {
+      const pattern = travel.lodging_cycle?.[0]?.pattern;
+      return pattern === 'full_lodging' ? 'לינה שבועית' : 'חזרה יומית';
+    }
+    return `מחזור ${travel.lodging_cycle_weeks} שבועות`;
+  };
+
+  const monthColumns = [
+    {
+      title: '',
+      key: 'status',
+      width: 32,
+      render: (_: unknown, record: TravelMonthlyBreakdown) => (
+        isMonthClaimable(record.month)
+          ? <Tooltip title="בתוך חלון ההתיישנות — ניתן לתבוע"><CheckCircleOutlined style={{ color: '#4ECDC4' }} /></Tooltip>
+          : <Tooltip title="מחוץ לחלון ההתיישנות — התיישן"><ClockCircleOutlined style={{ color: '#FF6B6B' }} /></Tooltip>
+      ),
+    },
+    {
+      title: <span style={{ color: '#88D8E0' }}>חודש</span>,
+      key: 'month',
+      render: (_: unknown, record: TravelMonthlyBreakdown) => (
+        <span style={{ color: '#E8F4F8' }}>{formatMonth(record.month)}</span>
+      ),
+    },
+    {
+      title: <span style={{ color: '#88D8E0' }}>ימי נסיעה</span>,
+      key: 'travel_days',
+      render: (_: unknown, record: TravelMonthlyBreakdown) => (
+        <span className="ltr-number" style={{ color: '#E8F4F8' }}>{record.travel_days}</span>
+      ),
+    },
+    {
+      title: <span style={{ color: '#88D8E0' }}>סכום</span>,
+      key: 'amount',
+      render: (_: unknown, record: TravelMonthlyBreakdown) => {
+        const excluded = !isMonthClaimable(record.month);
+        return (
+          <span
+            className="ltr-number"
+            style={{
+              color: excluded ? '#888' : '#4ECDC4',
+              textDecoration: excluded ? 'line-through' : 'none',
+            }}
+          >
+            {formatCurrency(record.claim_amount)}
+          </span>
+        );
+      },
+    },
+  ];
+
+  return (
+    <Card
+      title={
+        <Space>
+          <span>
+            <CarOutlined style={{ marginLeft: 8 }} />
+            דמי נסיעות — {industryLabels[travel.industry] || travel.industry}
+          </span>
+        </Space>
+      }
+      size="small"
+      style={{
+        borderRadius: 8,
+        boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
+        background: 'linear-gradient(135deg, #fafafa 0%, #f5f5f5 100%)',
+      }}
+    >
+      {/* Summary Statistics */}
+      <Row gutter={16} style={{ marginBottom: 16 }}>
+        <Col span={8}>
+          <Statistic
+            title={<span style={{ color: '#88D8E0' }}>סה״כ זכאות</span>}
+            value={travel.grand_total_value}
+            precision={2}
+            suffix="₪"
+            valueStyle={{ color: '#4ECDC4', fontWeight: 'bold' }}
+          />
+          <div style={{ fontSize: 12, color: '#88D8E0', marginTop: 4 }}>
+            סה״כ ימי נסיעה: <span dir="ltr">{travel.grand_total_travel_days}</span>
+          </div>
+        </Col>
+        <Col span={8}>
+          <Statistic
+            title={<span style={{ color: '#88D8E0' }}>תעריף יומי</span>}
+            value={travel.daily_rate}
+            precision={2}
+            suffix="₪"
+            valueStyle={{ color: '#E8F4F8' }}
+          />
+        </Col>
+        {limitation && (
+          <Col span={8}>
+            <Statistic
+              title={<span style={{ color: '#88D8E0' }}>לאחר התיישנות</span>}
+              value={limitation.claimable_amount || 0}
+              precision={2}
+              suffix="₪"
+              valueStyle={{ color: '#FFD93D' }}
+            />
+            {limitation.excluded_amount !== undefined && limitation.excluded_amount > 0 && (
+              <div style={{ fontSize: 12, color: '#FF6B6B', marginTop: 4 }}>
+                התיישן: <span dir="ltr">{formatCurrency(limitation.excluded_amount)}</span>
+              </div>
+            )}
+          </Col>
+        )}
+      </Row>
+
+      {/* Construction info row */}
+      {travel.industry === 'construction' && (
+        <div style={{
+          padding: '8px 12px',
+          background: 'rgba(78, 205, 196, 0.1)',
+          borderRadius: 6,
+          marginBottom: 16,
+          fontSize: 13,
+        }}>
+          <Space split={<Divider type="vertical" />}>
+            <span>תעריף: <strong dir="ltr">{travel.daily_rate} ₪</strong>/יום</span>
+            {travel.distance_km !== null && (
+              <span>מרחק: <strong dir="ltr">{travel.distance_km}</strong> ק״מ</span>
+            )}
+            <span>{getLodgingDescription()}</span>
+          </Space>
+        </div>
+      )}
+
+      {/* Monthly breakdown */}
+      <Collapse
+        size="small"
+        items={[
+          {
+            key: 'monthly',
+            label: <span style={{ fontWeight: 500 }}>פירוט חודשי</span>,
+            children: (
+              <Table
+                dataSource={travel.monthly_breakdown.map((m, i) => ({ ...m, key: i }))}
+                columns={monthColumns}
+                pagination={false}
+                size="small"
+                style={{ marginTop: 8 }}
+              />
+            ),
+          },
+        ]}
+      />
+    </Card>
+  );
+};
+
 interface VacationBreakdownProps {
   vacation: VacationResult;
   limitation?: LimitationRightResult;
@@ -4355,6 +4569,17 @@ const ResultsView: React.FC<ResultsViewProps> = ({ ssot }) => {
             limitation={limitation_results?.per_right?.training_fund}
             generalWindow={generalWindow}
             filingDate={filingDate}
+          />
+        </div>
+      )}
+
+      {/* ז4. Travel Breakdown */}
+      {rights_results?.travel && rights_results.travel.grand_total_value > 0 && (
+        <div style={{ marginBottom: 24 }}>
+          <TravelBreakdown
+            travel={rights_results.travel}
+            limitation={limitation_results?.per_right?.travel}
+            generalWindow={generalWindow}
           />
         </div>
       )}

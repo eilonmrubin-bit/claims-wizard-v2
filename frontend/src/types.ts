@@ -145,6 +145,20 @@ export interface TrainingFundTier {
   employer_rate: string;   // Decimal as string, e.g. "0.075"
 }
 
+// Travel allowance types
+export type LodgingPattern = 'full_lodging' | 'daily_return';
+
+export interface LodgingWeek {
+  week_in_cycle: number;  // 1-based index within the cycle
+  pattern: LodgingPattern;
+}
+
+export interface LodgingInput {
+  has_lodging: boolean;
+  cycle_weeks: number;  // 1, 2, 3, or 4
+  cycle: LodgingWeek[];
+}
+
 export interface SSOTInput {
   case_metadata: CaseMetadata;
   personal_details: PersonalDetails;
@@ -164,6 +178,9 @@ export interface SSOTInput {
   pattern_sources?: PatternSource[];
   is_construction_foreman?: boolean;
   training_fund_tiers?: TrainingFundTier[];
+  // Travel allowance (construction only)
+  travel_distance_km?: number | null;
+  lodging_input?: LodgingInput | null;
 }
 
 export interface ApiError {
