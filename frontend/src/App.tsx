@@ -505,7 +505,7 @@ const EXAMPLE_CONSTRUCTION_VACATION = {
 const EXAMPLE_CONSTRUCTION_MEAL_ALLOWANCE = {
   case_metadata: {
     case_name: "בדיקה: בניין — אש\"ל + נסיעות (VisitGroups)",
-    notes: "עובד בנייה, 2023 שלמה. לינה חודשית: 14 לילות ברצף (ביקור 1) + 6 לילות בנפרד (6 ביקורים). סה\"כ 20 לילות / 7 ביקורים לחודש. צפוי: אש\"ל ~34,440 ₪, ימי נסיעה ~9 לחודש."
+    notes: "לינה חודשית: שבועיים רצוף באתר (14 לילות, ביקור אחד). צפוי: אש\"ל 12×14×143.5=24,108 ₪, ימי נסיעה: work_days+1-14 (ינואר≈10, פברואר≈7)"
   },
   personal_details: { first_name: "יוסף", last_name: "חמדאן", id_number: "123456789", birth_year: 1985 },
   defendant_details: { name: "חברת בנייה בע\"מ", id_number: "514000001", address: "תל אביב" },
@@ -544,8 +544,7 @@ const EXAMPLE_CONSTRUCTION_MEAL_ALLOWANCE = {
         snap_ref_id: null,
         pattern_type: "monthly",
         visit_groups: [
-          { id: "vg1", nights_per_visit: 14, count: 1 },
-          { id: "vg2", nights_per_visit: 1, count: 6 }
+          { id: "vg1", nights_per_visit: 14, count: 1 }
         ]
       }
     ]
