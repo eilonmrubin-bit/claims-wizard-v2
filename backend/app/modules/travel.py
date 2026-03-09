@@ -4,7 +4,8 @@ Calculates travel allowance based on work days, lodging patterns, and industry r
 See docs/skills/travel/SKILL.md for complete documentation.
 
 Updated to use new period-based LodgingInput structure.
-New formula: travel_days = work_days + visits - nights
+Formula: travel_days = max(2 * visits, work_days + visits - nights)
+Floor is 2 × visits because every visit has departure + return.
 """
 
 from collections import defaultdict
@@ -54,9 +55,11 @@ def find_active_lodging_period(
 
 
 def compute_weekly_travel_days(work_days: int, active_period: LodgingPeriod | None) -> int:
-    """Compute travel days for a week using the new formula.
+    """Compute travel days for a week using the corrected formula.
 
-    Formula: travel_days = work_days + visits - nights
+    Formula: travel_days = max(2 * visits, work_days + visits - nights)
+
+    The floor is 2 × visits (not 0) because every visit has departure + return.
 
     Args:
         work_days: Number of distinct work days in the week
@@ -74,8 +77,8 @@ def compute_weekly_travel_days(work_days: int, active_period: LodgingPeriod | No
     if active_period.pattern_type == "weekly":
         nights = total_nights(active_period)
         visits = total_visits(active_period)
-        travel_days = work_days + visits - nights
-        return max(0, travel_days)
+        # Floor is 2 × visits: every visit has departure + return = 2 travel days minimum
+        return max(2 * visits, work_days + visits - nights)
 
     # For monthly pattern, we compute at month level, so return work_days here
     # The monthly computation will handle the adjustment
@@ -185,6 +188,23 @@ def compute_travel(
                 month_key = (day.year, day.month)
                 monthly_work_days_by_calendar[month_key].add(day)
 
+    # Pre-populate monthly_lodging_periods for all months with calendar work days
+    # This handles cross-month weeks (e.g., week starting Jan 30 with shifts in Feb)
+    if has_lodging and lodging_input is not None:
+        from calendar import monthrange
+        for month_key in monthly_work_days_by_calendar.keys():
+            month_start = date(month_key[0], month_key[1], 1)
+            _, last_day = monthrange(month_key[0], month_key[1])
+            month_end = date(month_key[0], month_key[1], last_day)
+            active_period = find_active_lodging_period(month_start, month_end, lodging_input)
+            if active_period is not None and active_period.pattern_type == "monthly":
+                monthly_lodging_periods[month_key] = active_period
+                # Initialize monthly aggregates for this month
+                if month_key not in monthly_aggregates:
+                    monthly_aggregates[month_key]["travel_days"] = 0
+                    monthly_aggregates[month_key]["value"] = Decimal("0")
+                    monthly_aggregates[month_key]["work_days"] = 0
+
     for week, work_days in work_weeks:
         if week.start_date is None:
             continue
@@ -263,10 +283,11 @@ def compute_travel(
         # A day belongs to month M if its calendar date falls within M, regardless of week attribution
         month_work_days = len(monthly_work_days_by_calendar.get(month_key, set()))
 
-        # Apply monthly formula: travel_days = work_days + visits - nights
+        # Apply monthly formula: travel_days = max(2 * visits, work_days + visits - nights)
+        # Floor is 2 × visits: every visit has departure + return = 2 travel days minimum
         nights = total_nights(period)
         visits = total_visits(period)
-        travel_days_month = max(0, month_work_days + visits - nights)
+        travel_days_month = max(2 * visits, month_work_days + visits - nights)
 
         # Get rate for this month (use first day of month)
         month_date = date(month_key[0], month_key[1], 1)

@@ -240,11 +240,18 @@ claim_before_deductions = grand_total_value
 
 ## 6. Updated Travel Formula
 
-**Key formula:** `travel_days = work_days + total_visits - total_nights`
+**Key formula:** `travel_days = max(2 × total_visits, work_days + total_visits - total_nights)`
 
-Derivation: each visit generates 2 travel days (departure + return) and consumes
-(nights_per_visit + 1) work days. Non-visit days each generate 1 travel day.
-Net: visits x 2 + (work_days - total_nights - total_visits) = work_days + total_visits - total_nights.
+Derivation:
+- Each visit generates exactly 2 travel days (departure + return), regardless of how many nights.
+- Non-visit work days each generate 1 travel day.
+- When there are non-lodging work days: travel = 2×v + (work_days - nights - visits) = work_days + visits - nights
+- When lodging is dense (work_days <= nights + visits): all work days are inside visits,
+  so the minimum is 2 travel days per visit = 2 × visits.
+- Combined: max(2 × visits, work_days + visits - nights)
+
+**ANTI-PATTERN:** DO NOT use `max(0, work_days + visits - nights)`. Zero is wrong —
+every visit has a departure AND a return, so the floor is 2 × visits, not 0.
 
 ### Weekly pattern — compute per work week
 
@@ -257,7 +264,7 @@ for each work week W:
     else:
         n = total_nights(active)
         v = total_visits(active)
-        travel_days = max(0, work_days(W) + v - n)
+        travel_days = max(2 * v, work_days(W) + v - n)
 ```
 
 ### Monthly pattern — compute per calendar month
@@ -278,7 +285,7 @@ for each calendar month M:
     else:
         n = total_nights(active)
         v = total_visits(active)
-        travel_days_M = max(0, work_days_M + v - n)
+        travel_days_M = max(2 * v, work_days_M + v - n)
 ```
 
 **Anti-pattern:** DO NOT count work_days for monthly pattern by summing
@@ -287,14 +294,15 @@ misses days at month boundaries. Always count by calendar date.
 
 **Verification table:**
 
-| work_days | total_visits | total_nights | travel_days |
-|-----------|-------------|--------------|-------------|
-| 5         | 0           | 0            | 5           |
-| 5         | 1           | 4            | 2           |
-| 4         | 1           | 1            | 4           |
-| 4         | 2           | 2            | 4           |
-| 5         | 2           | 4            | 3           |
-| 22        | 7           | 20           | 9           |
+| work_days | total_visits | total_nights | travel_days         |
+|-----------|-------------|--------------|---------------------|
+| 5         | 0           | 0            | 5                   |
+| 5         | 1           | 4            | max(2, 2) = 2       |
+| 4         | 1           | 1            | max(2, 4) = 4       |
+| 4         | 2           | 2            | max(4, 4) = 4       |
+| 5         | 2           | 4            | max(4, 3) = 4       |
+| 23        | 7           | 20           | max(14, 10) = 14    |
+| 20        | 7           | 20           | max(14, 7) = 14     |
 
 ---
 

@@ -3,7 +3,8 @@
 See docs/skills/travel/SKILL.md for test cases.
 
 Updated for new period-based LodgingInput structure.
-New formula: travel_days = work_days + visits - nights
+Formula: travel_days = max(2 * visits, work_days + visits - nights)
+Floor is 2 × visits because every visit has departure + return.
 """
 
 import pytest
@@ -117,14 +118,14 @@ class TestComputeWeeklyTravelDays:
         assert compute_weekly_travel_days(3, period) == 3
 
     def test_weekly_lodging_standard(self):
-        """Weekly lodging, 4 nights, 1 visit: travel_days = work_days + 1 - 4."""
-        # 4 nights/week, 1 visit/week
+        """Weekly lodging, 4 nights, 1 visit: travel_days = max(2, work_days + 1 - 4)."""
+        # 4 nights/week, 1 visit/week. Floor is 2 × 1 = 2
         period = make_lodging_period("LP1", date(2024, 1, 1), date(2024, 12, 31), "weekly", 4, 1)
-        # 5 work days: 5 + 1 - 4 = 2
+        # 5 work days: max(2, 5+1-4) = max(2, 2) = 2
         assert compute_weekly_travel_days(5, period) == 2
-        # 3 work days: 3 + 1 - 4 = 0
-        assert compute_weekly_travel_days(3, period) == 0
-        # 6 work days: 6 + 1 - 4 = 3
+        # 3 work days: max(2, 3+1-4) = max(2, 0) = 2 (floor kicks in)
+        assert compute_weekly_travel_days(3, period) == 2
+        # 6 work days: max(2, 6+1-4) = max(2, 3) = 3
         assert compute_weekly_travel_days(6, period) == 3
 
     def test_weekly_lodging_custom_pattern(self):
@@ -139,12 +140,13 @@ class TestComputeWeeklyTravelDays:
         period = make_lodging_period("LP1", date(2024, 1, 1), date(2024, 12, 31), "weekly", 4, 1)
         assert compute_weekly_travel_days(0, period) == 0
 
-    def test_negative_result_clamped_to_zero(self):
-        """Travel days can't be negative."""
-        # 4 nights, 1 visit, 1 work day: 1 + 1 - 4 = -2 → 0
+    def test_floor_is_2_times_visits(self):
+        """Travel days floor is 2 × visits (every visit has departure + return)."""
+        # 4 nights, 1 visit, 1 work day: max(2*1, 1+1-4) = max(2, -2) = 2
         period = make_lodging_period("LP1", date(2024, 1, 1), date(2024, 12, 31), "weekly", 4, 1)
-        assert compute_weekly_travel_days(1, period) == 0
-        assert compute_weekly_travel_days(2, period) == 0  # 2 + 1 - 4 = -1 → 0
+        assert compute_weekly_travel_days(1, period) == 2  # Floor is 2 × 1 visit
+        assert compute_weekly_travel_days(2, period) == 2  # max(2, 2+1-4) = max(2, -1) = 2
+        assert compute_weekly_travel_days(3, period) == 2  # max(2, 3+1-4) = max(2, 0) = 2
 
 
 class TestGetWorkDaysInWeek:
@@ -540,7 +542,8 @@ class TestCase6PartialWeekEmploymentStart:
         first week: work_days=3 (Wed, Thu, Fri)
 
     Expected:
-        travel_days = 3 + 1 - 4 = 0 (clamped to 0 from negative)
+        travel_days = max(2*1, 3+1-4) = max(2, 0) = 2
+        Floor is 2 × visits because every visit has departure + return.
     """
 
     def test_partial_week_employment_start_lodging(self):
@@ -578,8 +581,8 @@ class TestCase6PartialWeekEmploymentStart:
         assert len(result.weekly_detail) == 1
         assert result.weekly_detail[0].work_days == 3
         assert result.weekly_detail[0].week_pattern == "weekly_lodging"
-        # 3 + 1 - 4 = 0 (clamped from negative)
-        assert result.weekly_detail[0].travel_days == 0
+        # max(2*1, 3+1-4) = max(2, 0) = 2 (floor is 2 × visits)
+        assert result.weekly_detail[0].travel_days == 2
 
 
 class TestCase7SingleDayLodgingWeek:
@@ -590,7 +593,8 @@ class TestCase7SingleDayLodgingWeek:
         work_days = 1 (holiday week, only 1 day worked)
 
     Expected:
-        travel_days = 1 + 1 - 4 = -2 → clamped to 0
+        travel_days = max(2*1, 1+1-4) = max(2, -2) = 2
+        Floor is 2 × visits because every visit has departure + return.
     """
 
     def test_single_day_lodging_week(self):
@@ -624,8 +628,8 @@ class TestCase7SingleDayLodgingWeek:
 
         assert len(result.weekly_detail) == 1
         assert result.weekly_detail[0].work_days == 1
-        # 1 + 1 - 4 = -2 → 0
-        assert result.weekly_detail[0].travel_days == 0
+        # max(2*1, 1+1-4) = max(2, -2) = 2 (floor is 2 × visits)
+        assert result.weekly_detail[0].travel_days == 2
 
 
 class TestCase8PeriodGap:
@@ -885,8 +889,10 @@ class TestMonthlyLodgingCalendarDayCounting:
         By calendar date (CORRECT): 22 work days in January (4 full weeks + 2 days)
 
         With monthly lodging (20 nights, 7 visits):
-        - WRONG: 25 + 7 - 20 = 12 travel days
-        - CORRECT: 22 + 7 - 20 = 9 travel days
+        Floor is 2 × 7 = 14 travel days
+        Formula: max(14, work_days + 7 - 20)
+        January (22 work days): max(14, 22+7-20) = max(14, 9) = 14
+        February (3 work days): max(14, 3+7-20) = max(14, -10) = 14
         """
         from datetime import timedelta
 
@@ -949,16 +955,15 @@ class TestMonthlyLodgingCalendarDayCounting:
             None
         )
 
-        # January should have 22 work days by calendar (not 25 by week attribution)
-        # travel_days = 22 + 7 - 20 = 9
+        # January has 22 work days by calendar (not 25 by week attribution)
+        # travel_days = max(2*7, 22+7-20) = max(14, 9) = 14
         assert jan_breakdown is not None
-        assert jan_breakdown.travel_days == 9  # NOT 12 (which would be wrong)
+        assert jan_breakdown.travel_days == 14  # Floor is 2 × 7 visits
 
         # February has 3 work days (from week 5: Feb 1, 2, 3)
-        # travel_days = 3 + 7 - 20 = -10 → 0 (clamped)
-        # With 0 travel days and 0 value, February may be omitted from breakdown
-        if feb_breakdown is not None:
-            assert feb_breakdown.travel_days == 0  # Clamped from negative
+        # travel_days = max(2*7, 3+7-20) = max(14, -10) = 14
+        assert feb_breakdown is not None
+        assert feb_breakdown.travel_days == 14  # Floor is 2 × 7 visits
 
 
 class TestEmptyWeeks:
@@ -990,3 +995,169 @@ class TestEmptyWeeks:
         # Only 2 weeks should appear in weekly_detail
         assert len(result.weekly_detail) == 2
         assert result.grand_total_travel_days == 2
+
+
+class TestDenseLodgingMonthlyPattern:
+    """Tests for dense lodging monthly patterns where floor (2 × visits) kicks in.
+
+    From skill verification table:
+    | work_days | visits | nights | travel_days              |
+    | 23        | 7      | 20     | max(14, 10) = 14         |
+    | 20        | 7      | 20     | max(14, 7) = 14          |
+
+    These test cases verify the corrected formula: max(2 × visits, work_days + visits - nights)
+    """
+
+    def test_dense_lodging_january_2023_23_work_days(self):
+        """Dense lodging — January 2023 with 23 work days.
+
+        23 work days, 7 visits, 20 nights
+        Formula: max(2*7, 23+7-20) = max(14, 10) = 14 travel days
+
+        The floor (14) kicks in because the formula result (10) is below it.
+        """
+        from datetime import timedelta
+
+        # January 2023 starts with Jan 1 (Sunday), Jan 2 (Monday)
+        # Create weeks to get exactly 23 work days in January
+        # Week 1: Jan 2-6 (5 days)
+        # Week 2: Jan 9-13 (5 days)
+        # Week 3: Jan 16-20 (5 days)
+        # Week 4: Jan 23-27 (5 days)
+        # Week 5: Jan 30-31 (3 days in January, continue to Feb)
+        # Total: 5+5+5+5+3 = 23 days
+
+        weeks = []
+        shifts = []
+        shift_count = 0
+
+        # Create 5 weeks
+        week_starts = [
+            date(2023, 1, 2),
+            date(2023, 1, 9),
+            date(2023, 1, 16),
+            date(2023, 1, 23),
+            date(2023, 1, 30),
+        ]
+
+        for week_num, week_start in enumerate(week_starts):
+            week_id = f"w{week_num + 1}"
+            week_end = week_start + timedelta(days=6)
+            weeks.append(make_week(week_id, week_start, week_end))
+
+            # For week 5, only add Jan 30, 31 (Mon, Tue) + Feb 1 (Wed)
+            # But we want exactly 23 in January, so we control the shifts
+            if week_num < 4:
+                # Full week: 5 days
+                for day_offset in range(5):
+                    shift_date = week_start + timedelta(days=day_offset)
+                    shift_count += 1
+                    shifts.append(make_shift(f"s{shift_count}", week_id, shift_date))
+            else:
+                # Week 5: only Jan 30, 31 (3 Jan days: Mon, Tue + Feb starts Wed)
+                for day_offset in range(3):  # Mon, Tue, Wed = Jan 30, 31, Feb 1
+                    shift_date = week_start + timedelta(days=day_offset)
+                    shift_count += 1
+                    shifts.append(make_shift(f"s{shift_count}", week_id, shift_date))
+
+        lodging_input = LodgingInput(
+            periods=[
+                make_lodging_period(
+                    "LP1",
+                    date(2023, 1, 1),
+                    date(2023, 1, 31),
+                    pattern_type="monthly",
+                    total_nights=20,
+                    total_visits=7,
+                )
+            ]
+        )
+
+        result = compute_travel(
+            industry="construction",
+            travel_distance_km=Decimal("25"),
+            lodging_input=lodging_input,
+            weeks=weeks,
+            shifts=shifts,
+            get_travel_rate=mock_travel_rate,
+            right_enabled=True,
+        )
+
+        jan_breakdown = next(
+            (b for b in result.monthly_breakdown if b.month == (2023, 1)),
+            None
+        )
+
+        # January: 23 work days (by calendar), max(14, 23+7-20) = max(14, 10) = 14
+        assert jan_breakdown is not None
+        assert jan_breakdown.travel_days == 14
+
+    def test_dense_lodging_february_2023_20_work_days(self):
+        """Dense lodging — February 2023 with 20 work days.
+
+        20 work days, 7 visits, 20 nights
+        Formula: max(2*7, 20+7-20) = max(14, 7) = 14 travel days
+
+        The floor (14) kicks in because the formula result (7) is below it.
+        """
+        from datetime import timedelta
+
+        # February 2023: Feb 1 (Wed) to Feb 28 (Tue)
+        # Work weeks: Feb 6-10, Feb 13-17, Feb 20-24, Feb 27-28
+        # Let's simplify: 4 full weeks × 5 = 20 work days
+
+        weeks = []
+        shifts = []
+        shift_count = 0
+
+        week_starts = [
+            date(2023, 2, 6),
+            date(2023, 2, 13),
+            date(2023, 2, 20),
+            date(2023, 2, 27),
+        ]
+
+        for week_num, week_start in enumerate(week_starts):
+            week_id = f"w{week_num + 1}"
+            week_end = week_start + timedelta(days=6)
+            weeks.append(make_week(week_id, week_start, week_end))
+
+            # Add 5 shifts (Mon-Fri) for each week
+            for day_offset in range(5):
+                shift_date = week_start + timedelta(days=day_offset)
+                # Only add shifts that fall in February
+                if shift_date.month == 2:
+                    shift_count += 1
+                    shifts.append(make_shift(f"s{shift_count}", week_id, shift_date))
+
+        lodging_input = LodgingInput(
+            periods=[
+                make_lodging_period(
+                    "LP1",
+                    date(2023, 2, 1),
+                    date(2023, 2, 28),
+                    pattern_type="monthly",
+                    total_nights=20,
+                    total_visits=7,
+                )
+            ]
+        )
+
+        result = compute_travel(
+            industry="construction",
+            travel_distance_km=Decimal("25"),
+            lodging_input=lodging_input,
+            weeks=weeks,
+            shifts=shifts,
+            get_travel_rate=mock_travel_rate,
+            right_enabled=True,
+        )
+
+        feb_breakdown = next(
+            (b for b in result.monthly_breakdown if b.month == (2023, 2)),
+            None
+        )
+
+        # February: 20 work days, max(14, 20+7-20) = max(14, 7) = 14
+        assert feb_breakdown is not None
+        assert feb_breakdown.travel_days == 14
