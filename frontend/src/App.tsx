@@ -1784,7 +1784,12 @@ function App() {
                         <Form.Item label="ענף">
                           <Select
                             value={formData.industry}
-                            onChange={(v) => updateField('industry', v)}
+                            onChange={(v) => {
+                              updateField('industry', v);
+                              // Training fund default: OFF for general, ON for industries with training fund
+                              const hasTrainingFund = v !== 'general';
+                              updateRightToggle('training_fund', 'enabled', hasTrainingFund);
+                            }}
                             style={{ width: '100%' }}
                           >
                             <Select.Option value="general">כללי</Select.Option>
