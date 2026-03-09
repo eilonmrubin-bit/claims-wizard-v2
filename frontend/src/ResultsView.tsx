@@ -3651,12 +3651,9 @@ interface TravelBreakdownProps {
   travel: TravelResult;
   limitation?: LimitationRightResult;
   generalWindow?: LimitationWindow;
-  lodgingInput?: LodgingInput | null;
-  employmentPeriods?: EmploymentPeriod[];
-  workPatterns?: WorkPattern[];
 }
 
-const TravelBreakdown: React.FC<TravelBreakdownProps> = ({ travel, limitation, generalWindow, lodgingInput, employmentPeriods, workPatterns }) => {
+const TravelBreakdown: React.FC<TravelBreakdownProps> = ({ travel, limitation, generalWindow }) => {
   const industryLabels: Record<string, string> = {
     general: 'כללי',
     construction: 'בניין',
@@ -3721,136 +3718,6 @@ const TravelBreakdown: React.FC<TravelBreakdownProps> = ({ travel, limitation, g
       },
     },
   ];
-
-  // Calendar helpers for expandable row
-  const dayHeaders = ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש'];
-
-  const isWithinEmployment = (date: Date): boolean => {
-    if (!employmentPeriods || employmentPeriods.length === 0) return true;
-    const dateStr = date.toISOString().split('T')[0];
-    return employmentPeriods.some(ep => dateStr >= ep.start && dateStr <= ep.end);
-  };
-
-  const isWorkDay = (date: Date): boolean => {
-    if (!isWithinEmployment(date)) return false;
-    const dateStr = date.toISOString().split('T')[0];
-    // Find active work pattern for this date
-    const pattern = workPatterns?.find(wp => dateStr >= wp.start && dateStr <= wp.end);
-    if (!pattern) return false;
-    const dayOfWeek = date.getDay(); // 0=Sunday
-    return pattern.work_days.includes(dayOfWeek);
-  };
-
-  const findWeekDetail = (date: Date): TravelWeekDetail | null => {
-    if (!travel.weekly_detail) return null;
-    const dateStr = date.toISOString().split('T')[0];
-    return travel.weekly_detail.find(w =>
-      w.week_start && w.week_end && dateStr >= w.week_start && dateStr <= w.week_end
-    ) || null;
-  };
-
-  const isRestDay = (date: Date): boolean => date.getDay() === 6;
-
-  type TravelDayType = 'travel' | 'lodging' | 'rest' | 'outside';
-
-  const getTravelDayType = (date: Date): TravelDayType => {
-    if (!isWithinEmployment(date)) return 'outside';
-    if (isRestDay(date)) return 'rest';
-    if (!isWorkDay(date)) return 'rest';
-
-    // Find the week detail from SSOT
-    const weekDetail = findWeekDetail(date);
-    if (!weekDetail) return 'travel'; // No detail, assume travel
-
-    // If no lodging pattern, all work days are travel
-    if (weekDetail.week_pattern === 'no_lodging') return 'travel';
-
-    // With lodging: lodging_work_days = work_days - travel_days
-    // These are days when worker stays on site (not traveling)
-    const lodgingWorkDays = weekDetail.work_days - weekDetail.travel_days;
-    if (lodgingWorkDays <= 0) return 'travel';
-
-    // Count which work day index this date is within the week
-    const weekStart = new Date(weekDetail.week_start);
-    let workDayIndex = 0;
-    for (let d = new Date(weekStart); d <= date; d.setDate(d.getDate() + 1)) {
-      if (d < date && isWorkDay(d)) {
-        workDayIndex++;
-      }
-    }
-
-    // First lodgingWorkDays work days are lodging (staying on site), rest are travel
-    return workDayIndex < lodgingWorkDays ? 'lodging' : 'travel';
-  };
-
-  const getTravelDayStyle = (dayType: TravelDayType): React.CSSProperties => {
-    const base: React.CSSProperties = {
-      width: 32, height: 32, borderRadius: 6,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontSize: 12, fontWeight: 500, cursor: 'default',
-    };
-    switch (dayType) {
-      case 'travel': return { ...base, background: '#1668dc', color: '#fff' };
-      case 'lodging': return { ...base, background: '#7c3aed', color: '#fff' };
-      case 'rest': return { ...base, background: 'transparent', color: '#4b5563' };
-      case 'outside': return { ...base, background: 'transparent', color: 'transparent' };
-    }
-  };
-
-  const getTravelDayTooltip = (dayType: TravelDayType): string => {
-    switch (dayType) {
-      case 'travel': return 'יום נסיעה';
-      case 'lodging': return 'לילת לינה';
-      case 'rest': return 'יום מנוחה';
-      case 'outside': return 'מחוץ לתקופה';
-    }
-  };
-
-  const generateMonthCalendar = (year: number, month: number): (Date | null)[][] => {
-    const firstDay = new Date(year, month - 1, 1);
-    const daysInMonth = new Date(year, month, 0).getDate();
-    const startDayOfWeek = firstDay.getDay();
-    const weeks: (Date | null)[][] = [];
-    let currentWeek: (Date | null)[] = [];
-    for (let i = 0; i < startDayOfWeek; i++) currentWeek.push(null);
-    for (let day = 1; day <= daysInMonth; day++) {
-      currentWeek.push(new Date(year, month - 1, day));
-      if (currentWeek.length === 7) { weeks.push(currentWeek); currentWeek = []; }
-    }
-    while (currentWeek.length > 0 && currentWeek.length < 7) currentWeek.push(null);
-    if (currentWeek.length > 0) weeks.push(currentWeek);
-    return weeks;
-  };
-
-  const expandedRowRender = (record: TravelMonthlyBreakdown & { key: number }) => {
-    const [year, month] = record.month;
-    const weeks = generateMonthCalendar(year, month);
-    // Use the travel_days from SSOT monthly breakdown directly
-    const travelDaysCount = record.travel_days;
-
-    return (
-      <div style={{ padding: '8px 0' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 32px)', gap: 2, justifyContent: 'center', marginBottom: 4 }}>
-          {dayHeaders.map((d, i) => (
-            <div key={i} style={{ width: 32, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: '#6b7280', fontWeight: 500 }}>{d}</div>
-          ))}
-        </div>
-        {weeks.map((week, wi) => (
-          <div key={wi} style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 32px)', gap: 2, justifyContent: 'center', marginBottom: 2 }}>
-            {week.map((date, di) => {
-              const dayType = date ? getTravelDayType(date) : 'outside';
-              return (
-                <Tooltip key={di} title={date ? getTravelDayTooltip(dayType) : ''}>
-                  <div style={getTravelDayStyle(dayType)}>{date ? date.getDate() : ''}</div>
-                </Tooltip>
-              );
-            })}
-          </div>
-        ))}
-        <div style={{ textAlign: 'center', fontSize: 12, color: '#88D8E0', marginTop: 8 }}>{travelDaysCount} ימי נסיעה</div>
-      </div>
-    );
-  };
 
   return (
     <Card
@@ -3943,7 +3810,6 @@ const TravelBreakdown: React.FC<TravelBreakdownProps> = ({ travel, limitation, g
                 pagination={false}
                 size="small"
                 style={{ marginTop: 8 }}
-                expandable={{ expandedRowRender }}
               />
             ),
           },
@@ -3959,12 +3825,9 @@ interface MealAllowanceBreakdownProps {
   mealAllowance: MealAllowanceResult;
   limitation?: LimitationRightResult;
   generalWindow?: LimitationWindow;
-  lodgingInput?: LodgingInput | null;
-  employmentPeriods?: EmploymentPeriod[];
-  workPatterns?: WorkPattern[];
 }
 
-const MealAllowanceBreakdown: React.FC<MealAllowanceBreakdownProps> = ({ mealAllowance, limitation, generalWindow, lodgingInput, employmentPeriods, workPatterns }) => {
+const MealAllowanceBreakdown: React.FC<MealAllowanceBreakdownProps> = ({ mealAllowance, limitation, generalWindow }) => {
   // Helper: check if a month is within the limitation window
   const isMonthClaimable = (month: [number, number]): boolean => {
     if (!generalWindow?.effective_window_start) return true;
@@ -4024,114 +3887,6 @@ const MealAllowanceBreakdown: React.FC<MealAllowanceBreakdownProps> = ({ mealAll
       },
     },
   ];
-
-  // Calendar helpers for expandable row (אש"ל)
-  const dayHeaders = ['א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ש'];
-
-  const isWithinEmployment = (date: Date): boolean => {
-    if (!employmentPeriods || employmentPeriods.length === 0) return true;
-    const dateStr = date.toISOString().split('T')[0];
-    return employmentPeriods.some(ep => dateStr >= ep.start && dateStr <= ep.end);
-  };
-
-  const isWorkDay = (date: Date): boolean => {
-    if (!isWithinEmployment(date)) return false;
-    const dateStr = date.toISOString().split('T')[0];
-    const pattern = workPatterns?.find(wp => dateStr >= wp.start && dateStr <= wp.end);
-    if (!pattern) return false;
-    return pattern.work_days.includes(date.getDay());
-  };
-
-  const isRestDay = (date: Date): boolean => date.getDay() === 6;
-
-  type MealDayType = 'lodging' | 'work' | 'rest' | 'outside';
-
-  // Get day type for a specific month's SSOT data
-  const getMealDayTypeForMonth = (date: Date, monthNights: number, year: number, month: number): MealDayType => {
-    if (!isWithinEmployment(date)) return 'outside';
-    if (isRestDay(date)) return 'rest';
-    if (!isWorkDay(date)) return 'rest';
-
-    // Count work days before this date in the month to determine lodging
-    const monthStart = new Date(year, month - 1, 1);
-    let workDayIndex = 0;
-    for (let d = new Date(monthStart); d < date; d.setDate(d.getDate() + 1)) {
-      if (isWorkDay(d)) workDayIndex++;
-    }
-
-    // First monthNights work days are lodging nights (from SSOT)
-    // We use Math.floor since nights can be fractional
-    return workDayIndex < Math.floor(monthNights) ? 'lodging' : 'work';
-  };
-
-  const getMealDayStyle = (dayType: MealDayType): React.CSSProperties => {
-    const base: React.CSSProperties = {
-      width: 32, height: 32, borderRadius: 6,
-      display: 'flex', alignItems: 'center', justifyContent: 'center',
-      fontSize: 12, fontWeight: 500, cursor: 'default',
-    };
-    switch (dayType) {
-      case 'lodging': return { ...base, background: '#7c3aed', color: '#fff' };
-      case 'work': return { ...base, background: '#1f2937', color: '#9ca3af' };
-      case 'rest': return { ...base, background: 'transparent', color: '#4b5563' };
-      case 'outside': return { ...base, background: 'transparent', color: 'transparent' };
-    }
-  };
-
-  const getMealDayTooltip = (dayType: MealDayType): string => {
-    switch (dayType) {
-      case 'lodging': return 'לילת לינה';
-      case 'work': return 'יום עבודה';
-      case 'rest': return 'יום מנוחה';
-      case 'outside': return 'מחוץ לתקופה';
-    }
-  };
-
-  const generateMonthCalendar = (year: number, month: number): (Date | null)[][] => {
-    const firstDay = new Date(year, month - 1, 1);
-    const daysInMonth = new Date(year, month, 0).getDate();
-    const startDayOfWeek = firstDay.getDay();
-    const weeks: (Date | null)[][] = [];
-    let currentWeek: (Date | null)[] = [];
-    for (let i = 0; i < startDayOfWeek; i++) currentWeek.push(null);
-    for (let day = 1; day <= daysInMonth; day++) {
-      currentWeek.push(new Date(year, month - 1, day));
-      if (currentWeek.length === 7) { weeks.push(currentWeek); currentWeek = []; }
-    }
-    while (currentWeek.length > 0 && currentWeek.length < 7) currentWeek.push(null);
-    if (currentWeek.length > 0) weeks.push(currentWeek);
-    return weeks;
-  };
-
-  const mealExpandedRowRender = (record: MealAllowanceMonthlyBreakdown & { key: number }) => {
-    const [year, month] = record.month;
-    const weeks = generateMonthCalendar(year, month);
-    // Use the nights from SSOT monthly breakdown directly
-    const lodgingCount = record.nights;
-
-    return (
-      <div style={{ padding: '8px 0' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 32px)', gap: 2, justifyContent: 'center', marginBottom: 4 }}>
-          {dayHeaders.map((d, i) => (
-            <div key={i} style={{ width: 32, height: 20, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: '#6b7280', fontWeight: 500 }}>{d}</div>
-          ))}
-        </div>
-        {weeks.map((week, wi) => (
-          <div key={wi} style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 32px)', gap: 2, justifyContent: 'center', marginBottom: 2 }}>
-            {week.map((date, di) => {
-              const dayType = date ? getMealDayTypeForMonth(date, lodgingCount, year, month) : 'outside';
-              return (
-                <Tooltip key={di} title={date ? getMealDayTooltip(dayType) : ''}>
-                  <div style={getMealDayStyle(dayType)}>{date ? date.getDate() : ''}</div>
-                </Tooltip>
-              );
-            })}
-          </div>
-        ))}
-        <div style={{ textAlign: 'center', fontSize: 12, color: '#88D8E0', marginTop: 8 }}>{Math.round(lodgingCount)} לילות לינה</div>
-      </div>
-    );
-  };
 
   if (!mealAllowance.entitled) {
     return (
@@ -4233,7 +3988,6 @@ const MealAllowanceBreakdown: React.FC<MealAllowanceBreakdownProps> = ({ mealAll
                 size="small"
                 style={{ marginTop: 8 }}
                 rowClassName={(record) => !isMonthClaimable(record.month) ? 'row-excluded' : ''}
-                expandable={{ expandedRowRender: mealExpandedRowRender }}
               />
             ),
           },
@@ -5023,9 +4777,6 @@ const ResultsView: React.FC<ResultsViewProps> = ({ ssot, input }) => {
             travel={rights_results.travel}
             limitation={limitation_results?.per_right?.travel}
             generalWindow={generalWindow}
-            lodgingInput={input?.lodging_input}
-            employmentPeriods={input?.employment_periods}
-            workPatterns={input?.work_patterns}
           />
         </div>
       )}
@@ -5037,9 +4788,6 @@ const ResultsView: React.FC<ResultsViewProps> = ({ ssot, input }) => {
             mealAllowance={rights_results.meal_allowance}
             limitation={limitation_results?.per_right?.meal_allowance}
             generalWindow={generalWindow}
-            lodgingInput={input?.lodging_input}
-            employmentPeriods={input?.employment_periods}
-            workPatterns={input?.work_patterns}
           />
         </div>
       )}
