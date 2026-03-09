@@ -288,6 +288,27 @@ def _reconstruct_ssot_input(data: dict[str, Any]) -> SSOTInput:
             level_b_data=level_b_data,
         )
 
+    def parse_lodging_input(d: dict | None):
+        """Parse LodgingInput with new period-based structure."""
+        from .ssot import LodgingInput, LodgingPeriod
+        if d is None:
+            return None
+
+        periods = []
+        for p in d.get("periods", []):
+            periods.append(LodgingPeriod(
+                id=p.get("id", ""),
+                start=parse_date(p.get("start")),
+                end=parse_date(p.get("end")),
+                snap_to=p.get("snap_to"),
+                snap_ref_id=p.get("snap_ref_id"),
+                pattern_type=p.get("pattern_type", "none"),
+                nights_per_unit=int(p.get("nights_per_unit", 0)),
+                visits_per_unit=int(p.get("visits_per_unit", 0)),
+            ))
+
+        return LodgingInput(periods=periods)
+
     # Parse main structure
     case_meta = data.get("case_metadata", {})
     personal = data.get("personal_details", {})
@@ -343,6 +364,8 @@ def _reconstruct_ssot_input(data: dict[str, Any]) -> SSOTInput:
             parse_pattern_source(ps)
             for ps in data.get("pattern_sources", [])
         ] if data.get("pattern_sources") else None,
+        travel_distance_km=Decimal(str(data["travel_distance_km"])) if data.get("travel_distance_km") is not None else None,
+        lodging_input=parse_lodging_input(data.get("lodging_input")),
     )
 
 

@@ -1,14 +1,17 @@
 """Tests for travel allowance (דמי נסיעות) module.
 
 See docs/skills/travel/SKILL.md for test cases.
+
+Updated for new period-based LodgingInput structure.
+New formula: travel_days = work_days + visits - nights
 """
 
 import pytest
 from datetime import date
 from decimal import Decimal
 
-from app.modules.travel import compute_travel, compute_week_travel, get_work_days_in_week
-from app.ssot import Week, Shift, LodgingInput, LodgingWeek
+from app.modules.travel import compute_travel, compute_weekly_travel_days, get_work_days_in_week
+from app.ssot import Week, Shift, LodgingInput, LodgingPeriod
 
 
 def make_week(
@@ -40,6 +43,25 @@ def make_shift(
     )
 
 
+def make_lodging_period(
+    period_id: str,
+    start: date,
+    end: date,
+    pattern_type: str = "weekly",
+    nights_per_unit: int = 4,
+    visits_per_unit: int = 1,
+) -> LodgingPeriod:
+    """Create a LodgingPeriod for testing."""
+    return LodgingPeriod(
+        id=period_id,
+        start=start,
+        end=end,
+        pattern_type=pattern_type,
+        nights_per_unit=nights_per_unit,
+        visits_per_unit=visits_per_unit,
+    )
+
+
 def mock_travel_rate(industry: str, distance_km: Decimal | None, target_date: date) -> Decimal:
     """Mock travel rate lookup for testing."""
     if industry == "construction":
@@ -51,45 +73,50 @@ def mock_travel_rate(industry: str, distance_km: Decimal | None, target_date: da
         return Decimal("22.60")
 
 
-class TestComputeWeekTravel:
-    """Tests for compute_week_travel helper function."""
+class TestComputeWeeklyTravelDays:
+    """Tests for compute_weekly_travel_days helper function."""
 
-    def test_daily_return_pattern(self):
-        """Daily return: all work days are travel days."""
-        assert compute_week_travel(5, "daily_return") == 5
-        assert compute_week_travel(3, "daily_return") == 3
-        assert compute_week_travel(1, "daily_return") == 1
-        assert compute_week_travel(0, "daily_return") == 0
-
-    def test_no_lodging_pattern(self):
+    def test_no_lodging(self):
         """No lodging: all work days are travel days."""
-        assert compute_week_travel(5, "no_lodging") == 5
-        assert compute_week_travel(3, "no_lodging") == 3
-        assert compute_week_travel(1, "no_lodging") == 1
-        assert compute_week_travel(0, "no_lodging") == 0
+        assert compute_weekly_travel_days(5, None) == 5
+        assert compute_weekly_travel_days(3, None) == 3
+        assert compute_weekly_travel_days(0, None) == 0
 
-    def test_full_lodging_pattern_standard_week(self):
-        """Full lodging with 5 work days: 2 travel days (departure + return)."""
-        assert compute_week_travel(5, "full_lodging") == 2
+    def test_pattern_none(self):
+        """Pattern type 'none': all work days are travel days."""
+        period = make_lodging_period("LP1", date(2024, 1, 1), date(2024, 12, 31), "none", 0, 0)
+        assert compute_weekly_travel_days(5, period) == 5
+        assert compute_weekly_travel_days(3, period) == 3
 
-    def test_full_lodging_pattern_multiple_days(self):
-        """Full lodging with 2+ work days: always 2 travel days."""
-        assert compute_week_travel(6, "full_lodging") == 2
-        assert compute_week_travel(4, "full_lodging") == 2
-        assert compute_week_travel(3, "full_lodging") == 2
-        assert compute_week_travel(2, "full_lodging") == 2
+    def test_weekly_lodging_standard(self):
+        """Weekly lodging, 4 nights, 1 visit: travel_days = work_days + 1 - 4."""
+        # 4 nights/week, 1 visit/week
+        period = make_lodging_period("LP1", date(2024, 1, 1), date(2024, 12, 31), "weekly", 4, 1)
+        # 5 work days: 5 + 1 - 4 = 2
+        assert compute_weekly_travel_days(5, period) == 2
+        # 3 work days: 3 + 1 - 4 = 0
+        assert compute_weekly_travel_days(3, period) == 0
+        # 6 work days: 6 + 1 - 4 = 3
+        assert compute_weekly_travel_days(6, period) == 3
 
-    def test_full_lodging_pattern_single_day(self):
-        """Full lodging with 1 work day: 1 travel day (departure OR return)."""
-        assert compute_week_travel(1, "full_lodging") == 1
+    def test_weekly_lodging_custom_pattern(self):
+        """Weekly lodging with custom nights/visits."""
+        # 3 nights/week, 2 visits/week
+        period = make_lodging_period("LP1", date(2024, 1, 1), date(2024, 12, 31), "weekly", 3, 2)
+        # 5 work days: 5 + 2 - 3 = 4
+        assert compute_weekly_travel_days(5, period) == 4
 
-    def test_full_lodging_pattern_no_work_days(self):
-        """Full lodging with 0 work days: 0 travel days."""
-        assert compute_week_travel(0, "full_lodging") == 0
+    def test_weekly_lodging_no_work_days(self):
+        """Weekly lodging with 0 work days: 0 travel days."""
+        period = make_lodging_period("LP1", date(2024, 1, 1), date(2024, 12, 31), "weekly", 4, 1)
+        assert compute_weekly_travel_days(0, period) == 0
 
-    def test_unknown_pattern_falls_back_to_work_days(self):
-        """Unknown pattern: treated as no lodging."""
-        assert compute_week_travel(5, "unknown") == 5
+    def test_negative_result_clamped_to_zero(self):
+        """Travel days can't be negative."""
+        # 4 nights, 1 visit, 1 work day: 1 + 1 - 4 = -2 → 0
+        period = make_lodging_period("LP1", date(2024, 1, 1), date(2024, 12, 31), "weekly", 4, 1)
+        assert compute_weekly_travel_days(1, period) == 0
+        assert compute_weekly_travel_days(2, period) == 0  # 2 + 1 - 4 = -1 → 0
 
 
 class TestGetWorkDaysInWeek:
@@ -297,17 +324,17 @@ class TestCase4ConstructionWeeklyLodging:
     Input:
         industry: "construction"
         travel_distance_km: 30
-        lodging: has_lodging=true, cycle_weeks=1,
-                 cycle=[{week_in_cycle:1, pattern:"full_lodging"}]
+        lodging: weekly pattern, 4 nights/week, 1 visit/week
         daily_rate: 26.4 ₪
         employment: 2024-01-01 – 2024-03-31
         work pattern: 5 days/week (Mon–Fri)
 
+    Using new formula: travel_days = work_days + visits - nights
+    Per week: 5 + 1 - 4 = 2 travel days
+
     Expected:
-        Per week: work_days=5, pattern=full_lodging → travel_days=2
-        ~13 weeks:
-            grand_total_travel_days = 26
-            grand_total_value = 26 × 26.4 = 686.4 ₪
+        ~13 weeks × 2 travel_days = 26
+        grand_total_value = 26 × 26.4 = 686.4 ₪
     """
 
     def test_construction_weekly_lodging(self):
@@ -335,9 +362,16 @@ class TestCase4ConstructionWeeklyLodging:
             week_start = week_end + timedelta(days=1)
 
         lodging_input = LodgingInput(
-            has_lodging=True,
-            cycle_weeks=1,
-            cycle=[LodgingWeek(week_in_cycle=1, pattern="full_lodging")],
+            periods=[
+                make_lodging_period(
+                    "LP1",
+                    date(2024, 1, 1),
+                    date(2024, 3, 31),
+                    pattern_type="weekly",
+                    nights_per_unit=4,
+                    visits_per_unit=1,
+                )
+            ]
         )
 
         result = compute_travel(
@@ -354,11 +388,11 @@ class TestCase4ConstructionWeeklyLodging:
         assert result.distance_tier == "standard"
         assert result.daily_rate == Decimal("26.40")
         assert result.has_lodging is True
-        assert result.lodging_cycle_weeks == 1
+        assert result.lodging_periods_count == 1
 
-        # Each week should have 2 travel days (departure + return)
+        # Each week should have 2 travel days (5 + 1 - 4 = 2)
         for detail in result.weekly_detail:
-            assert detail.week_pattern == "full_lodging"
+            assert detail.week_pattern == "weekly_lodging"
             assert detail.travel_days == 2
 
         # 13 weeks × 2 travel days = 26
@@ -367,49 +401,78 @@ class TestCase4ConstructionWeeklyLodging:
         assert result.grand_total_value == Decimal("686.40")
 
 
-class TestCase5ConstructionMixedCycle:
-    """Case 5 — Construction, mixed cycle (3 weeks lodging + 1 week daily).
+class TestCase5ConstructionMultiplePeriods:
+    """Case 5 — Construction, multiple lodging periods.
+
+    Tests that different lodging periods apply to different date ranges.
 
     Input:
-        lodging: cycle_weeks=4,
-            cycle=[{1:"full_lodging"},{2:"full_lodging"},{3:"full_lodging"},{4:"daily_return"}]
+        lodging: Two periods
+            Period 1: Jan 2024, weekly, 4 nights/week, 1 visit
+            Period 2: Feb 2024, weekly, 3 nights/week, 2 visits
         work_days/week: 5
         daily_rate: 26.4
 
-    Expected per 4-week cycle:
-        Weeks 1,2,3 (full_lodging): 2 travel_days each = 6 travel days
-        Week 4 (daily_return): 5 travel_days
-        Total per cycle: 11 travel_days
+    Expected:
+        Jan weeks (4): 5 + 1 - 4 = 2 travel_days each = 8 travel days
+        Feb weeks (4): 5 + 2 - 3 = 4 travel_days each = 16 travel days
+        Total: 24 travel_days
     """
 
-    def test_construction_mixed_cycle(self):
-        # Create exactly 4 weeks for one complete cycle
+    def test_construction_multiple_periods(self):
+        from datetime import timedelta
+
         weeks = []
         shifts = []
         shift_count = 0
 
+        # 4 weeks in January
         week_start = date(2024, 1, 1)
         for week_num in range(4):
             week_id = f"w{week_num + 1}"
-            week_end = date(2024, 1, week_start.day + 6)
+            week_end = week_start + timedelta(days=6)
             weeks.append(make_week(week_id, week_start, week_end))
 
             for day_offset in range(5):
                 shift_count += 1
-                shift_date = date(2024, 1, week_start.day + day_offset)
+                shift_date = week_start + timedelta(days=day_offset)
                 shifts.append(make_shift(f"s{shift_count}", week_id, shift_date))
 
-            week_start = date(2024, 1, week_start.day + 7)
+            week_start = week_start + timedelta(days=7)
+
+        # 4 weeks in February
+        week_start = date(2024, 2, 5)  # First Monday of Feb 2024
+        for week_num in range(4):
+            week_id = f"w{week_num + 5}"
+            week_end = week_start + timedelta(days=6)
+            weeks.append(make_week(week_id, week_start, week_end))
+
+            for day_offset in range(5):
+                shift_count += 1
+                shift_date = week_start + timedelta(days=day_offset)
+                shifts.append(make_shift(f"s{shift_count}", week_id, shift_date))
+
+            week_start = week_start + timedelta(days=7)
 
         lodging_input = LodgingInput(
-            has_lodging=True,
-            cycle_weeks=4,
-            cycle=[
-                LodgingWeek(week_in_cycle=1, pattern="full_lodging"),
-                LodgingWeek(week_in_cycle=2, pattern="full_lodging"),
-                LodgingWeek(week_in_cycle=3, pattern="full_lodging"),
-                LodgingWeek(week_in_cycle=4, pattern="daily_return"),
-            ],
+            periods=[
+                make_lodging_period(
+                    "LP1",
+                    date(2024, 1, 1),
+                    date(2024, 1, 31),
+                    pattern_type="weekly",
+                    nights_per_unit=4,
+                    visits_per_unit=1,
+                ),
+                make_lodging_period(
+                    "LP2",
+                    date(2024, 2, 1),
+                    date(2024, 2, 29),
+                    pattern_type="weekly",
+                    nights_per_unit=3,
+                    visits_per_unit=2,
+                ),
+            ]
         )
 
         result = compute_travel(
@@ -423,29 +486,20 @@ class TestCase5ConstructionMixedCycle:
         )
 
         assert result.has_lodging is True
-        assert result.lodging_cycle_weeks == 4
+        assert result.lodging_periods_count == 2
 
-        # Check each week's pattern and travel days
-        assert result.weekly_detail[0].cycle_position == 1
-        assert result.weekly_detail[0].week_pattern == "full_lodging"
-        assert result.weekly_detail[0].travel_days == 2
+        # Check January weeks (first 4): 5 + 1 - 4 = 2
+        for detail in result.weekly_detail[:4]:
+            assert detail.travel_days == 2
 
-        assert result.weekly_detail[1].cycle_position == 2
-        assert result.weekly_detail[1].week_pattern == "full_lodging"
-        assert result.weekly_detail[1].travel_days == 2
+        # Check February weeks (next 4): 5 + 2 - 3 = 4
+        for detail in result.weekly_detail[4:]:
+            assert detail.travel_days == 4
 
-        assert result.weekly_detail[2].cycle_position == 3
-        assert result.weekly_detail[2].week_pattern == "full_lodging"
-        assert result.weekly_detail[2].travel_days == 2
-
-        assert result.weekly_detail[3].cycle_position == 4
-        assert result.weekly_detail[3].week_pattern == "daily_return"
-        assert result.weekly_detail[3].travel_days == 5
-
-        # Total: 2+2+2+5 = 11 travel days
-        assert result.grand_total_travel_days == 11
-        # 11 × 26.4 = 290.4
-        assert result.grand_total_value == Decimal("290.40")
+        # Total: 4×2 + 4×4 = 8 + 16 = 24 travel days
+        assert result.grand_total_travel_days == 24
+        # 24 × 26.4 = 633.6
+        assert result.grand_total_value == Decimal("633.60")
 
 
 class TestCase6PartialWeekEmploymentStart:
@@ -453,14 +507,12 @@ class TestCase6PartialWeekEmploymentStart:
 
     Input:
         industry: "construction", travel_distance_km: 20
-        lodging: cycle_weeks=1, cycle=[{1:"full_lodging"}]
+        lodging: weekly, 4 nights, 1 visit
         employment start: 2024-01-03 (Wednesday)
         first week: work_days=3 (Wed, Thu, Fri)
 
     Expected:
-        Partial week at start:
-            week_pattern = "full_lodging", work_days = 3
-            → travel_days = 2
+        travel_days = 3 + 1 - 4 = 0 (clamped to 0 from negative)
     """
 
     def test_partial_week_employment_start_lodging(self):
@@ -473,9 +525,16 @@ class TestCase6PartialWeekEmploymentStart:
         ]
 
         lodging_input = LodgingInput(
-            has_lodging=True,
-            cycle_weeks=1,
-            cycle=[LodgingWeek(week_in_cycle=1, pattern="full_lodging")],
+            periods=[
+                make_lodging_period(
+                    "LP1",
+                    date(2024, 1, 1),
+                    date(2024, 12, 31),
+                    pattern_type="weekly",
+                    nights_per_unit=4,
+                    visits_per_unit=1,
+                )
+            ]
         )
 
         result = compute_travel(
@@ -490,19 +549,20 @@ class TestCase6PartialWeekEmploymentStart:
 
         assert len(result.weekly_detail) == 1
         assert result.weekly_detail[0].work_days == 3
-        assert result.weekly_detail[0].week_pattern == "full_lodging"
-        assert result.weekly_detail[0].travel_days == 2  # Departure + return
+        assert result.weekly_detail[0].week_pattern == "weekly_lodging"
+        # 3 + 1 - 4 = 0 (clamped from negative)
+        assert result.weekly_detail[0].travel_days == 0
 
 
 class TestCase7SingleDayLodgingWeek:
-    """Case 7 — Anti-pattern: single work day in lodging week.
+    """Case 7 — Single work day in lodging week.
 
     Input:
-        lodging: full_lodging
+        lodging: weekly, 4 nights, 1 visit
         work_days = 1 (holiday week, only 1 day worked)
 
     Expected:
-        travel_days = 1 (NOT 2)
+        travel_days = 1 + 1 - 4 = -2 → clamped to 0
     """
 
     def test_single_day_lodging_week(self):
@@ -512,9 +572,16 @@ class TestCase7SingleDayLodgingWeek:
         ]
 
         lodging_input = LodgingInput(
-            has_lodging=True,
-            cycle_weeks=1,
-            cycle=[LodgingWeek(week_in_cycle=1, pattern="full_lodging")],
+            periods=[
+                make_lodging_period(
+                    "LP1",
+                    date(2024, 1, 1),
+                    date(2024, 12, 31),
+                    pattern_type="weekly",
+                    nights_per_unit=4,
+                    visits_per_unit=1,
+                )
+            ]
         )
 
         result = compute_travel(
@@ -529,62 +596,62 @@ class TestCase7SingleDayLodgingWeek:
 
         assert len(result.weekly_detail) == 1
         assert result.weekly_detail[0].work_days == 1
-        assert result.weekly_detail[0].travel_days == 1  # NOT 2
+        # 1 + 1 - 4 = -2 → 0
+        assert result.weekly_detail[0].travel_days == 0
 
 
-class TestCase8CycleResetsAfterGap:
-    """Case 8 — Cycle resets after employment gap.
+class TestCase8PeriodGap:
+    """Case 8 — Lodging period gap.
+
+    Tests that weeks outside lodging periods get no_lodging treatment.
 
     Input:
-        Employment period 1: Jan–Mar 2023 (cycle_weeks=4, patterns: L,L,L,D)
-        Gap: Apr–May 2023
-        Employment period 2: Jun–Sep 2023
+        Lodging period 1: Jan 1-14
+        Lodging period 2: Jan 22-31
+        Gap: Jan 15-21
 
     Expected:
-        Period 2 week 1 → cycle_position = 1 (resets)
-        Period 2 week 2 → cycle_position = 2
+        Weeks 1-2: weekly_lodging pattern
+        Week 3: no_lodging (in gap)
+        Week 4: weekly_lodging pattern
     """
 
-    def test_cycle_resets_after_gap(self):
+    def test_period_gap(self):
         weeks = []
         shifts = []
         shift_count = 0
 
-        # Period 1: 2 weeks in January
-        for week_num in range(2):
+        # 4 weeks in January
+        for week_num in range(4):
             week_id = f"w{week_num + 1}"
-            week_start = date(2023, 1, 1 + week_num * 7)
-            week_end = date(2023, 1, 7 + week_num * 7)
+            week_start = date(2024, 1, 1 + week_num * 7)
+            week_end = date(2024, 1, 7 + week_num * 7)
             weeks.append(make_week(week_id, week_start, week_end))
 
             for day_offset in range(5):
                 shift_count += 1
-                shift_date = date(2023, 1, week_start.day + day_offset)
-                shifts.append(make_shift(f"s{shift_count}", week_id, shift_date))
-
-        # Gap: No weeks in April-May (more than 7 days gap)
-
-        # Period 2: 2 weeks in June (starts June 5, well after gap)
-        for week_num in range(2):
-            week_id = f"w{week_num + 3}"
-            week_start = date(2023, 6, 5 + week_num * 7)
-            week_end = date(2023, 6, 11 + week_num * 7)
-            weeks.append(make_week(week_id, week_start, week_end))
-
-            for day_offset in range(5):
-                shift_count += 1
-                shift_date = date(2023, 6, week_start.day + day_offset)
+                shift_date = date(2024, 1, week_start.day + day_offset)
                 shifts.append(make_shift(f"s{shift_count}", week_id, shift_date))
 
         lodging_input = LodgingInput(
-            has_lodging=True,
-            cycle_weeks=4,
-            cycle=[
-                LodgingWeek(week_in_cycle=1, pattern="full_lodging"),
-                LodgingWeek(week_in_cycle=2, pattern="full_lodging"),
-                LodgingWeek(week_in_cycle=3, pattern="full_lodging"),
-                LodgingWeek(week_in_cycle=4, pattern="daily_return"),
-            ],
+            periods=[
+                make_lodging_period(
+                    "LP1",
+                    date(2024, 1, 1),
+                    date(2024, 1, 14),  # Weeks 1-2
+                    pattern_type="weekly",
+                    nights_per_unit=4,
+                    visits_per_unit=1,
+                ),
+                make_lodging_period(
+                    "LP2",
+                    date(2024, 1, 22),
+                    date(2024, 1, 31),  # Week 4 only
+                    pattern_type="weekly",
+                    nights_per_unit=4,
+                    visits_per_unit=1,
+                ),
+            ]
         )
 
         result = compute_travel(
@@ -599,13 +666,22 @@ class TestCase8CycleResetsAfterGap:
 
         assert len(result.weekly_detail) == 4
 
-        # Period 1: weeks 1 and 2 should be cycle positions 1 and 2
-        assert result.weekly_detail[0].cycle_position == 1
-        assert result.weekly_detail[1].cycle_position == 2
+        # Weeks 1-2: weekly_lodging, 2 travel days each
+        assert result.weekly_detail[0].week_pattern == "weekly_lodging"
+        assert result.weekly_detail[0].travel_days == 2
+        assert result.weekly_detail[1].week_pattern == "weekly_lodging"
+        assert result.weekly_detail[1].travel_days == 2
 
-        # Period 2: after gap, cycle resets - positions should be 1 and 2 again
-        assert result.weekly_detail[2].cycle_position == 1  # Reset!
-        assert result.weekly_detail[3].cycle_position == 2
+        # Week 3: no_lodging (gap), 5 travel days
+        assert result.weekly_detail[2].week_pattern == "no_lodging"
+        assert result.weekly_detail[2].travel_days == 5
+
+        # Week 4: weekly_lodging, 2 travel days
+        assert result.weekly_detail[3].week_pattern == "weekly_lodging"
+        assert result.weekly_detail[3].travel_days == 2
+
+        # Total: 2 + 2 + 5 + 2 = 11 travel days
+        assert result.grand_total_travel_days == 11
 
 
 class TestRightToggleDisabled:
@@ -723,9 +799,16 @@ class TestNonConstructionIgnoresLodging:
 
         # Lodging input is provided but should be ignored for general
         lodging_input = LodgingInput(
-            has_lodging=True,
-            cycle_weeks=1,
-            cycle=[LodgingWeek(week_in_cycle=1, pattern="full_lodging")],
+            periods=[
+                make_lodging_period(
+                    "LP1",
+                    date(2024, 1, 1),
+                    date(2024, 12, 31),
+                    pattern_type="weekly",
+                    nights_per_unit=4,
+                    visits_per_unit=1,
+                )
+            ]
         )
 
         result = compute_travel(

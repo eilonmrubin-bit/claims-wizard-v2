@@ -2,10 +2,12 @@
 
 Calculates travel allowance based on work days, lodging patterns, and industry rates.
 See docs/skills/travel/SKILL.md for complete documentation.
+
+Updated to use new period-based LodgingInput structure.
+New formula: travel_days = work_days + visits - nights
 """
 
 from collections import defaultdict
-from dataclasses import field
 from datetime import date
 from decimal import Decimal
 from typing import Callable
@@ -14,36 +16,67 @@ from app.ssot import (
     Week,
     Shift,
     LodgingInput,
-    LodgingWeek,
+    LodgingPeriod,
     TravelData,
     TravelWeekDetail,
     TravelMonthlyBreakdown,
 )
 
 
-def compute_week_travel(work_days: int, week_pattern: str) -> int:
-    """Compute travel days for a week based on work days and lodging pattern.
+def find_active_lodging_period(
+    period_start: date,
+    period_end: date,
+    lodging_input: LodgingInput | None,
+) -> LodgingPeriod | None:
+    """Find the lodging period that covers the given date range.
+
+    Args:
+        period_start: Start date of the period to check
+        period_end: End date of the period to check
+        lodging_input: The lodging input with periods
+
+    Returns:
+        The active LodgingPeriod or None if no matching period
+    """
+    if lodging_input is None or not lodging_input.periods:
+        return None
+
+    for period in lodging_input.periods:
+        if period.start is None or period.end is None:
+            continue
+        # Check if the period overlaps with the date range
+        if period.start <= period_end and period.end >= period_start:
+            return period
+
+    return None
+
+
+def compute_weekly_travel_days(work_days: int, active_period: LodgingPeriod | None) -> int:
+    """Compute travel days for a week using the new formula.
+
+    Formula: travel_days = work_days + visits - nights
 
     Args:
         work_days: Number of distinct work days in the week
-        week_pattern: "full_lodging" | "daily_return" | "no_lodging"
+        active_period: Active lodging period (or None for no lodging)
 
     Returns:
         Number of travel days
     """
-    if week_pattern == "daily_return" or week_pattern == "no_lodging":
+    if work_days == 0:
+        return 0
+
+    if active_period is None or active_period.pattern_type == "none":
         return work_days
 
-    if week_pattern == "full_lodging":
-        if work_days == 0:
-            return 0
-        if work_days == 1:
-            # Only one day worked — departure or return, not both
-            return 1
-        # Standard lodging week: 2 travel days (departure + return)
-        return 2
+    if active_period.pattern_type == "weekly":
+        nights_rounded = round(active_period.nights_per_unit)
+        visits_rounded = max(1, round(active_period.visits_per_unit)) if nights_rounded > 0 else 0
+        travel_days = work_days + visits_rounded - nights_rounded
+        return max(0, travel_days)
 
-    # Unknown pattern — treat as no lodging
+    # For monthly pattern, we compute at month level, so return work_days here
+    # The monthly computation will handle the adjustment
     return work_days
 
 
@@ -105,23 +138,16 @@ def compute_travel(
     # Handle lodging input
     # Lodging only applies to construction workers
     has_lodging = False
-    cycle_weeks = 1
-    cycle: list[LodgingWeek] = []
+    lodging_periods_count = 0
 
-    if industry == "construction" and lodging_input is not None and lodging_input.has_lodging:
-        has_lodging = True
-        cycle_weeks = lodging_input.cycle_weeks
-        cycle = lodging_input.cycle if lodging_input.cycle else []
+    if industry == "construction" and lodging_input is not None and lodging_input.periods:
+        # Count periods with pattern_type != "none"
+        active_periods = [p for p in lodging_input.periods if p.pattern_type != "none"]
+        lodging_periods_count = len(active_periods)
+        has_lodging = lodging_periods_count > 0
 
     result.has_lodging = has_lodging
-    result.lodging_cycle_weeks = cycle_weeks if has_lodging else None
-    result.lodging_cycle = cycle if has_lodging else None
-
-    # Build a lookup for cycle patterns
-    cycle_lookup: dict[int, str] = {}
-    if has_lodging and cycle:
-        for lw in cycle:
-            cycle_lookup[lw.week_in_cycle] = lw.pattern
+    result.lodging_periods_count = lodging_periods_count
 
     # Filter to weeks with actual work
     work_weeks = []
@@ -130,14 +156,10 @@ def compute_travel(
         if work_days > 0:
             work_weeks.append((week, work_days))
 
-    # Track cycle position - resets at employment gaps
-    # For simplicity, we track consecutive weeks. A gap in weeks = reset.
-    # We'll identify gaps by checking if weeks are consecutive.
-    cycle_position = 0
-    prev_week_end: date | None = None
-
     weekly_details: list[TravelWeekDetail] = []
-    monthly_aggregates: dict[tuple[int, int], dict] = defaultdict(lambda: {"travel_days": 0, "value": Decimal("0")})
+    monthly_aggregates: dict[tuple[int, int], dict] = defaultdict(
+        lambda: {"travel_days": 0, "value": Decimal("0"), "work_days": 0}
+    )
 
     # Get first rate to use as the "effective rate" for display
     if work_weeks:
@@ -145,38 +167,48 @@ def compute_travel(
         if first_week.start_date:
             result.daily_rate = get_travel_rate(industry, travel_distance_km, first_week.start_date)
 
+    # Track monthly lodging periods for monthly pattern handling
+    monthly_lodging_periods: dict[tuple[int, int], LodgingPeriod | None] = {}
+
     for week, work_days in work_weeks:
         if week.start_date is None:
             continue
 
-        # Check for gap - if there's a discontinuity, reset cycle
-        if prev_week_end is not None:
-            # If more than 7 days gap, reset cycle
-            days_gap = (week.start_date - prev_week_end).days
-            if days_gap > 7:
-                cycle_position = 0
+        # Find active lodging period for this week
+        active_period = None
+        if has_lodging and lodging_input is not None:
+            active_period = find_active_lodging_period(
+                week.start_date,
+                week.end_date or week.start_date,
+                lodging_input
+            )
 
-        # Increment cycle position
-        cycle_position += 1
-        if has_lodging and cycle_weeks > 0:
-            current_cycle_pos = ((cycle_position - 1) % cycle_weeks) + 1
-        else:
-            current_cycle_pos = None
-
-        # Determine week pattern
-        if has_lodging and current_cycle_pos is not None:
-            week_pattern = cycle_lookup.get(current_cycle_pos, "full_lodging")
+        # Determine week pattern string for display
+        if active_period is None or active_period.pattern_type == "none":
+            week_pattern = "no_lodging"
+        elif active_period.pattern_type == "weekly":
+            week_pattern = "weekly_lodging"
+        elif active_period.pattern_type == "monthly":
+            week_pattern = "monthly_lodging"
         else:
             week_pattern = "no_lodging"
 
-        # Compute travel days
-        travel_days = compute_week_travel(work_days, week_pattern)
+        # Compute travel days for weekly pattern
+        if active_period is not None and active_period.pattern_type == "monthly":
+            # For monthly pattern, accumulate work_days and compute at month level
+            travel_days = work_days  # Temporary, will be adjusted at month level
+        else:
+            travel_days = compute_weekly_travel_days(work_days, active_period)
 
         # Get rate for this week
         daily_rate = get_travel_rate(industry, travel_distance_km, week.start_date)
 
-        # Compute value
-        week_travel_value = Decimal(travel_days) * daily_rate
+        # Compute value (for weekly pattern)
+        if active_period is not None and active_period.pattern_type == "monthly":
+            # Will be computed at month level
+            week_travel_value = Decimal(travel_days) * daily_rate
+        else:
+            week_travel_value = Decimal(travel_days) * daily_rate
 
         # Get effective period from first shift of this week
         week_shifts = [s for s in shifts if s.assigned_week == week.id]
@@ -188,7 +220,7 @@ def compute_travel(
             week_end=week.end_date,
             effective_period_id=effective_period_id,
             work_days=work_days,
-            cycle_position=current_cycle_pos,
+            cycle_position=None,  # No longer using cycle
             week_pattern=week_pattern,
             travel_days=travel_days,
             daily_rate=daily_rate,
@@ -198,24 +230,58 @@ def compute_travel(
 
         # Aggregate by month (week belongs to month of start_date)
         month_key = (week.start_date.year, week.start_date.month)
-        monthly_aggregates[month_key]["travel_days"] += travel_days
-        monthly_aggregates[month_key]["value"] += week_travel_value
+        monthly_aggregates[month_key]["work_days"] += work_days
 
-        prev_week_end = week.end_date
+        # Track lodging period for this month (for monthly pattern)
+        if active_period is not None and active_period.pattern_type == "monthly":
+            monthly_lodging_periods[month_key] = active_period
+            # Store work_days for later adjustment
+        else:
+            monthly_aggregates[month_key]["travel_days"] += travel_days
+            monthly_aggregates[month_key]["value"] += week_travel_value
+
+    # Now handle monthly pattern adjustments
+    for month_key, period in monthly_lodging_periods.items():
+        if period is None:
+            continue
+        month_work_days = monthly_aggregates[month_key]["work_days"]
+
+        # Apply monthly formula: travel_days = work_days + visits - nights
+        nights = period.nights_per_unit
+        visits = period.visits_per_unit
+        travel_days_month = max(0, month_work_days + visits - nights)
+
+        # Get rate for this month (use first day of month)
+        month_date = date(month_key[0], month_key[1], 1)
+        daily_rate = get_travel_rate(industry, travel_distance_km, month_date)
+
+        monthly_aggregates[month_key]["travel_days"] = travel_days_month
+        monthly_aggregates[month_key]["value"] = Decimal(travel_days_month) * daily_rate
+
+        # Update weekly details for this month to reflect adjusted values
+        for detail in weekly_details:
+            if detail.week_start and (detail.week_start.year, detail.week_start.month) == month_key:
+                if detail.week_pattern == "monthly_lodging":
+                    # Pro-rate the travel days based on work day proportion
+                    if month_work_days > 0:
+                        proportion = Decimal(detail.work_days) / Decimal(month_work_days)
+                        detail.travel_days = int(round(travel_days_month * proportion))
+                        detail.week_travel_value = Decimal(detail.travel_days) * detail.daily_rate
 
     # Build monthly breakdown
     monthly_breakdown = []
     for month_key in sorted(monthly_aggregates.keys()):
         agg = monthly_aggregates[month_key]
-        monthly_breakdown.append(TravelMonthlyBreakdown(
-            month=month_key,
-            travel_days=agg["travel_days"],
-            claim_amount=agg["value"],
-        ))
+        if agg["travel_days"] > 0 or agg["value"] > 0:
+            monthly_breakdown.append(TravelMonthlyBreakdown(
+                month=month_key,
+                travel_days=agg["travel_days"],
+                claim_amount=agg["value"],
+            ))
 
-    # Compute totals
-    grand_total_travel_days = sum(d.travel_days for d in weekly_details)
-    grand_total_value = sum(d.week_travel_value for d in weekly_details)
+    # Compute totals from monthly aggregates
+    grand_total_travel_days = sum(agg["travel_days"] for agg in monthly_aggregates.values())
+    grand_total_value = sum(agg["value"] for agg in monthly_aggregates.values())
 
     result.weekly_detail = weekly_details
     result.monthly_breakdown = monthly_breakdown

@@ -39,8 +39,12 @@
       "recreation": "general",
       "training_fund": "general",
       "salary_completion": "general",
-      "travel": "general"
+      "travel": "general",
+      "meal_allowance": "general"
     }
+  },
+  "meal_allowance_config": {
+    "industries": ["construction"]
   },
   "training_fund_config": {
     "industries": {

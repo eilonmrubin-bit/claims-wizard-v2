@@ -71,6 +71,13 @@ class TravelAllowance:
 
 
 @dataclass
+class MealAllowance:
+    """Meal allowance (אש"ל) entry."""
+    effective_date: date
+    nightly_amount: Decimal
+
+
+@dataclass
 class OTConfig:
     """Overtime configuration."""
     weekly_cap: Decimal = Decimal("42")
@@ -184,6 +191,7 @@ class StaticDataLoader:
         self._recreation_day_value: list[RecreationDayValue] = []
         self._recreation_days: list[RecreationDays] = []
         self._travel_allowance: dict[str, list[TravelAllowance]] = {}
+        self._meal_allowance: dict[str, list[MealAllowance]] = {}
         self._settings: Settings | None = None
 
         self._loaded = False
@@ -198,6 +206,7 @@ class StaticDataLoader:
         self._load_recreation_day_value()
         self._load_recreation_days()
         self._load_travel_allowance()
+        self._load_meal_allowance()
         # Holiday dates and shabbat times are generated - load if exist
         self._load_holiday_dates()
         self._load_shabbat_times()
@@ -325,6 +334,22 @@ class StaticDataLoader:
                 TravelAllowance(
                     effective_date=parse_date(row["effective_date"]),
                     daily_amount=Decimal(row["daily_amount"]),
+                )
+                for row in rows
+            ]
+
+    def _load_meal_allowance(self) -> None:
+        """Load meal_allowance/*.csv files."""
+        meal_dir = self.data_dir / "meal_allowance"
+        if not meal_dir.exists():
+            return
+        for csv_file in meal_dir.glob("*.csv"):
+            industry = csv_file.stem
+            rows = self._load_csv(csv_file)
+            self._meal_allowance[industry] = [
+                MealAllowance(
+                    effective_date=parse_date(row["effective_date"]),
+                    nightly_amount=Decimal(row["nightly_amount"]),
                 )
                 for row in rows
             ]
@@ -581,6 +606,29 @@ class StaticDataLoader:
         table = [{"effective_date": ta.effective_date, "data": ta} for ta in self._travel_allowance[csv_key]]
         row = lookup_by_date(table, target_date)
         return row["data"].daily_amount
+
+    def get_meal_allowance_rate(self, target_date: date, industry: str = "construction") -> Decimal:
+        """Get meal allowance (אש"ל) rate for a date and industry.
+
+        Args:
+            target_date: Date to look up
+            industry: Industry identifier (default: construction)
+
+        Returns:
+            Nightly amount in NIS
+
+        Raises:
+            ValueError: If no data for that date/industry
+        """
+        if not self._loaded:
+            self.load_all()
+
+        if industry not in self._meal_allowance:
+            raise ValueError(f"No meal allowance data for industry: {industry}")
+
+        table = [{"effective_date": ma.effective_date, "data": ma} for ma in self._meal_allowance[industry]]
+        row = lookup_by_date(table, target_date)
+        return row["data"].nightly_amount
 
 
 # Global instance

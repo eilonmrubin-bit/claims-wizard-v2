@@ -60,6 +60,7 @@ from .modules.vacation import compute_vacation
 from .modules.pension import compute_pension
 from .modules.training_fund import compute_training_fund
 from .modules.travel import compute_travel
+from .modules.meal_allowance import compute_meal_allowance
 from .utils.static_data import get_static_data
 from .modules.limitation import (
     get_limitation_type_for_right,
@@ -563,6 +564,20 @@ def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
             )
             ssot.rights_results.travel = travel_result
 
+        # Meal Allowance (אש"ל)
+        if ssot.input.industry == "construction" and ssot.input.lodging_input:
+            static_data = get_static_data()
+            meal_enabled = ssot.input.right_toggles.get("meal_allowance", {}).get("enabled", True)
+
+            meal_result = compute_meal_allowance(
+                industry=ssot.input.industry,
+                lodging_input=ssot.input.lodging_input,
+                employment_periods=ssot.input.employment_periods,
+                get_rate=lambda d: static_data.get_meal_allowance_rate(d, ssot.input.industry),
+                right_enabled=meal_enabled,
+            )
+            ssot.rights_results.meal_allowance = meal_result
+
         # =====================================================================
         # Phase 3 - Post-processing
         # =====================================================================
@@ -953,6 +968,28 @@ def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
                 excluded_amount = full_amount - claimable_amount
                 claimable_dur, excluded_dur = compute_right_durations("general")
                 per_right_results["travel"] = RightLimitationResult(
+                    limitation_type_id="general",
+                    full_amount=full_amount,
+                    claimable_amount=claimable_amount,
+                    excluded_amount=excluded_amount,
+                    claimable_duration=claimable_dur,
+                    excluded_duration=excluded_dur,
+                )
+
+            # Meal Allowance (אש"ל) — general limitation, filter monthly
+            if ssot.rights_results.meal_allowance and ssot.rights_results.meal_allowance.entitled:
+                meal = ssot.rights_results.meal_allowance
+                full_amount = meal.claim_before_deductions
+
+                claimable_amount = Decimal("0")
+                for mb in meal.monthly_breakdown:
+                    month_start = date(mb.month[0], mb.month[1], 1)
+                    if effective_window_start <= month_start <= filing_date:
+                        claimable_amount += mb.claim_amount
+
+                excluded_amount = full_amount - claimable_amount
+                claimable_dur, excluded_dur = compute_right_durations("general")
+                per_right_results["meal_allowance"] = RightLimitationResult(
                     limitation_type_id="general",
                     full_amount=full_amount,
                     claimable_amount=claimable_amount,

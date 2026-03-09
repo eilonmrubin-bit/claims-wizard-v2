@@ -33,6 +33,7 @@ RIGHT_NAMES = {
     "recreation": "דמי הבראה",
     "salary_completion": "השלמת שכר",
     "travel": "דמי נסיעות",
+    "meal_allowance": "אש\"ל",
 }
 
 

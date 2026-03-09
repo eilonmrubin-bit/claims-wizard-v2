@@ -896,18 +896,30 @@ class TrainingFundData:
 # -----------------------------------------------------------------------------
 
 @dataclass
-class LodgingWeek:
-    """Definition of a week within a lodging cycle."""
-    week_in_cycle: int = 1  # 1-based index within the cycle
-    pattern: str = "daily_return"  # "full_lodging" | "daily_return"
+class LodgingPeriod:
+    """Definition of a lodging period with seniority-based matching.
+
+    Defines lodging pattern for a date range.
+    pattern_type: 'none' | 'weekly' | 'monthly'
+    nights_per_unit: X nights per week or per month
+    visits_per_unit: Y visits per week or per month
+    """
+    id: str = ""
+    start: date | None = None  # inclusive
+    end: date | None = None  # inclusive
+    snap_to: str | None = None  # "employment_period" | "work_pattern" | None
+    snap_ref_id: str | None = None  # id of the snapped EP or WP, if any
+    pattern_type: str = "none"  # "none" | "weekly" | "monthly"
+    nights_per_unit: int = 0  # X nights per week or per month
+    visits_per_unit: int = 0  # Y visits per week or per month
 
 
 @dataclass
 class LodgingInput:
     """Lodging input for construction workers."""
-    has_lodging: bool = False
-    cycle_weeks: int = 1  # Length of the repeating cycle (1-4)
-    cycle: list[LodgingWeek] = field(default_factory=list)
+    periods: list[LodgingPeriod] = field(default_factory=list)
+    # Empty list = no lodging at all.
+    # Periods must not overlap. Gaps between periods = no lodging.
 
 
 @dataclass
@@ -943,8 +955,7 @@ class TravelData:
 
     # Lodging Summary
     has_lodging: bool = False
-    lodging_cycle_weeks: int | None = None
-    lodging_cycle: list[LodgingWeek] | None = None
+    lodging_periods_count: int = 0  # number of active lodging periods
 
     # Weekly Detail
     weekly_detail: list[TravelWeekDetail] = field(default_factory=list)
@@ -954,6 +965,37 @@ class TravelData:
 
     # Totals
     grand_total_travel_days: int = 0
+    grand_total_value: Decimal = Decimal("0")
+    claim_before_deductions: Decimal = Decimal("0")  # = grand_total_value
+
+
+# Meal Allowance (אש"ל) Data Structures
+# -----------------------------------------------------------------------------
+
+@dataclass
+class MealAllowanceMonthlyBreakdown:
+    """Monthly breakdown for meal allowance calculation."""
+    month: tuple[int, int] = (0, 0)  # (year, month)
+    nights: Decimal = Decimal("0")  # pro-rated nights this month
+    nightly_rate: Decimal = Decimal("0")
+    claim_amount: Decimal = Decimal("0")
+
+
+@dataclass
+class MealAllowanceData:
+    """Meal allowance (אש"ל) calculation result."""
+    # Eligibility
+    entitled: bool = False
+    not_entitled_reason: str | None = None  # "not_construction" | "no_lodging_input" | "disabled"
+
+    # Configuration
+    industry: str = ""
+
+    # Monthly Breakdown
+    monthly_breakdown: list[MealAllowanceMonthlyBreakdown] = field(default_factory=list)
+
+    # Totals
+    grand_total_nights: Decimal = Decimal("0")
     grand_total_value: Decimal = Decimal("0")
     claim_before_deductions: Decimal = Decimal("0")  # = grand_total_value
 
@@ -970,6 +1012,7 @@ class RightsResults:
     training_fund: TrainingFundData | None = None
     salary_completion: Any | None = None  # Not yet defined
     travel: 'TravelData | None' = None
+    meal_allowance: 'MealAllowanceData | None' = None
 
 
 # =============================================================================
