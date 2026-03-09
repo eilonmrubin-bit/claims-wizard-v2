@@ -88,6 +88,12 @@ class WeekType(int, Enum):
     SIX_DAY = 6
 
 
+class PatternType(str, Enum):
+    WEEKLY_SIMPLE = "weekly_simple"
+    CYCLIC = "cyclic"
+    STATISTICAL = "statistical"
+
+
 # =============================================================================
 # Duration - Common type for all period calculations
 # =============================================================================
@@ -157,6 +163,21 @@ class DayShifts:
 
 
 @dataclass
+class WeekPatternB:
+    """A single week in a cyclic (Level B) pattern."""
+    work_days: list[int] = field(default_factory=list)  # 0=Sunday..6=Saturday
+    per_day: dict[int, DayShifts] | None = None  # Key: day of week
+    repeats: int = 1  # Number of times this week appears in cycle
+
+
+@dataclass
+class PatternLevelB:
+    """Cyclic (Level B) pattern configuration."""
+    cycle_length: int = 1
+    cycle: list[WeekPatternB] = field(default_factory=list)
+
+
+@dataclass
 class WorkPattern:
     id: str
     start: date
@@ -167,6 +188,8 @@ class WorkPattern:
     default_breaks: list[TimeRange] = field(default_factory=list)
     per_day: dict[int, DayShifts] | None = None  # Key: day of week
     daily_overrides: dict[date, DayShifts] | None = None  # Key: specific date
+    pattern_type: PatternType | None = None  # weekly_simple, cyclic, statistical
+    level_b: PatternLevelB | None = None  # Cyclic pattern configuration
 
 
 @dataclass

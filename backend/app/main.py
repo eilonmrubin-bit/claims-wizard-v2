@@ -133,6 +133,9 @@ def _reconstruct_ssot_input(data: dict[str, Any]) -> SSOTInput:
         SeniorityMethod,
         Duration,
         TerminationReason,
+        PatternType,
+        PatternLevelB,
+        WeekPatternB,
     )
 
     def parse_date(val: Any) -> date | None:
@@ -198,6 +201,26 @@ def _reconstruct_ssot_input(data: dict[str, Any]) -> SSOTInput:
             duration=parse_duration(d.get("duration")),
         )
 
+    def parse_week_pattern_b(d: dict) -> WeekPatternB:
+        """Parse a single week in a cyclic (Level B) pattern."""
+        per_day = None
+        if d.get("per_day"):
+            per_day = {int(k): parse_day_shifts(v) for k, v in d["per_day"].items()}
+        return WeekPatternB(
+            work_days=d.get("work_days", []),
+            per_day=per_day,
+            repeats=d.get("repeats", 1),
+        )
+
+    def parse_level_b(d: dict | None) -> PatternLevelB | None:
+        """Parse Level B (cyclic) pattern configuration."""
+        if d is None:
+            return None
+        return PatternLevelB(
+            cycle_length=d.get("cycle_length", 1),
+            cycle=[parse_week_pattern_b(w) for w in d.get("cycle", [])],
+        )
+
     def parse_work_pattern(d: dict) -> WorkPattern:
         per_day = None
         if d.get("per_day"):
@@ -210,6 +233,10 @@ def _reconstruct_ssot_input(data: dict[str, Any]) -> SSOTInput:
                 for k, v in d["daily_overrides"].items()
             }
 
+        # Parse pattern_type
+        pattern_type_str = d.get("pattern_type")
+        pattern_type = PatternType(pattern_type_str) if pattern_type_str else None
+
         return WorkPattern(
             id=d.get("id", ""),
             start=parse_date(d.get("start")),
@@ -220,6 +247,8 @@ def _reconstruct_ssot_input(data: dict[str, Any]) -> SSOTInput:
             default_breaks=[parse_time_range(b) for b in d.get("default_breaks", [])],
             per_day=per_day,
             daily_overrides=daily_overrides,
+            pattern_type=pattern_type,
+            level_b=parse_level_b(d.get("level_b")),
         )
 
     def parse_salary_tier(d: dict) -> SalaryTier:
