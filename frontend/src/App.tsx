@@ -2815,7 +2815,7 @@ function App() {
         )}
 
         {/* Results display */}
-        {result && <ResultsView ssot={result} />}
+        {result && <ResultsView ssot={result} input={{ lodging_input: formData.lodging_input, employment_periods: formData.employment_periods }} />}
       </div>
     </ConfigProvider>
   );
