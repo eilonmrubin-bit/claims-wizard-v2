@@ -2053,18 +2053,15 @@ function App() {
                                   <>
                                     <Row gutter={16} style={{ marginBottom: 16 }}>
                                       <Col span={12}>
-                                        <Form.Item label="מרחק מהבית לאתר (ק״מ)" style={{ marginBottom: 8 }}>
-                                          <InputNumber
-                                            value={formData.travel_distance_km ?? undefined}
-                                            onChange={(v) => updateField('travel_distance_km', v ?? null)}
-                                            min={0}
-                                            style={{ width: '100%' }}
-                                            placeholder="הזן מרחק"
-                                          />
+                                        <Form.Item label="מרחק מהבית לאתר" style={{ marginBottom: 8 }}>
+                                          <Radio.Group
+                                            value={formData.travel_distance_km !== null && formData.travel_distance_km !== undefined && formData.travel_distance_km >= 40 ? 'above' : 'below'}
+                                            onChange={(e) => updateField('travel_distance_km', e.target.value === 'above' ? 40 : 0)}
+                                          >
+                                            <Radio.Button value="below">מתחת 40 ק״מ (26.4 ₪/יום)</Radio.Button>
+                                            <Radio.Button value="above">40 ק״מ ומעלה (39.6 ₪/יום)</Radio.Button>
+                                          </Radio.Group>
                                         </Form.Item>
-                                        <div style={{ fontSize: 11, color: '#88D8E0' }}>
-                                          עד 40 ק״מ: 26.4 ₪ / יום | 40 ק״מ ומעלה: 39.6 ₪ / יום
-                                        </div>
                                       </Col>
                                       <Col span={12}>
                                         <Form.Item style={{ marginBottom: 8 }}>
