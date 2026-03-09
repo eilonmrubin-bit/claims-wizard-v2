@@ -2020,135 +2020,8 @@ function App() {
                       </Space>
                     </Col>
                   </Row>
-                  {/* Row 3: Training fund Collapse with toggle in header */}
+                  {/* Row 3: Travel Collapse */}
                   <Row gutter={24}>
-                    <Col span={24}>
-                      <Collapse
-                        collapsible={formData.right_toggles.training_fund?.enabled !== false ? 'header' : 'disabled'}
-                        activeKey={formData.right_toggles.training_fund?.enabled !== false ? undefined : []}
-                        items={[
-                          {
-                            key: 'training_fund_tiers',
-                            label: (
-                              <Space onClick={(e) => e.stopPropagation()}>
-                                <Switch
-                                  checked={formData.right_toggles.training_fund?.enabled !== false}
-                                  onChange={(checked) => updateRightToggle('training_fund', 'enabled', checked)}
-                                />
-                                <span style={{ fontWeight: 500 }}>קרן השתלמות</span>
-                                {formData.right_toggles.training_fund?.enabled !== false && (
-                                  <span style={{ color: '#88D8E0', marginRight: 8 }}>
-                                    ({(formData.training_fund_tiers || []).length > 0
-                                      ? `${(formData.training_fund_tiers || []).length} מדרגות`
-                                      : formData.industry === 'general'
-                                        ? '0'
-                                        : 'ברירת מחדל ענפית'})
-                                  </span>
-                                )}
-                                {formData.right_toggles.training_fund?.enabled !== false && formData.industry === 'construction' && (
-                                  <Checkbox
-                                    checked={formData.is_construction_foreman || false}
-                                    onChange={(e) => updateField('is_construction_foreman', e.target.checked)}
-                                    style={{ marginRight: 16 }}
-                                  >
-                                    מנהל עבודה מוסמך
-                                  </Checkbox>
-                                )}
-                              </Space>
-                            ),
-                            children: (
-                            <div>
-                                <div style={{ marginBottom: 12, fontSize: 12, color: '#88D8E0' }}>
-                                  מדרגות חוזה אישי עוקפות את ברירת המחדל הענפית לפי טווח ותק.
-                                  ותק שאינו מכוסה על ידי מדרגה חוזר לברירת מחדל.
-                                </div>
-                                {(formData.training_fund_tiers || []).map((tier, index) => (
-                                  <Row gutter={16} align="middle" key={index} style={{ marginBottom: 8 }}>
-                                    <Col span={5}>
-                                      <Form.Item label="סוג ותק" style={{ marginBottom: 0 }}>
-                                        <Select
-                                          value={tier.seniority_type}
-                                          onChange={(v) => updateTrainingFundTier(index, 'seniority_type', v)}
-                                          style={{ width: '100%' }}
-                                        >
-                                          <Select.Option value="industry">ותק ענפי</Select.Option>
-                                          <Select.Option value="employer">ותק אצל מעסיק</Select.Option>
-                                        </Select>
-                                      </Form.Item>
-                                    </Col>
-                                    <Col span={5}>
-                                      <Form.Item label="מ-ותק (חודשים)" style={{ marginBottom: 0 }}>
-                                        <InputNumber
-                                          value={tier.from_months}
-                                          onChange={(v) => updateTrainingFundTier(index, 'from_months', v ?? 0)}
-                                          min={0}
-                                          style={{ width: '100%' }}
-                                        />
-                                      </Form.Item>
-                                    </Col>
-                                    <Col span={5}>
-                                      <Form.Item label="עד ותק (חודשים)" style={{ marginBottom: 0 }}>
-                                        <Space.Compact style={{ width: '100%' }}>
-                                          <div
-                                            style={{ width: 'calc(100% - 32px)', cursor: tier.to_months === null ? 'pointer' : 'default' }}
-                                            onClick={() => tier.to_months === null && updateTrainingFundTier(index, 'to_months', 0)}
-                                          >
-                                            <InputNumber
-                                              value={tier.to_months === null ? undefined : tier.to_months}
-                                              onChange={(v) => updateTrainingFundTier(index, 'to_months', v ?? 0)}
-                                              min={0}
-                                              disabled={tier.to_months === null}
-                                              placeholder={tier.to_months === null ? '∞' : undefined}
-                                              style={{ width: '100%', pointerEvents: tier.to_months === null ? 'none' : 'auto' }}
-                                            />
-                                          </div>
-                                          <Button
-                                            type={tier.to_months === null ? 'primary' : 'default'}
-                                            onClick={() => updateTrainingFundTier(index, 'to_months', tier.to_months === null ? 0 : null)}
-                                            style={{ fontWeight: 'bold' }}
-                                          >
-                                            ∞
-                                          </Button>
-                                        </Space.Compact>
-                                      </Form.Item>
-                                    </Col>
-                                    <Col span={5}>
-                                      <Form.Item label="אחוז הפרשה" style={{ marginBottom: 0 }}>
-                                        <InputNumber
-                                          value={parseFloat(tier.employer_rate) * 100 || undefined}
-                                          onChange={(v) => updateTrainingFundTier(index, 'employer_rate', String((v || 0) / 100))}
-                                          min={0}
-                                          max={100}
-                                          step={0.5}
-                                          addonAfter="%"
-                                          style={{ width: '100%' }}
-                                        />
-                                      </Form.Item>
-                                    </Col>
-                                    <Col span={2} style={{ paddingTop: 30 }}>
-                                      <Button danger icon={<DeleteOutlined />} onClick={() => removeTrainingFundTier(index)} />
-                                    </Col>
-                                  </Row>
-                                ))}
-                                <Button type="dashed" onClick={addTrainingFundTier} icon={<PlusOutlined />} block>
-                                  הוסף מדרגה
-                                </Button>
-                                {getTrainingFundTierErrors().length > 0 && (
-                                  <div style={{ marginTop: 12, padding: 8, background: 'rgba(255,77,79,0.1)', borderRadius: 4, border: '1px solid #ff4d4f' }}>
-                                    {getTrainingFundTierErrors().map((error, i) => (
-                                      <div key={i} style={{ color: '#ff4d4f', fontSize: 12 }}>⚠ {error}</div>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            ),
-                            },
-                          ]}
-                        />
-                    </Col>
-                  </Row>
-                  {/* Row 4: Travel Collapse */}
-                  <Row gutter={24} style={{ marginTop: 16 }}>
                     <Col span={24}>
                       <Collapse
                         collapsible={formData.right_toggles.travel?.enabled !== false ? 'header' : 'disabled'}
@@ -2287,6 +2160,133 @@ function App() {
                           },
                         ]}
                       />
+                    </Col>
+                  </Row>
+                  {/* Row 4: Training fund Collapse with toggle in header */}
+                  <Row gutter={24} style={{ marginTop: 16 }}>
+                    <Col span={24}>
+                      <Collapse
+                        collapsible={formData.right_toggles.training_fund?.enabled !== false ? 'header' : 'disabled'}
+                        activeKey={formData.right_toggles.training_fund?.enabled !== false ? undefined : []}
+                        items={[
+                          {
+                            key: 'training_fund_tiers',
+                            label: (
+                              <Space onClick={(e) => e.stopPropagation()}>
+                                <Switch
+                                  checked={formData.right_toggles.training_fund?.enabled !== false}
+                                  onChange={(checked) => updateRightToggle('training_fund', 'enabled', checked)}
+                                />
+                                <span style={{ fontWeight: 500 }}>קרן השתלמות</span>
+                                {formData.right_toggles.training_fund?.enabled !== false && (
+                                  <span style={{ color: '#88D8E0', marginRight: 8 }}>
+                                    ({(formData.training_fund_tiers || []).length > 0
+                                      ? `${(formData.training_fund_tiers || []).length} מדרגות`
+                                      : formData.industry === 'general'
+                                        ? '0'
+                                        : 'ברירת מחדל ענפית'})
+                                  </span>
+                                )}
+                                {formData.right_toggles.training_fund?.enabled !== false && formData.industry === 'construction' && (
+                                  <Checkbox
+                                    checked={formData.is_construction_foreman || false}
+                                    onChange={(e) => updateField('is_construction_foreman', e.target.checked)}
+                                    style={{ marginRight: 16 }}
+                                  >
+                                    מנהל עבודה מוסמך
+                                  </Checkbox>
+                                )}
+                              </Space>
+                            ),
+                            children: (
+                            <div>
+                                <div style={{ marginBottom: 12, fontSize: 12, color: '#88D8E0' }}>
+                                  מדרגות חוזה אישי עוקפות את ברירת המחדל הענפית לפי טווח ותק.
+                                  ותק שאינו מכוסה על ידי מדרגה חוזר לברירת מחדל.
+                                </div>
+                                {(formData.training_fund_tiers || []).map((tier, index) => (
+                                  <Row gutter={16} align="middle" key={index} style={{ marginBottom: 8 }}>
+                                    <Col span={5}>
+                                      <Form.Item label="סוג ותק" style={{ marginBottom: 0 }}>
+                                        <Select
+                                          value={tier.seniority_type}
+                                          onChange={(v) => updateTrainingFundTier(index, 'seniority_type', v)}
+                                          style={{ width: '100%' }}
+                                        >
+                                          <Select.Option value="industry">ותק ענפי</Select.Option>
+                                          <Select.Option value="employer">ותק אצל מעסיק</Select.Option>
+                                        </Select>
+                                      </Form.Item>
+                                    </Col>
+                                    <Col span={5}>
+                                      <Form.Item label="מ-ותק (חודשים)" style={{ marginBottom: 0 }}>
+                                        <InputNumber
+                                          value={tier.from_months}
+                                          onChange={(v) => updateTrainingFundTier(index, 'from_months', v ?? 0)}
+                                          min={0}
+                                          style={{ width: '100%' }}
+                                        />
+                                      </Form.Item>
+                                    </Col>
+                                    <Col span={5}>
+                                      <Form.Item label="עד ותק (חודשים)" style={{ marginBottom: 0 }}>
+                                        <Space.Compact style={{ width: '100%' }}>
+                                          <div
+                                            style={{ width: 'calc(100% - 32px)', cursor: tier.to_months === null ? 'pointer' : 'default' }}
+                                            onClick={() => tier.to_months === null && updateTrainingFundTier(index, 'to_months', 0)}
+                                          >
+                                            <InputNumber
+                                              value={tier.to_months === null ? undefined : tier.to_months}
+                                              onChange={(v) => updateTrainingFundTier(index, 'to_months', v ?? 0)}
+                                              min={0}
+                                              disabled={tier.to_months === null}
+                                              placeholder={tier.to_months === null ? '∞' : undefined}
+                                              style={{ width: '100%', pointerEvents: tier.to_months === null ? 'none' : 'auto' }}
+                                            />
+                                          </div>
+                                          <Button
+                                            type={tier.to_months === null ? 'primary' : 'default'}
+                                            onClick={() => updateTrainingFundTier(index, 'to_months', tier.to_months === null ? 0 : null)}
+                                            style={{ fontWeight: 'bold' }}
+                                          >
+                                            ∞
+                                          </Button>
+                                        </Space.Compact>
+                                      </Form.Item>
+                                    </Col>
+                                    <Col span={5}>
+                                      <Form.Item label="אחוז הפרשה" style={{ marginBottom: 0 }}>
+                                        <InputNumber
+                                          value={parseFloat(tier.employer_rate) * 100 || undefined}
+                                          onChange={(v) => updateTrainingFundTier(index, 'employer_rate', String((v || 0) / 100))}
+                                          min={0}
+                                          max={100}
+                                          step={0.5}
+                                          addonAfter="%"
+                                          style={{ width: '100%' }}
+                                        />
+                                      </Form.Item>
+                                    </Col>
+                                    <Col span={2} style={{ paddingTop: 30 }}>
+                                      <Button danger icon={<DeleteOutlined />} onClick={() => removeTrainingFundTier(index)} />
+                                    </Col>
+                                  </Row>
+                                ))}
+                                <Button type="dashed" onClick={addTrainingFundTier} icon={<PlusOutlined />} block>
+                                  הוסף מדרגה
+                                </Button>
+                                {getTrainingFundTierErrors().length > 0 && (
+                                  <div style={{ marginTop: 12, padding: 8, background: 'rgba(255,77,79,0.1)', borderRadius: 4, border: '1px solid #ff4d4f' }}>
+                                    {getTrainingFundTierErrors().map((error, i) => (
+                                      <div key={i} style={{ color: '#ff4d4f', fontSize: 12 }}>⚠ {error}</div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            ),
+                            },
+                          ]}
+                        />
                     </Col>
                   </Row>
                   </>
