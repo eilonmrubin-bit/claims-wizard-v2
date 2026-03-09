@@ -176,7 +176,6 @@ export interface SSOTInput {
   deductions_input: Record<string, string>;
   right_specific_inputs: Record<string, Record<string, unknown>>;
   pattern_sources?: PatternSource[];
-  is_construction_foreman?: boolean;
   training_fund_tiers?: TrainingFundTier[];
   // Travel allowance (construction only)
   travel_distance_km?: number | null;

@@ -218,7 +218,6 @@ const createEmptyInput = (): SSOTInput => ({
   },
   deductions_input: {},
   right_specific_inputs: {},
-  is_construction_foreman: false,
   training_fund_tiers: [],
   travel_distance_km: null,
   lodging_input: null,
@@ -2183,15 +2182,6 @@ function App() {
                                         ? '0'
                                         : 'ברירת מחדל ענפית'})
                                   </span>
-                                )}
-                                {formData.right_toggles.training_fund?.enabled !== false && formData.industry === 'construction' && (
-                                  <Checkbox
-                                    checked={formData.is_construction_foreman || false}
-                                    onChange={(e) => updateField('is_construction_foreman', e.target.checked)}
-                                    style={{ marginRight: 16 }}
-                                  >
-                                    מנהל עבודה מוסמך
-                                  </Checkbox>
                                 )}
                               </Space>
                             ),
