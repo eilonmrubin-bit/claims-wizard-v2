@@ -3789,7 +3789,7 @@ const TravelBreakdown: React.FC<TravelBreakdownProps> = ({ travel, limitation, g
           <Space split={<Divider type="vertical" />}>
             <span>תעריף: <strong dir="ltr">{travel.daily_rate} ₪</strong>/יום</span>
             {travel.distance_km !== null && (
-              <span>מרחק: <strong dir="ltr">{travel.distance_km}</strong> ק״מ</span>
+              <span>מרחק: <strong>{travel.distance_km >= 40 ? '40 ק״מ ומעלה' : 'מתחת ל-40 ק״מ'}</strong></span>
             )}
             <span>{getLodgingDescription()}</span>
           </Space>
