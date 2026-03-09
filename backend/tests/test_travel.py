@@ -1161,3 +1161,144 @@ class TestDenseLodgingMonthlyPattern:
         # February: 20 work days, max(14, 20+7-20) = max(14, 7) = 14
         assert feb_breakdown is not None
         assert feb_breakdown.travel_days == 14
+
+
+class TestCrossMonthWeekSplit:
+    """Tests for proportional splitting of weeks that cross month boundaries.
+
+    For weekly lodging patterns, weeks crossing month boundaries must be split
+    proportionally based on work days in each month.
+
+    Anti-pattern from SKILL §7: DO NOT attribute the entire week to the month
+    of its start_date. A week starting Jan 29 with 3 work days in Jan and 2 in Feb
+    must contribute 3/5 of its travel days to January and 2/5 to February.
+    """
+
+    def test_week_crossing_jan_feb_weekly_lodging(self):
+        """Week 2023-01-29 – 2023-02-04 with weekly lodging pattern.
+
+        Week spans Jan-Feb with 5 work days (Sun-Thu):
+        - Jan 29, 30, 31: 3 work days in January
+        - Feb 1, 2: 2 work days in February
+
+        With weekly lodging (4 nights, 1 visit): travel_days = 2
+
+        Expected split:
+        - January: 3/5 × 2 = 1.2 → rounds to 1
+        - February: 2/5 × 2 = 0.8 → rounds to 1
+        """
+        from datetime import timedelta
+
+        # Single week crossing Jan-Feb
+        week = make_week("w1", date(2023, 1, 29), date(2023, 2, 4))
+
+        # 5 work days: Sun-Thu = Jan 29, 30, 31, Feb 1, 2
+        shifts = [
+            make_shift("s1", "w1", date(2023, 1, 29)),  # Sunday
+            make_shift("s2", "w1", date(2023, 1, 30)),  # Monday
+            make_shift("s3", "w1", date(2023, 1, 31)),  # Tuesday
+            make_shift("s4", "w1", date(2023, 2, 1)),   # Wednesday
+            make_shift("s5", "w1", date(2023, 2, 2)),   # Thursday
+        ]
+
+        lodging_input = LodgingInput(
+            periods=[
+                make_lodging_period(
+                    "LP1",
+                    date(2023, 1, 1),
+                    date(2023, 2, 28),
+                    pattern_type="weekly",
+                    total_nights=4,
+                    total_visits=1,
+                )
+            ]
+        )
+
+        result = compute_travel(
+            industry="construction",
+            travel_distance_km=Decimal("25"),
+            lodging_input=lodging_input,
+            weeks=[week],
+            shifts=shifts,
+            get_travel_rate=mock_travel_rate,
+            right_enabled=True,
+        )
+
+        # Weekly detail shows 2 travel days for the week
+        assert len(result.weekly_detail) == 1
+        assert result.weekly_detail[0].travel_days == 2
+
+        # Monthly breakdown should split proportionally
+        jan_breakdown = next(
+            (b for b in result.monthly_breakdown if b.month == (2023, 1)),
+            None
+        )
+        feb_breakdown = next(
+            (b for b in result.monthly_breakdown if b.month == (2023, 2)),
+            None
+        )
+
+        # January: 3/5 × 2 = 1.2 → rounds to 1
+        assert jan_breakdown is not None
+        assert jan_breakdown.travel_days == 1
+
+        # February: 2/5 × 2 = 0.8 → rounds to 1
+        assert feb_breakdown is not None
+        assert feb_breakdown.travel_days == 1
+
+        # Total should still be 2 (rounding may distribute differently)
+        assert result.grand_total_travel_days == 2
+
+    def test_week_crossing_month_no_lodging(self):
+        """Week crossing month boundary without lodging (all work days are travel days).
+
+        Week 2023-01-29 – 2023-02-04 with 5 work days:
+        - Jan 29, 30, 31: 3 work days in January
+        - Feb 1, 2: 2 work days in February
+
+        No lodging: travel_days = work_days = 5
+
+        Expected split:
+        - January: 3/5 × 5 = 3 travel days
+        - February: 2/5 × 5 = 2 travel days
+        """
+        week = make_week("w1", date(2023, 1, 29), date(2023, 2, 4))
+
+        shifts = [
+            make_shift("s1", "w1", date(2023, 1, 29)),
+            make_shift("s2", "w1", date(2023, 1, 30)),
+            make_shift("s3", "w1", date(2023, 1, 31)),
+            make_shift("s4", "w1", date(2023, 2, 1)),
+            make_shift("s5", "w1", date(2023, 2, 2)),
+        ]
+
+        result = compute_travel(
+            industry="general",
+            travel_distance_km=None,
+            lodging_input=None,
+            weeks=[week],
+            shifts=shifts,
+            get_travel_rate=mock_travel_rate,
+            right_enabled=True,
+        )
+
+        assert result.weekly_detail[0].travel_days == 5
+
+        jan_breakdown = next(
+            (b for b in result.monthly_breakdown if b.month == (2023, 1)),
+            None
+        )
+        feb_breakdown = next(
+            (b for b in result.monthly_breakdown if b.month == (2023, 2)),
+            None
+        )
+
+        # January: 3/5 × 5 = 3 travel days
+        assert jan_breakdown is not None
+        assert jan_breakdown.travel_days == 3
+
+        # February: 2/5 × 5 = 2 travel days
+        assert feb_breakdown is not None
+        assert feb_breakdown.travel_days == 2
+
+        assert result.grand_total_travel_days == 5

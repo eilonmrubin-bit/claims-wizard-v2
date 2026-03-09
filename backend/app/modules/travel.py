@@ -263,17 +263,28 @@ def compute_travel(
         )
         weekly_details.append(detail)
 
-        # Aggregate by month (week belongs to month of start_date)
-        month_key = (week.start_date.year, week.start_date.month)
-        monthly_aggregates[month_key]["work_days"] += work_days
-
         # Track lodging period for this month (for monthly pattern)
         if active_period is not None and active_period.pattern_type == "monthly":
+            # For monthly pattern, use week.start_date month for tracking
+            month_key = (week.start_date.year, week.start_date.month)
+            monthly_aggregates[month_key]["work_days"] += work_days
             monthly_lodging_periods[month_key] = active_period
-            # Store work_days for later adjustment
         else:
-            monthly_aggregates[month_key]["travel_days"] += travel_days
-            monthly_aggregates[month_key]["value"] += week_travel_value
+            # For weekly pattern: split week proportionally across months
+            # Group this week's shifts by calendar month
+            week_shifts_by_month: dict[tuple[int, int], int] = defaultdict(int)
+            for shift in week_shifts:
+                if shift.assigned_day is not None:
+                    shift_month = (shift.assigned_day.year, shift.assigned_day.month)
+                    week_shifts_by_month[shift_month] += 1
+
+            # Distribute travel_days and value proportionally
+            for month_key, shifts_in_month in week_shifts_by_month.items():
+                if work_days > 0:
+                    fraction = Decimal(shifts_in_month) / Decimal(work_days)
+                    monthly_aggregates[month_key]["work_days"] += shifts_in_month
+                    monthly_aggregates[month_key]["travel_days"] += Decimal(travel_days) * fraction
+                    monthly_aggregates[month_key]["value"] += week_travel_value * fraction
 
     # Now handle monthly pattern adjustments
     for month_key, period in monthly_lodging_periods.items():
@@ -307,18 +318,22 @@ def compute_travel(
                         detail.week_travel_value = Decimal(detail.travel_days) * detail.daily_rate
 
     # Build monthly breakdown
+    # Note: travel_days may be Decimal (from proportional split) - round to int for storage
     monthly_breakdown = []
     for month_key in sorted(monthly_aggregates.keys()):
         agg = monthly_aggregates[month_key]
-        if agg["travel_days"] > 0 or agg["value"] > 0:
+        travel_days_rounded = int(round(agg["travel_days"])) if isinstance(agg["travel_days"], Decimal) else agg["travel_days"]
+        if travel_days_rounded > 0 or agg["value"] > 0:
             monthly_breakdown.append(TravelMonthlyBreakdown(
                 month=month_key,
-                travel_days=agg["travel_days"],
+                travel_days=travel_days_rounded,
                 claim_amount=agg["value"],
             ))
 
     # Compute totals from monthly aggregates
-    grand_total_travel_days = sum(agg["travel_days"] for agg in monthly_aggregates.values())
+    # Sum the actual (possibly fractional) values, then round at the end
+    grand_total_travel_days_raw = sum(agg["travel_days"] for agg in monthly_aggregates.values())
+    grand_total_travel_days = int(round(grand_total_travel_days_raw)) if isinstance(grand_total_travel_days_raw, Decimal) else grand_total_travel_days_raw
     grand_total_value = sum(agg["value"] for agg in monthly_aggregates.values())
 
     result.weekly_detail = weekly_details
