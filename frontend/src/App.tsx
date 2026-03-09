@@ -568,15 +568,18 @@ const EXAMPLE_CONSTRUCTION_LODGING_CYCLIC = {
       start: "2023-01-01",
       end: "2023-12-31",
       pattern_type: "cyclic",
-      cycle_weeks: [
-        { week_index: 0, work_days: [0, 1, 2, 3, 4], default_shifts: [{ start_time: "07:00:00", end_time: "15:00:00" }], default_breaks: [] },
-        { week_index: 1, work_days: [0, 1, 2, 3, 4], default_shifts: [{ start_time: "07:00:00", end_time: "15:00:00" }], default_breaks: [] },
-        { week_index: 2, work_days: [], default_shifts: [], default_breaks: [] },
-        { week_index: 3, work_days: [], default_shifts: [], default_breaks: [] }
-      ],
       work_days: [0, 1, 2, 3, 4],
       default_shifts: [{ start_time: "07:00:00", end_time: "15:00:00" }],
-      default_breaks: []
+      default_breaks: [],
+      level_b: {
+        cycle_length: 4,
+        cycle: [
+          { work_days: [0, 1, 2, 3, 4], per_day: {}, repeats: 1 },
+          { work_days: [0, 1, 2, 3, 4], per_day: {}, repeats: 1 },
+          { work_days: [], per_day: {}, repeats: 1 },
+          { work_days: [], per_day: {}, repeats: 1 }
+        ]
+      }
     }
   ],
   salary_tiers: [
