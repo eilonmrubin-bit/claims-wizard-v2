@@ -20,6 +20,9 @@ from ..ssot import (
     DayShifts,
     Duration,
     RestDay,
+    PatternType as SSOTPatternType,
+    PatternLevelB as SSOTPatternLevelB,
+    WeekPatternB as SSOTWeekPatternB,
 )
 from ..errors import ValidationError
 
@@ -809,6 +812,53 @@ def translate_level_c(pattern: PatternLevelC, rest_day: RestDay) -> WorkPattern:
 # Main Translation Function
 # =============================================================================
 
+def convert_ssot_level_b_to_translator(
+    pattern: WorkPattern,
+    level_b: SSOTPatternLevelB,
+) -> PatternLevelB:
+    """Convert SSOT PatternLevelB to pattern_translator PatternLevelB.
+
+    Args:
+        pattern: The WorkPattern containing start/end dates
+        level_b: The SSOT level_b data
+
+    Returns:
+        PatternLevelB compatible with translate_level_b
+    """
+    cycle: list[WorkPattern] = []
+
+    for week_idx, week_b in enumerate(level_b.cycle):
+        # Convert per_day from SSOTWeekPatternB format
+        per_day: dict[int, DayShifts] | None = None
+        if week_b.per_day:
+            per_day = week_b.per_day
+
+        # Create WorkPattern for this week
+        week_pattern = WorkPattern(
+            id=f"{pattern.id}_week_{week_idx}",
+            start=pattern.start,
+            end=pattern.end,
+            duration=pattern.duration,
+            work_days=list(week_b.work_days),
+            default_shifts=pattern.default_shifts,
+            default_breaks=pattern.default_breaks,
+            per_day=per_day,
+            daily_overrides=None,
+        )
+
+        # Handle repeats: add multiple copies of the week
+        for _ in range(week_b.repeats):
+            cycle.append(week_pattern)
+
+    return PatternLevelB(
+        id=pattern.id,
+        start=pattern.start,
+        end=pattern.end,
+        cycle=cycle,
+        cycle_length=level_b.cycle_length,
+    )
+
+
 def translate(
     work_patterns: list[WorkPattern],
     rest_day: RestDay,
@@ -835,6 +885,31 @@ def translate(
             source_lookup[source.id] = source
 
     for pattern in work_patterns:
+        # Check if WorkPattern itself has cyclic pattern info (from frontend)
+        if pattern.pattern_type == SSOTPatternType.CYCLIC and pattern.level_b:
+            # Convert SSOT level_b to translator PatternLevelB format
+            level_b_data = convert_ssot_level_b_to_translator(pattern, pattern.level_b)
+
+            validation_errors = validate_level_b(level_b_data)
+            if validation_errors:
+                errors.extend(validation_errors)
+                continue
+
+            translated = translate_level_b(level_b_data, rest_day)
+            result_patterns.append(translated)
+
+            # Create source record
+            new_source = PatternSource(
+                id=pattern.id,
+                type=PatternType.CYCLIC,
+                start=pattern.start,
+                end=pattern.end,
+                level_b_data=level_b_data,
+                translated_pattern=translated,
+            )
+            result_sources.append(new_source)
+            continue
+
         source = source_lookup.get(pattern.id)
 
         if source and source.type == PatternType.STATISTICAL and source.level_c_data:

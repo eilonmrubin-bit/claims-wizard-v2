@@ -40,7 +40,15 @@ from app.modules.pattern_translator import (
     FRIDAY,
     SATURDAY,
 )
-from app.ssot import WorkPattern, TimeRange, RestDay, Duration
+from app.ssot import (
+    WorkPattern,
+    TimeRange,
+    RestDay,
+    Duration,
+    PatternType as SSOTPatternType,
+    PatternLevelB as SSOTPatternLevelB,
+    WeekPatternB as SSOTWeekPatternB,
+)
 
 
 # =============================================================================
@@ -721,3 +729,172 @@ class TestLevelCModes:
         errors = validate_level_c(pattern, RestDay.SATURDAY)
         assert len(errors) > 0
         assert any(e.type == "break_too_long" for e in errors)
+
+
+# =============================================================================
+# SSOT Level B Integration Tests
+# =============================================================================
+
+class TestSSOTLevelB:
+    """Test cyclic patterns using SSOT pattern_type and level_b fields."""
+
+    def test_cyclic_pattern_from_ssot_level_b(self):
+        """Cyclic pattern: 4-week cycle, weeks 1+2 work Sun-Thu, weeks 3+4 empty."""
+        # Create a WorkPattern with pattern_type=cyclic and level_b set
+        pattern = WorkPattern(
+            id="WP_CYCLIC",
+            start=date(2024, 1, 7),  # Sunday
+            end=date(2024, 2, 3),    # 4 weeks
+            work_days=[SUNDAY, MONDAY, TUESDAY, WEDNESDAY, THURSDAY],  # Default
+            default_shifts=[TimeRange(start_time=time(8, 0), end_time=time(17, 0))],
+            default_breaks=[TimeRange(start_time=time(12, 0), end_time=time(12, 30))],
+            pattern_type=SSOTPatternType.CYCLIC,
+            level_b=SSOTPatternLevelB(
+                cycle_length=4,
+                cycle=[
+                    SSOTWeekPatternB(
+                        work_days=[SUNDAY, MONDAY, TUESDAY, WEDNESDAY, THURSDAY],
+                        per_day=None,
+                        repeats=1,
+                    ),
+                    SSOTWeekPatternB(
+                        work_days=[SUNDAY, MONDAY, TUESDAY, WEDNESDAY, THURSDAY],
+                        per_day=None,
+                        repeats=1,
+                    ),
+                    SSOTWeekPatternB(
+                        work_days=[],  # Empty week
+                        per_day=None,
+                        repeats=1,
+                    ),
+                    SSOTWeekPatternB(
+                        work_days=[],  # Empty week
+                        per_day=None,
+                        repeats=1,
+                    ),
+                ],
+            ),
+        )
+
+        result = translate([pattern], RestDay.SATURDAY)
+
+        assert len(result.errors) == 0
+        assert len(result.work_patterns) == 1
+
+        translated = result.work_patterns[0]
+
+        # Should have daily_overrides
+        assert translated.daily_overrides is not None
+
+        # Week 1 (Jan 7-11): Should have work days Sun-Thu
+        week1_work_days = [
+            date(2024, 1, 7),   # Sunday
+            date(2024, 1, 8),   # Monday
+            date(2024, 1, 9),   # Tuesday
+            date(2024, 1, 10),  # Wednesday
+            date(2024, 1, 11),  # Thursday
+        ]
+        for d in week1_work_days:
+            assert d in translated.daily_overrides, f"Week 1 work day {d} should be in daily_overrides"
+
+        # Week 2 (Jan 14-18): Should have work days Sun-Thu
+        week2_work_days = [
+            date(2024, 1, 14),  # Sunday
+            date(2024, 1, 15),  # Monday
+            date(2024, 1, 16),  # Tuesday
+            date(2024, 1, 17),  # Wednesday
+            date(2024, 1, 18),  # Thursday
+        ]
+        for d in week2_work_days:
+            assert d in translated.daily_overrides, f"Week 2 work day {d} should be in daily_overrides"
+
+        # Week 3 (Jan 21-25): Should NOT have work days
+        week3_days = [
+            date(2024, 1, 21),  # Sunday
+            date(2024, 1, 22),  # Monday
+            date(2024, 1, 23),  # Tuesday
+            date(2024, 1, 24),  # Wednesday
+            date(2024, 1, 25),  # Thursday
+        ]
+        for d in week3_days:
+            assert d not in translated.daily_overrides, f"Week 3 day {d} should NOT be in daily_overrides"
+
+        # Week 4 (Jan 28 - Feb 1): Should NOT have work days
+        week4_days = [
+            date(2024, 1, 28),  # Sunday
+            date(2024, 1, 29),  # Monday
+            date(2024, 1, 30),  # Tuesday
+            date(2024, 1, 31),  # Wednesday
+            date(2024, 2, 1),   # Thursday
+        ]
+        for d in week4_days:
+            assert d not in translated.daily_overrides, f"Week 4 day {d} should NOT be in daily_overrides"
+
+        # Check pattern source is recorded correctly
+        assert len(result.pattern_sources) == 1
+        source = result.pattern_sources[0]
+        assert source.type == PatternType.CYCLIC
+        assert source.level_b_data is not None
+        assert source.level_b_data.cycle_length == 4
+
+    def test_cyclic_pattern_with_repeats(self):
+        """Cyclic pattern with repeats: 2 weeks, each repeated twice = 4 week cycle."""
+        pattern = WorkPattern(
+            id="WP_CYCLIC_REPEATS",
+            start=date(2024, 1, 7),  # Sunday
+            end=date(2024, 2, 3),    # 4 weeks
+            work_days=[SUNDAY, MONDAY, TUESDAY, WEDNESDAY, THURSDAY],
+            default_shifts=[TimeRange(start_time=time(8, 0), end_time=time(17, 0))],
+            pattern_type=SSOTPatternType.CYCLIC,
+            level_b=SSOTPatternLevelB(
+                cycle_length=4,
+                cycle=[
+                    SSOTWeekPatternB(
+                        work_days=[SUNDAY, MONDAY, TUESDAY],
+                        per_day=None,
+                        repeats=2,  # This week repeats twice
+                    ),
+                    SSOTWeekPatternB(
+                        work_days=[WEDNESDAY, THURSDAY],
+                        per_day=None,
+                        repeats=2,  # This week repeats twice
+                    ),
+                ],
+            ),
+        )
+
+        result = translate([pattern], RestDay.SATURDAY)
+
+        assert len(result.errors) == 0
+        assert len(result.work_patterns) == 1
+
+        translated = result.work_patterns[0]
+        assert translated.daily_overrides is not None
+
+        # Week 1: Pattern A (Sun, Mon, Tue)
+        assert date(2024, 1, 7) in translated.daily_overrides   # Sunday
+        assert date(2024, 1, 8) in translated.daily_overrides   # Monday
+        assert date(2024, 1, 9) in translated.daily_overrides   # Tuesday
+        assert date(2024, 1, 10) not in translated.daily_overrides  # Wednesday
+        assert date(2024, 1, 11) not in translated.daily_overrides  # Thursday
+
+        # Week 2: Pattern A again (repeated)
+        assert date(2024, 1, 14) in translated.daily_overrides  # Sunday
+        assert date(2024, 1, 15) in translated.daily_overrides  # Monday
+        assert date(2024, 1, 16) in translated.daily_overrides  # Tuesday
+        assert date(2024, 1, 17) not in translated.daily_overrides  # Wednesday
+        assert date(2024, 1, 18) not in translated.daily_overrides  # Thursday
+
+        # Week 3: Pattern B (Wed, Thu)
+        assert date(2024, 1, 21) not in translated.daily_overrides  # Sunday
+        assert date(2024, 1, 22) not in translated.daily_overrides  # Monday
+        assert date(2024, 1, 23) not in translated.daily_overrides  # Tuesday
+        assert date(2024, 1, 24) in translated.daily_overrides  # Wednesday
+        assert date(2024, 1, 25) in translated.daily_overrides  # Thursday
+
+        # Week 4: Pattern B again (repeated)
+        assert date(2024, 1, 28) not in translated.daily_overrides  # Sunday
+        assert date(2024, 1, 29) not in translated.daily_overrides  # Monday
+        assert date(2024, 1, 30) not in translated.daily_overrides  # Tuesday
+        assert date(2024, 1, 31) in translated.daily_overrides  # Wednesday
+        assert date(2024, 2, 1) in translated.daily_overrides  # Thursday
