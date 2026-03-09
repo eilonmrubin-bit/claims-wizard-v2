@@ -2390,8 +2390,8 @@ function App() {
                                     />
                                   </Col>
                                 </Row>
-                                <Row gutter={16} align="middle" style={{ marginBottom: 8 }}>
-                                  <Col span={8}>
+                                <Row gutter={8} align="middle" style={{ marginBottom: 8 }}>
+                                  <Col>
                                     <Form.Item label="מתאריך" style={{ marginBottom: 0 }}>
                                       <DateInput
                                         value={period.start || ''}
@@ -2400,7 +2400,7 @@ function App() {
                                       />
                                     </Form.Item>
                                   </Col>
-                                  <Col span={8}>
+                                  <Col>
                                     <Form.Item label="עד תאריך" style={{ marginBottom: 0 }}>
                                       <DateInput
                                         value={period.end || ''}
@@ -2409,7 +2409,7 @@ function App() {
                                       />
                                     </Form.Item>
                                   </Col>
-                                  <Col span={8}>
+                                  <Col>
                                     <Form.Item label=" " style={{ marginBottom: 0 }}>
                                       <Tooltip title="התאם לתקופת העסקה או דפוס עבודה">
                                         <Dropdown
@@ -2465,8 +2465,8 @@ function App() {
 
                                       return (
                                         <Row key={vg.id} gutter={8} align="middle" style={{ marginBottom: 8 }}>
-                                          <Col span={8}>
-                                            <Space>
+                                          <Col>
+                                            <Space size={4}>
                                               <InputNumber
                                                 value={vg.nights_per_visit}
                                                 onChange={(v) => {
@@ -2478,14 +2478,14 @@ function App() {
                                                 }}
                                                 min={1}
                                                 max={Math.max(1, Math.floor(availableNights / vg.count))}
-                                                style={{ width: 60 }}
+                                                style={{ width: 50 }}
                                               />
                                               <span style={{ fontSize: 12 }}>לילות לרצף</span>
                                             </Space>
                                           </Col>
-                                          <Col span={2} style={{ textAlign: 'center' }}>×</Col>
-                                          <Col span={8}>
-                                            <Space>
+                                          <Col style={{ padding: '0 4px' }}>×</Col>
+                                          <Col>
+                                            <Space size={4}>
                                               <InputNumber
                                                 value={vg.count}
                                                 onChange={(v) => {
@@ -2497,12 +2497,12 @@ function App() {
                                                 }}
                                                 min={1}
                                                 max={Math.max(1, Math.floor(availableNights / vg.nights_per_visit))}
-                                                style={{ width: 60 }}
+                                                style={{ width: 50 }}
                                               />
                                               <span style={{ fontSize: 12 }}>רצפים ל{unitLabel}</span>
                                             </Space>
                                           </Col>
-                                          <Col span={6} style={{ textAlign: 'left' }}>
+                                          <Col>
                                             <Button
                                               type="text"
                                               danger
