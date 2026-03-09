@@ -11,6 +11,7 @@ from app.modules.meal_allowance import compute_meal_allowance
 from app.ssot import (
     LodgingInput,
     LodgingPeriod,
+    VisitGroup,
     EmploymentPeriod,
     MealAllowanceData,
 )
@@ -21,10 +22,35 @@ def make_lodging_period(
     start: date,
     end: date,
     pattern_type: str = "weekly",
-    nights_per_unit: int = 4,
-    visits_per_unit: int = 1,
+    total_nights: int = 4,
+    total_visits: int = 1,
+    visit_groups: list[VisitGroup] | None = None,
 ) -> LodgingPeriod:
-    """Helper to create a LodgingPeriod."""
+    """Helper to create a LodgingPeriod with visit groups.
+
+    Args:
+        total_nights: Total nights per unit (week or month)
+        total_visits: Total visits per unit (week or month)
+        visit_groups: Explicit visit groups (overrides total_nights/total_visits)
+
+    Creates visit groups to match the total_nights and total_visits.
+    """
+    if visit_groups is None and pattern_type != "none":
+        if total_visits == 0:
+            visit_groups = []
+        elif total_nights % total_visits == 0:
+            nights_per = total_nights // total_visits
+            visit_groups = [VisitGroup(id="VG1", nights_per_visit=nights_per, count=total_visits)]
+        else:
+            base_nights = total_nights // total_visits
+            remainder = total_nights % total_visits
+            visit_groups = []
+            for i in range(total_visits):
+                nights = base_nights + (1 if i < remainder else 0)
+                visit_groups.append(VisitGroup(id=f"VG{i+1}", nights_per_visit=nights, count=1))
+    elif visit_groups is None:
+        visit_groups = []
+
     return LodgingPeriod(
         id=id,
         start=start,
@@ -32,8 +58,7 @@ def make_lodging_period(
         snap_to=None,
         snap_ref_id=None,
         pattern_type=pattern_type,
-        nights_per_unit=nights_per_unit,
-        visits_per_unit=visits_per_unit,
+        visit_groups=visit_groups,
     )
 
 
@@ -76,8 +101,8 @@ class TestCase1ConstructionWeeklyLodgingFullYear:
                     date(2024, 1, 1),
                     date(2024, 12, 31),
                     pattern_type="weekly",
-                    nights_per_unit=4,
-                    visits_per_unit=1,
+                    total_nights=4,
+                    total_visits=1,
                 )
             ]
         )
@@ -127,8 +152,8 @@ class TestCase2RateChangeMidEmployment:
                     date(2017, 1, 1),
                     date(2017, 12, 31),
                     pattern_type="weekly",
-                    nights_per_unit=4,
-                    visits_per_unit=1,
+                    total_nights=4,
+                    total_visits=1,
                 )
             ]
         )
@@ -176,8 +201,8 @@ class TestCase3MonthlyLodging:
                     date(2023, 1, 1),
                     date(2023, 12, 31),
                     pattern_type="monthly",
-                    nights_per_unit=15,
-                    visits_per_unit=3,
+                    total_nights=15,
+                    total_visits=3,
                 )
             ]
         )
@@ -214,8 +239,8 @@ class TestNotConstruction:
                     date(2024, 1, 1),
                     date(2024, 12, 31),
                     pattern_type="weekly",
-                    nights_per_unit=4,
-                    visits_per_unit=1,
+                    total_nights=4,
+                    total_visits=1,
                 )
             ]
         )
@@ -272,8 +297,8 @@ class TestDisabled:
                     date(2024, 1, 1),
                     date(2024, 12, 31),
                     pattern_type="weekly",
-                    nights_per_unit=4,
-                    visits_per_unit=1,
+                    total_nights=4,
+                    total_visits=1,
                 )
             ]
         )
@@ -307,8 +332,6 @@ class TestPatternTypeNone:
                     date(2024, 1, 1),
                     date(2024, 12, 31),
                     pattern_type="none",
-                    nights_per_unit=0,
-                    visits_per_unit=0,
                 )
             ]
         )

@@ -20,6 +20,8 @@ from app.ssot import (
     TravelData,
     TravelWeekDetail,
     TravelMonthlyBreakdown,
+    total_nights,
+    total_visits,
 )
 
 
@@ -70,9 +72,9 @@ def compute_weekly_travel_days(work_days: int, active_period: LodgingPeriod | No
         return work_days
 
     if active_period.pattern_type == "weekly":
-        nights_rounded = round(active_period.nights_per_unit)
-        visits_rounded = max(1, round(active_period.visits_per_unit)) if nights_rounded > 0 else 0
-        travel_days = work_days + visits_rounded - nights_rounded
+        nights = total_nights(active_period)
+        visits = total_visits(active_period)
+        travel_days = work_days + visits - nights
         return max(0, travel_days)
 
     # For monthly pattern, we compute at month level, so return work_days here
@@ -247,8 +249,8 @@ def compute_travel(
         month_work_days = monthly_aggregates[month_key]["work_days"]
 
         # Apply monthly formula: travel_days = work_days + visits - nights
-        nights = period.nights_per_unit
-        visits = period.visits_per_unit
+        nights = total_nights(period)
+        visits = total_visits(period)
         travel_days_month = max(0, month_work_days + visits - nights)
 
         # Get rate for this month (use first day of month)

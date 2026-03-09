@@ -11,7 +11,7 @@ from datetime import date
 from decimal import Decimal
 
 from app.modules.travel import compute_travel, compute_weekly_travel_days, get_work_days_in_week
-from app.ssot import Week, Shift, LodgingInput, LodgingPeriod
+from app.ssot import Week, Shift, LodgingInput, LodgingPeriod, VisitGroup
 
 
 def make_week(
@@ -48,17 +48,45 @@ def make_lodging_period(
     start: date,
     end: date,
     pattern_type: str = "weekly",
-    nights_per_unit: int = 4,
-    visits_per_unit: int = 1,
+    total_nights: int = 4,
+    total_visits: int = 1,
+    visit_groups: list[VisitGroup] | None = None,
 ) -> LodgingPeriod:
-    """Create a LodgingPeriod for testing."""
+    """Create a LodgingPeriod with visit groups for testing.
+
+    Args:
+        total_nights: Total nights per unit (week or month)
+        total_visits: Total visits per unit (week or month)
+        visit_groups: Explicit visit groups (overrides total_nights/total_visits)
+
+    Creates visit groups to match the total_nights and total_visits.
+    """
+    if visit_groups is None and pattern_type != "none":
+        # Create visit groups to match totals
+        if total_visits == 0:
+            visit_groups = []
+        elif total_nights % total_visits == 0:
+            # Even division - single group
+            nights_per = total_nights // total_visits
+            visit_groups = [VisitGroup(id="VG1", nights_per_visit=nights_per, count=total_visits)]
+        else:
+            # Uneven division - create multiple groups to match totals
+            # e.g., total_nights=3, total_visits=2 → [{1, 1}, {2, 1}]
+            base_nights = total_nights // total_visits
+            remainder = total_nights % total_visits
+            visit_groups = []
+            for i in range(total_visits):
+                nights = base_nights + (1 if i < remainder else 0)
+                visit_groups.append(VisitGroup(id=f"VG{i+1}", nights_per_visit=nights, count=1))
+    elif visit_groups is None:
+        visit_groups = []
+
     return LodgingPeriod(
         id=period_id,
         start=start,
         end=end,
         pattern_type=pattern_type,
-        nights_per_unit=nights_per_unit,
-        visits_per_unit=visits_per_unit,
+        visit_groups=visit_groups,
     )
 
 
@@ -368,8 +396,8 @@ class TestCase4ConstructionWeeklyLodging:
                     date(2024, 1, 1),
                     date(2024, 3, 31),
                     pattern_type="weekly",
-                    nights_per_unit=4,
-                    visits_per_unit=1,
+                    total_nights=4,
+                    total_visits=1,
                 )
             ]
         )
@@ -461,16 +489,16 @@ class TestCase5ConstructionMultiplePeriods:
                     date(2024, 1, 1),
                     date(2024, 1, 31),
                     pattern_type="weekly",
-                    nights_per_unit=4,
-                    visits_per_unit=1,
+                    total_nights=4,
+                    total_visits=1,
                 ),
                 make_lodging_period(
                     "LP2",
                     date(2024, 2, 1),
                     date(2024, 2, 29),
                     pattern_type="weekly",
-                    nights_per_unit=3,
-                    visits_per_unit=2,
+                    total_nights=3,
+                    total_visits=2,
                 ),
             ]
         )
@@ -531,8 +559,8 @@ class TestCase6PartialWeekEmploymentStart:
                     date(2024, 1, 1),
                     date(2024, 12, 31),
                     pattern_type="weekly",
-                    nights_per_unit=4,
-                    visits_per_unit=1,
+                    total_nights=4,
+                    total_visits=1,
                 )
             ]
         )
@@ -578,8 +606,8 @@ class TestCase7SingleDayLodgingWeek:
                     date(2024, 1, 1),
                     date(2024, 12, 31),
                     pattern_type="weekly",
-                    nights_per_unit=4,
-                    visits_per_unit=1,
+                    total_nights=4,
+                    total_visits=1,
                 )
             ]
         )
@@ -640,16 +668,16 @@ class TestCase8PeriodGap:
                     date(2024, 1, 1),
                     date(2024, 1, 14),  # Weeks 1-2
                     pattern_type="weekly",
-                    nights_per_unit=4,
-                    visits_per_unit=1,
+                    total_nights=4,
+                    total_visits=1,
                 ),
                 make_lodging_period(
                     "LP2",
                     date(2024, 1, 22),
                     date(2024, 1, 31),  # Week 4 only
                     pattern_type="weekly",
-                    nights_per_unit=4,
-                    visits_per_unit=1,
+                    total_nights=4,
+                    total_visits=1,
                 ),
             ]
         )
@@ -805,8 +833,8 @@ class TestNonConstructionIgnoresLodging:
                     date(2024, 1, 1),
                     date(2024, 12, 31),
                     pattern_type="weekly",
-                    nights_per_unit=4,
-                    visits_per_unit=1,
+                    total_nights=4,
+                    total_visits=1,
                 )
             ]
         )

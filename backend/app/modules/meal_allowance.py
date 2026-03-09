@@ -21,6 +21,7 @@ from app.ssot import (
     EmploymentPeriod,
     MealAllowanceData,
     MealAllowanceMonthlyBreakdown,
+    total_nights,
 )
 
 
@@ -191,15 +192,18 @@ def compute_meal_allowance(
             month_key = (year, month)
 
             # Compute nights for this month based on pattern type
+            # Use total_nights() to sum all visit groups
+            nights_per_unit = total_nights(period)
+
             if period.pattern_type == "monthly":
                 # Pro-rate the monthly nights to the clipped portion
-                nights_this_month = Decimal(period.nights_per_unit) * (
+                nights_this_month = Decimal(nights_per_unit) * (
                     Decimal(days_in_clip) / Decimal(days_in_full_month)
                 )
             elif period.pattern_type == "weekly":
                 # Count work weeks in clip
                 weeks_in_clip = count_work_weeks(clipped_start, clipped_end)
-                nights_this_month = Decimal(period.nights_per_unit) * weeks_in_clip
+                nights_this_month = Decimal(nights_per_unit) * weeks_in_clip
             else:
                 nights_this_month = Decimal("0")
 

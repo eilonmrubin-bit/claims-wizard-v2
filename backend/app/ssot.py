@@ -896,13 +896,26 @@ class TrainingFundData:
 # -----------------------------------------------------------------------------
 
 @dataclass
+class VisitGroup:
+    """A recurring visit pattern within a lodging period.
+
+    Describes how many nights each visit lasts, and how many such visits
+    occur per week or per month.
+    """
+    id: str = ""
+    nights_per_visit: int = 1  # how many nights each visit in this group lasts (>= 1)
+    count: int = 1  # how many such visits per week or per month (>= 1)
+    # nights contributed by this group = nights_per_visit x count
+    # travel days contributed by this group = count x 2 (departure + return per visit)
+
+
+@dataclass
 class LodgingPeriod:
-    """Definition of a lodging period with seniority-based matching.
+    """Definition of a lodging period with visit groups.
 
     Defines lodging pattern for a date range.
     pattern_type: 'none' | 'weekly' | 'monthly'
-    nights_per_unit: X nights per week or per month
-    visits_per_unit: Y visits per week or per month
+    visit_groups: list of VisitGroup defining the lodging pattern
     """
     id: str = ""
     start: date | None = None  # inclusive
@@ -910,8 +923,17 @@ class LodgingPeriod:
     snap_to: str | None = None  # "employment_period" | "work_pattern" | None
     snap_ref_id: str | None = None  # id of the snapped EP or WP, if any
     pattern_type: str = "none"  # "none" | "weekly" | "monthly"
-    nights_per_unit: int = 0  # X nights per week or per month
-    visits_per_unit: int = 0  # Y visits per week or per month
+    visit_groups: list[VisitGroup] = field(default_factory=list)
+
+
+def total_nights(p: LodgingPeriod) -> int:
+    """Compute total nights per unit (week or month) from visit groups."""
+    return sum(vg.nights_per_visit * vg.count for vg in p.visit_groups)
+
+
+def total_visits(p: LodgingPeriod) -> int:
+    """Compute total visits per unit (week or month) from visit groups."""
+    return sum(vg.count for vg in p.visit_groups)
 
 
 @dataclass

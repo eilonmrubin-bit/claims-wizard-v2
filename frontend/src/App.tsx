@@ -76,6 +76,7 @@ import type {
   TerminationReason,
   LodgingPeriod,
   LodgingPatternType,
+  VisitGroup,
 } from './types';
 
 dayjs.locale('he');
@@ -622,8 +623,7 @@ function App() {
       snap_to: null,
       snap_ref_id: null,
       pattern_type: 'weekly',
-      nights_per_unit: 4,
-      visits_per_unit: 1,
+      visit_groups: [{ id: generateId(), nights_per_visit: 4, count: 1 }],
     };
     const currentPeriods = formData.lodging_input?.periods || [];
     updateField('lodging_input', { periods: [...currentPeriods, newPeriod] });
@@ -653,6 +653,55 @@ function App() {
       end,
     };
     updateField('lodging_input', { periods: updated });
+  };
+
+  // Visit group handlers
+  const addVisitGroup = (periodIndex: number) => {
+    const currentPeriods = formData.lodging_input?.periods || [];
+    const period = currentPeriods[periodIndex];
+    if (!period) return;
+
+    const newGroup: VisitGroup = {
+      id: generateId(),
+      nights_per_visit: 1,
+      count: 1,
+    };
+    const updated = [...currentPeriods];
+    updated[periodIndex] = {
+      ...period,
+      visit_groups: [...period.visit_groups, newGroup],
+    };
+    updateField('lodging_input', { periods: updated });
+  };
+
+  const updateVisitGroup = (periodIndex: number, groupIndex: number, field: keyof VisitGroup, value: unknown) => {
+    const currentPeriods = formData.lodging_input?.periods || [];
+    const period = currentPeriods[periodIndex];
+    if (!period) return;
+
+    const updatedGroups = [...period.visit_groups];
+    updatedGroups[groupIndex] = { ...updatedGroups[groupIndex], [field]: value };
+    const updated = [...currentPeriods];
+    updated[periodIndex] = { ...period, visit_groups: updatedGroups };
+    updateField('lodging_input', { periods: updated });
+  };
+
+  const removeVisitGroup = (periodIndex: number, groupIndex: number) => {
+    const currentPeriods = formData.lodging_input?.periods || [];
+    const period = currentPeriods[periodIndex];
+    if (!period) return;
+
+    const updatedGroups = period.visit_groups.filter((_, i) => i !== groupIndex);
+    const updated = [...currentPeriods];
+    updated[periodIndex] = { ...period, visit_groups: updatedGroups };
+    updateField('lodging_input', { periods: updated });
+  };
+
+  // Helper to compute totals from visit groups
+  const computeLodgingTotals = (groups: VisitGroup[]) => {
+    const totalNights = groups.reduce((sum, vg) => sum + vg.nights_per_visit * vg.count, 0);
+    const totalVisits = groups.reduce((sum, vg) => sum + vg.count, 0);
+    return { totalNights, totalVisits };
   };
 
   // Default Level C data
@@ -2106,179 +2155,8 @@ function App() {
                                         </Form.Item>
                                       </Col>
                                     </Row>
-                                    {/* Lodging Periods Section */}
-                                    <div style={{ background: 'rgba(78, 205, 196, 0.1)', padding: 12, borderRadius: 8, marginTop: 8 }}>
-                                      <Row justify="space-between" align="middle" style={{ marginBottom: 12 }}>
-                                        <Col>
-                                          <span style={{ fontWeight: 500 }}>לינה באתר</span>
-                                        </Col>
-                                        <Col>
-                                          <Button
-                                            type="dashed"
-                                            size="small"
-                                            icon={<PlusOutlined />}
-                                            onClick={addLodgingPeriod}
-                                          >
-                                            הוסף תקופת לינה
-                                          </Button>
-                                        </Col>
-                                      </Row>
-                                      {(formData.lodging_input?.periods || []).map((period, idx) => {
-                                        const formatDate = (d: string | null) => d ? dayjs(d).format('DD.MM.YYYY') : '';
-                                        const snapMenuItems = [
-                                          ...formData.employment_periods.filter(ep => ep.start && ep.end).map(ep => ({
-                                            key: `ep_${ep.id}`,
-                                            label: `תקופת העסקה (${formatDate(ep.start)}–${formatDate(ep.end)})`,
-                                            onClick: () => snapLodgingPeriod(idx, 'employment_period', ep.id, ep.start, ep.end),
-                                          })),
-                                          ...formData.work_patterns.filter(wp => wp.start && wp.end).map(wp => ({
-                                            key: `wp_${wp.id}`,
-                                            label: `דפוס עבודה (${formatDate(wp.start)}–${formatDate(wp.end)})`,
-                                            onClick: () => snapLodgingPeriod(idx, 'work_pattern', wp.id, wp.start, wp.end),
-                                          })),
-                                        ];
-                                        const nightsPerVisit = period.visits_per_unit > 0
-                                          ? (period.nights_per_unit / period.visits_per_unit).toFixed(1)
-                                          : '0';
-                                        return (
-                                          <div
-                                            key={period.id}
-                                            style={{
-                                              background: 'rgba(0,0,0,0.2)',
-                                              padding: 12,
-                                              borderRadius: 6,
-                                              marginBottom: 8,
-                                            }}
-                                          >
-                                            <Row justify="space-between" align="middle" style={{ marginBottom: 8 }}>
-                                              <Col>
-                                                <span style={{ fontWeight: 500, color: '#4ECDC4' }}>
-                                                  תקופת לינה {idx + 1}
-                                                </span>
-                                              </Col>
-                                              <Col>
-                                                <Button
-                                                  type="text"
-                                                  danger
-                                                  size="small"
-                                                  icon={<DeleteOutlined />}
-                                                  onClick={() => removeLodgingPeriod(idx)}
-                                                />
-                                              </Col>
-                                            </Row>
-                                            <Row gutter={16} align="middle" style={{ marginBottom: 8 }}>
-                                              <Col span={8}>
-                                                <Form.Item label="מתאריך" style={{ marginBottom: 0 }}>
-                                                  <DateInput
-                                                    value={period.start || ''}
-                                                    onChange={(v) => updateLodgingPeriod(idx, 'start', v || null)}
-                                                    placeholder="DD.MM.YYYY"
-                                                  />
-                                                </Form.Item>
-                                              </Col>
-                                              <Col span={8}>
-                                                <Form.Item label="עד תאריך" style={{ marginBottom: 0 }}>
-                                                  <DateInput
-                                                    value={period.end || ''}
-                                                    onChange={(v) => updateLodgingPeriod(idx, 'end', v || null)}
-                                                    placeholder="DD.MM.YYYY"
-                                                  />
-                                                </Form.Item>
-                                              </Col>
-                                              <Col span={8}>
-                                                <Form.Item label=" " style={{ marginBottom: 0 }}>
-                                                  <Tooltip title="התאם לתקופת העסקה או דפוס עבודה">
-                                                    <Dropdown
-                                                      menu={{ items: snapMenuItems }}
-                                                      trigger={['click']}
-                                                      disabled={snapMenuItems.length === 0}
-                                                    >
-                                                      <Button size="small" icon={<LinkOutlined />} />
-                                                    </Dropdown>
-                                                  </Tooltip>
-                                                </Form.Item>
-                                              </Col>
-                                            </Row>
-                                            <Row gutter={16} align="middle" style={{ marginBottom: 8 }}>
-                                              <Col span={24}>
-                                                <Radio.Group
-                                                  value={period.pattern_type}
-                                                  onChange={(e) => {
-                                                    const newType = e.target.value as LodgingPatternType;
-                                                    updateLodgingPeriod(idx, 'pattern_type', newType);
-                                                    if (newType === 'none') {
-                                                      updateLodgingPeriod(idx, 'nights_per_unit', 0);
-                                                      updateLodgingPeriod(idx, 'visits_per_unit', 0);
-                                                    } else if (newType === 'weekly' && period.nights_per_unit === 0) {
-                                                      updateLodgingPeriod(idx, 'nights_per_unit', 4);
-                                                      updateLodgingPeriod(idx, 'visits_per_unit', 1);
-                                                    } else if (newType === 'monthly' && period.nights_per_unit === 0) {
-                                                      updateLodgingPeriod(idx, 'nights_per_unit', 15);
-                                                      updateLodgingPeriod(idx, 'visits_per_unit', 3);
-                                                    }
-                                                  }}
-                                                >
-                                                  <Radio.Button value="weekly">שבועי</Radio.Button>
-                                                  <Radio.Button value="monthly">חודשי</Radio.Button>
-                                                  <Radio.Button value="none">ללא לינה</Radio.Button>
-                                                </Radio.Group>
-                                              </Col>
-                                            </Row>
-                                            {period.pattern_type !== 'none' && (
-                                              <Row gutter={16} align="middle">
-                                                <Col span={8}>
-                                                  <Form.Item
-                                                    label={`לילות ל${period.pattern_type === 'weekly' ? 'שבוע' : 'חודש'}`}
-                                                    style={{ marginBottom: 0 }}
-                                                  >
-                                                    <InputNumber
-                                                      value={period.nights_per_unit}
-                                                      onChange={(v) => {
-                                                        const nights = v ?? 0;
-                                                        updateLodgingPeriod(idx, 'nights_per_unit', nights);
-                                                        // Ensure visits <= nights
-                                                        if (period.visits_per_unit > nights) {
-                                                          updateLodgingPeriod(idx, 'visits_per_unit', Math.max(1, nights));
-                                                        }
-                                                      }}
-                                                      min={1}
-                                                      max={period.pattern_type === 'weekly' ? 7 : 31}
-                                                      style={{ width: '100%' }}
-                                                    />
-                                                  </Form.Item>
-                                                </Col>
-                                                <Col span={8}>
-                                                  <Form.Item
-                                                    label={`ביקורים ל${period.pattern_type === 'weekly' ? 'שבוע' : 'חודש'}`}
-                                                    style={{ marginBottom: 0 }}
-                                                  >
-                                                    <InputNumber
-                                                      value={period.visits_per_unit}
-                                                      onChange={(v) => updateLodgingPeriod(idx, 'visits_per_unit', v ?? 1)}
-                                                      min={1}
-                                                      max={period.nights_per_unit}
-                                                      style={{ width: '100%' }}
-                                                    />
-                                                  </Form.Item>
-                                                </Col>
-                                                <Col span={8}>
-                                                  <div style={{ fontSize: 12, color: '#88D8E0', marginTop: 22 }}>
-                                                    ≈ {nightsPerVisit} לילות לביקור
-                                                  </div>
-                                                </Col>
-                                              </Row>
-                                            )}
-                                          </div>
-                                        );
-                                      })}
-                                      {(formData.lodging_input?.periods || []).length === 0 && (
-                                        <div style={{ fontSize: 12, color: '#88D8E0', textAlign: 'center', padding: 8 }}>
-                                          לא הוגדרו תקופות לינה. לחץ "הוסף תקופת לינה" להוספה.
-                                        </div>
-                                      )}
-                                      <div style={{ fontSize: 11, color: '#88D8E0', marginTop: 8 }}>
-                                        נוסחה: ימי נסיעה = ימי עבודה + ביקורים − לילות
-                                      </div>
+                                    <div style={{ fontSize: 11, color: '#88D8E0', marginTop: 8 }}>
+                                      נוסחה: ימי נסיעה = ימי עבודה + ביקורים − לילות
                                     </div>
                                   </>
                                 )}
@@ -2289,7 +2167,207 @@ function App() {
                       />
                     </Col>
                   </Row>
-                  {/* Row 3.5: Meal Allowance toggle (construction only) */}
+                  {/* Row 3.5: Lodging section (construction only) */}
+                  {formData.industry === 'construction' && (
+                    <Row gutter={24} style={{ marginTop: 16 }}>
+                      <Col span={24}>
+                        <div style={{
+                          background: 'rgba(78, 205, 196, 0.1)',
+                          padding: 12,
+                          borderRadius: 8,
+                          border: '1px solid rgba(78, 205, 196, 0.2)',
+                        }}>
+                          <Row justify="space-between" align="middle" style={{ marginBottom: 12 }}>
+                            <Col>
+                              <span style={{ fontWeight: 500 }}>לינה באתר</span>
+                            </Col>
+                            <Col>
+                              <Button
+                                type="dashed"
+                                size="small"
+                                icon={<PlusOutlined />}
+                                onClick={addLodgingPeriod}
+                              >
+                                הוסף תקופת לינה
+                              </Button>
+                            </Col>
+                          </Row>
+                          {(formData.lodging_input?.periods || []).map((period, idx) => {
+                            const formatDate = (d: string | null) => d ? dayjs(d).format('DD.MM.YYYY') : '';
+                            const snapMenuItems = [
+                              ...formData.employment_periods.filter(ep => ep.start && ep.end).map(ep => ({
+                                key: `ep_${ep.id}`,
+                                label: `תקופת העסקה (${formatDate(ep.start)}–${formatDate(ep.end)})`,
+                                onClick: () => snapLodgingPeriod(idx, 'employment_period', ep.id, ep.start, ep.end),
+                              })),
+                              ...formData.work_patterns.filter(wp => wp.start && wp.end).map(wp => ({
+                                key: `wp_${wp.id}`,
+                                label: `דפוס עבודה (${formatDate(wp.start)}–${formatDate(wp.end)})`,
+                                onClick: () => snapLodgingPeriod(idx, 'work_pattern', wp.id, wp.start, wp.end),
+                              })),
+                            ];
+                            const { totalNights, totalVisits } = computeLodgingTotals(period.visit_groups);
+                            const unitLabel = period.pattern_type === 'weekly' ? 'שבוע' : 'חודש';
+                            return (
+                              <div
+                                key={period.id}
+                                style={{
+                                  background: 'rgba(0,0,0,0.2)',
+                                  padding: 12,
+                                  borderRadius: 6,
+                                  marginBottom: 8,
+                                }}
+                              >
+                                <Row justify="space-between" align="middle" style={{ marginBottom: 8 }}>
+                                  <Col>
+                                    <span style={{ fontWeight: 500, color: '#4ECDC4' }}>
+                                      תקופת לינה {idx + 1}
+                                    </span>
+                                  </Col>
+                                  <Col>
+                                    <Button
+                                      type="text"
+                                      danger
+                                      size="small"
+                                      icon={<DeleteOutlined />}
+                                      onClick={() => removeLodgingPeriod(idx)}
+                                    />
+                                  </Col>
+                                </Row>
+                                <Row gutter={16} align="middle" style={{ marginBottom: 8 }}>
+                                  <Col span={8}>
+                                    <Form.Item label="מתאריך" style={{ marginBottom: 0 }}>
+                                      <DateInput
+                                        value={period.start || ''}
+                                        onChange={(v) => updateLodgingPeriod(idx, 'start', v || null)}
+                                        placeholder="DD.MM.YYYY"
+                                      />
+                                    </Form.Item>
+                                  </Col>
+                                  <Col span={8}>
+                                    <Form.Item label="עד תאריך" style={{ marginBottom: 0 }}>
+                                      <DateInput
+                                        value={period.end || ''}
+                                        onChange={(v) => updateLodgingPeriod(idx, 'end', v || null)}
+                                        placeholder="DD.MM.YYYY"
+                                      />
+                                    </Form.Item>
+                                  </Col>
+                                  <Col span={8}>
+                                    <Form.Item label=" " style={{ marginBottom: 0 }}>
+                                      <Tooltip title="התאם לתקופת העסקה או דפוס עבודה">
+                                        <Dropdown
+                                          menu={{ items: snapMenuItems }}
+                                          trigger={['click']}
+                                          disabled={snapMenuItems.length === 0}
+                                        >
+                                          <Button size="small" icon={<LinkOutlined />} />
+                                        </Dropdown>
+                                      </Tooltip>
+                                    </Form.Item>
+                                  </Col>
+                                </Row>
+                                <Row gutter={16} align="middle" style={{ marginBottom: 8 }}>
+                                  <Col span={24}>
+                                    <Radio.Group
+                                      value={period.pattern_type}
+                                      onChange={(e) => {
+                                        const newType = e.target.value as LodgingPatternType;
+                                        updateLodgingPeriod(idx, 'pattern_type', newType);
+                                        if (newType === 'none') {
+                                          updateLodgingPeriod(idx, 'visit_groups', []);
+                                        } else if (period.visit_groups.length === 0) {
+                                          // Add default visit group when switching from none
+                                          const defaultGroup: VisitGroup = {
+                                            id: generateId(),
+                                            nights_per_visit: newType === 'weekly' ? 4 : 15,
+                                            count: 1,
+                                          };
+                                          updateLodgingPeriod(idx, 'visit_groups', [defaultGroup]);
+                                        }
+                                      }}
+                                    >
+                                      <Radio.Button value="weekly">שבועי</Radio.Button>
+                                      <Radio.Button value="monthly">חודשי</Radio.Button>
+                                      <Radio.Button value="none">ללא לינה</Radio.Button>
+                                    </Radio.Group>
+                                  </Col>
+                                </Row>
+                                {period.pattern_type !== 'none' && (
+                                  <>
+                                    {/* Visit Groups */}
+                                    {period.visit_groups.map((vg, vgIdx) => (
+                                      <Row key={vg.id} gutter={8} align="middle" style={{ marginBottom: 8 }}>
+                                        <Col span={8}>
+                                          <Space>
+                                            <InputNumber
+                                              value={vg.nights_per_visit}
+                                              onChange={(v) => updateVisitGroup(idx, vgIdx, 'nights_per_visit', v ?? 1)}
+                                              min={1}
+                                              max={period.pattern_type === 'weekly' ? 7 : 31}
+                                              style={{ width: 60 }}
+                                            />
+                                            <span style={{ fontSize: 12 }}>לילות לביקור</span>
+                                          </Space>
+                                        </Col>
+                                        <Col span={2} style={{ textAlign: 'center' }}>×</Col>
+                                        <Col span={8}>
+                                          <Space>
+                                            <InputNumber
+                                              value={vg.count}
+                                              onChange={(v) => updateVisitGroup(idx, vgIdx, 'count', v ?? 1)}
+                                              min={1}
+                                              max={period.pattern_type === 'weekly' ? 7 : 31}
+                                              style={{ width: 60 }}
+                                            />
+                                            <span style={{ fontSize: 12 }}>ביקורים ל{unitLabel}</span>
+                                          </Space>
+                                        </Col>
+                                        <Col span={6} style={{ textAlign: 'left' }}>
+                                          <Button
+                                            type="text"
+                                            danger
+                                            size="small"
+                                            icon={<DeleteOutlined />}
+                                            onClick={() => removeVisitGroup(idx, vgIdx)}
+                                            disabled={period.visit_groups.length <= 1}
+                                          />
+                                        </Col>
+                                      </Row>
+                                    ))}
+                                    <Row style={{ marginBottom: 8 }}>
+                                      <Col>
+                                        <Button
+                                          type="dashed"
+                                          size="small"
+                                          icon={<PlusOutlined />}
+                                          onClick={() => addVisitGroup(idx)}
+                                        >
+                                          הוסף סוג ביקור
+                                        </Button>
+                                      </Col>
+                                    </Row>
+                                    <div style={{ fontSize: 12, color: '#88D8E0' }}>
+                                      סה״כ: {totalNights} לילות, {totalVisits} ביקורים ל{unitLabel}
+                                    </div>
+                                    <div style={{ fontSize: 11, color: '#88D8E0', marginTop: 4 }}>
+                                      ימי נסיעה = ימי עבודה + {totalVisits} − {totalNights}
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            );
+                          })}
+                          {(formData.lodging_input?.periods || []).length === 0 && (
+                            <div style={{ fontSize: 12, color: '#88D8E0', textAlign: 'center', padding: 8 }}>
+                              לא הוגדרו תקופות לינה. לחץ "הוסף תקופת לינה" להוספה.
+                            </div>
+                          )}
+                        </div>
+                      </Col>
+                    </Row>
+                  )}
+                  {/* Row 3.6: Meal Allowance toggle (construction only) */}
                   {formData.industry === 'construction' && (
                     <Row gutter={24} style={{ marginTop: 16 }}>
                       <Col span={24}>

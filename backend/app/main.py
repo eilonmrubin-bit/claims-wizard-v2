@@ -289,13 +289,22 @@ def _reconstruct_ssot_input(data: dict[str, Any]) -> SSOTInput:
         )
 
     def parse_lodging_input(d: dict | None):
-        """Parse LodgingInput with new period-based structure."""
-        from .ssot import LodgingInput, LodgingPeriod
+        """Parse LodgingInput with period-based structure and visit groups."""
+        from .ssot import LodgingInput, LodgingPeriod, VisitGroup
         if d is None:
             return None
 
         periods = []
         for p in d.get("periods", []):
+            # Parse visit_groups
+            visit_groups = []
+            for vg in p.get("visit_groups", []):
+                visit_groups.append(VisitGroup(
+                    id=vg.get("id", ""),
+                    nights_per_visit=int(vg.get("nights_per_visit", 1)),
+                    count=int(vg.get("count", 1)),
+                ))
+
             periods.append(LodgingPeriod(
                 id=p.get("id", ""),
                 start=parse_date(p.get("start")),
@@ -303,8 +312,7 @@ def _reconstruct_ssot_input(data: dict[str, Any]) -> SSOTInput:
                 snap_to=p.get("snap_to"),
                 snap_ref_id=p.get("snap_ref_id"),
                 pattern_type=p.get("pattern_type", "none"),
-                nights_per_unit=int(p.get("nights_per_unit", 0)),
-                visits_per_unit=int(p.get("visits_per_unit", 0)),
+                visit_groups=visit_groups,
             ))
 
         return LodgingInput(periods=periods)
