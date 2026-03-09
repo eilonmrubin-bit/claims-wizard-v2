@@ -2167,7 +2167,38 @@ function App() {
                       />
                     </Col>
                   </Row>
-                  {/* Row 3.5: Lodging section (construction only) */}
+                  {/* Row 3.5: Meal Allowance toggle (construction only) */}
+                  {formData.industry === 'construction' && (
+                    <Row gutter={24} style={{ marginTop: 16 }}>
+                      <Col span={24}>
+                        <div style={{
+                          background: 'rgba(78, 205, 196, 0.05)',
+                          padding: '12px 16px',
+                          borderRadius: 8,
+                          border: '1px solid rgba(78, 205, 196, 0.2)',
+                        }}>
+                          <Space>
+                            <Switch
+                              checked={formData.right_toggles.meal_allowance?.enabled !== false}
+                              onChange={(checked) => updateRightToggle('meal_allowance', 'enabled', checked)}
+                            />
+                            <span style={{ fontWeight: 500 }}>אש״ל (לינה באתר)</span>
+                            {formData.right_toggles.meal_allowance?.enabled !== false && (
+                              <span style={{ color: '#88D8E0', marginRight: 8 }}>
+                                (143.5 ₪/לילה)
+                              </span>
+                            )}
+                          </Space>
+                          {formData.right_toggles.meal_allowance?.enabled !== false && (
+                            <div style={{ fontSize: 12, color: '#88D8E0', marginTop: 8 }}>
+                              אש״ל מחושב על פי לילות לינה באתר. הגדר תקופות לינה בסעיף להלן.
+                            </div>
+                          )}
+                        </div>
+                      </Col>
+                    </Row>
+                  )}
+                  {/* Row 3.6: Lodging section (construction only) */}
                   {formData.industry === 'construction' && (
                     <Row gutter={24} style={{ marginTop: 16 }}>
                       <Col span={24}>
@@ -2367,36 +2398,12 @@ function App() {
                       </Col>
                     </Row>
                   )}
-                  {/* Row 3.6: Meal Allowance toggle (construction only) */}
+                  {/* Decorative divider (construction only) */}
                   {formData.industry === 'construction' && (
-                    <Row gutter={24} style={{ marginTop: 16 }}>
-                      <Col span={24}>
-                        <div style={{
-                          background: 'rgba(78, 205, 196, 0.05)',
-                          padding: '12px 16px',
-                          borderRadius: 8,
-                          border: '1px solid rgba(78, 205, 196, 0.2)',
-                        }}>
-                          <Space>
-                            <Switch
-                              checked={formData.right_toggles.meal_allowance?.enabled !== false}
-                              onChange={(checked) => updateRightToggle('meal_allowance', 'enabled', checked)}
-                            />
-                            <span style={{ fontWeight: 500 }}>אש״ל (לינה באתר)</span>
-                            {formData.right_toggles.meal_allowance?.enabled !== false && (
-                              <span style={{ color: '#88D8E0', marginRight: 8 }}>
-                                (143.5 ₪/לילה)
-                              </span>
-                            )}
-                          </Space>
-                          {formData.right_toggles.meal_allowance?.enabled !== false && (
-                            <div style={{ fontSize: 12, color: '#88D8E0', marginTop: 8 }}>
-                              אש״ל מחושב על פי לילות לינה באתר. הגדר תקופות לינה בקלט נסיעות לעיל.
-                            </div>
-                          )}
-                        </div>
-                      </Col>
-                    </Row>
+                    <div style={{
+                      borderBottom: '1px solid rgba(78, 205, 196, 0.3)',
+                      margin: '24px 0 8px 0',
+                    }} />
                   )}
                   {/* Row 4: Training fund Collapse with toggle in header */}
                   <Row gutter={24} style={{ marginTop: 16 }}>
