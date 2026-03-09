@@ -533,7 +533,7 @@ const EXAMPLE_CONSTRUCTION_MEAL_ALLOWANCE = {
   seniority_input: { method: "prior_plus_pattern", prior_months: 0 },
   right_toggles: { meal_allowance: { enabled: true }, travel: { enabled: true } },
   deductions_input: { overtime: "0", holidays: "0", severance: "0", meal_allowance: "0" },
-  travel_distance_km: 25,
+  travel_distance_km: 0,
   lodging_input: {
     periods: [
       {
