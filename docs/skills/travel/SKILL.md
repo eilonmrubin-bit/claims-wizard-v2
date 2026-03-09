@@ -250,6 +250,9 @@ def compute_travel(
 6. **DO NOT count monthly work_days by week attribution.** Use calendar dates.
 7. **DO NOT apply limitation here.** The limitation module handles it.
 8. **DO NOT use old cycle/full_lodging/daily_return structure.** Use VisitGroups.
+9. **DO NOT use monthly lodging pattern_type with cyclic work patterns.**
+   Cross-month visits cause double-counting. Cyclic work patterns must
+   use weekly lodging only — enforced by frontend validation.
 
 ---
 

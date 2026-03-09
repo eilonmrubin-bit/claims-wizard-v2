@@ -369,6 +369,10 @@ No changes needed — module signature and pipeline wiring are unchanged from or
 9. **DO NOT count monthly work_days by week attribution (week.start_date).** For monthly
    lodging pattern, count work days by calendar date. A day belongs to a month if its
    date falls within that month — period. Week attribution is for weekly pattern only.
+10. **DO NOT combine monthly lodging pattern with cyclic work pattern.**
+   Monthly lodging assumes visits are contained within calendar months.
+   For cyclic work patterns, always use weekly lodging — visits align
+   naturally with work weeks in the cycle.
 
 ---
 

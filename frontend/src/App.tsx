@@ -555,7 +555,7 @@ const EXAMPLE_CONSTRUCTION_LODGING_WEEKLY = {
 const EXAMPLE_CONSTRUCTION_LODGING_CYCLIC = {
   case_metadata: {
     case_name: "בניין — מחזור שבועיים עבודה + שבועיים בית",
-    notes: "מחזור 4 שבועות: שבועיים עובד ולן באתר, שבועיים בבית. ביקור חודשי אחד של 9 לילות. צפוי: 2 ימי נסיעה לחודש עבודה, אש\"ל ~9×143.5×6=7,749 ₪ (6 חודשי עבודה)"
+    notes: "מחזור 4 שבועות: שבועיים עובד (4 לילות/שבוע), שבועיים בבית. צפוי: 2 ימי נסיעה לכל שבוע עבודה, ~26 שבועות עבודה בשנה. אש\"ל: ~26×4×143.5 = 14,924 ₪"
   },
   personal_details: { first_name: "מוחמד", last_name: "אבו-סלאמה", id_number: "987654321", birth_year: 1980 },
   defendant_details: { name: "קבלן בנייה בע\"מ", id_number: "514000002", address: "חיפה" },
@@ -602,9 +602,9 @@ const EXAMPLE_CONSTRUCTION_LODGING_CYCLIC = {
         end: "2023-12-31",
         snap_to: null,
         snap_ref_id: null,
-        pattern_type: "monthly",
+        pattern_type: "weekly",
         visit_groups: [
-          { id: "vg1", nights_per_visit: 9, count: 1 }
+          { id: "vg1", nights_per_visit: 4, count: 1 }
         ]
       }
     ]
@@ -888,6 +888,26 @@ function App() {
       // Monthly: multiply by 4.33 and floor
       return Math.floor(minWorkDaysPerWeek * 4.33);
     }
+  };
+
+  // Check if a lodging period overlaps with any cyclic work pattern
+  // Returns true if monthly lodging is NOT allowed (because cyclic pattern exists)
+  const lodgingOverlapsCyclicPattern = (period: LodgingPeriod): boolean => {
+    const periodStart = period.start ? new Date(period.start) : null;
+    const periodEnd = period.end ? new Date(period.end) : null;
+
+    return formData.work_patterns.some(wp => {
+      // Check if work pattern is cyclic
+      if (wp.pattern_type !== 'cyclic') return false;
+
+      // Check date overlap
+      if (!periodStart || !periodEnd) return true; // If dates missing, assume overlap to be safe
+      if (!wp.start || !wp.end) return true;
+
+      const wpStart = new Date(wp.start);
+      const wpEnd = new Date(wp.end);
+      return wpStart <= periodEnd && wpEnd >= periodStart;
+    });
   };
 
   // Default Level C data
@@ -2613,32 +2633,42 @@ function App() {
                                 </Row>
                                 <Row gutter={16} align="middle" style={{ marginBottom: 8 }}>
                                   <Col span={24}>
-                                    <Radio.Group
-                                      value={period.pattern_type}
-                                      onChange={(e) => {
-                                        const newType = e.target.value as LodgingPatternType;
-                                        const currentPeriods = formData.lodging_input?.periods || [];
-                                        const updated = [...currentPeriods];
-                                        if (newType === 'none') {
-                                          updated[idx] = { ...updated[idx], pattern_type: newType, visit_groups: [] };
-                                        } else if (period.visit_groups.length === 0) {
-                                          // Add default visit group when switching from none
-                                          const defaultGroup: VisitGroup = {
-                                            id: generateId(),
-                                            nights_per_visit: newType === 'weekly' ? 4 : 15,
-                                            count: 1,
-                                          };
-                                          updated[idx] = { ...updated[idx], pattern_type: newType, visit_groups: [defaultGroup] };
-                                        } else {
-                                          updated[idx] = { ...updated[idx], pattern_type: newType };
-                                        }
-                                        updateField('lodging_input', { periods: updated });
-                                      }}
-                                    >
-                                      <Radio.Button value="weekly">שבועי</Radio.Button>
-                                      <Radio.Button value="monthly">חודשי</Radio.Button>
-                                      <Radio.Button value="none">ללא לינה</Radio.Button>
-                                    </Radio.Group>
+                                    {(() => {
+                                      const isCyclicOverlap = lodgingOverlapsCyclicPattern(period);
+                                      return (
+                                        <Radio.Group
+                                          value={period.pattern_type}
+                                          onChange={(e) => {
+                                            const newType = e.target.value as LodgingPatternType;
+                                            // Block monthly selection for cyclic patterns
+                                            if (newType === 'monthly' && isCyclicOverlap) {
+                                              message.warning('לדפוס עבודה מחזורי ניתן להגדיר לינה שבועית בלבד', 4);
+                                              return;
+                                            }
+                                            const currentPeriods = formData.lodging_input?.periods || [];
+                                            const updated = [...currentPeriods];
+                                            if (newType === 'none') {
+                                              updated[idx] = { ...updated[idx], pattern_type: newType, visit_groups: [] };
+                                            } else if (period.visit_groups.length === 0) {
+                                              // Add default visit group when switching from none
+                                              const defaultGroup: VisitGroup = {
+                                                id: generateId(),
+                                                nights_per_visit: newType === 'weekly' ? 4 : 15,
+                                                count: 1,
+                                              };
+                                              updated[idx] = { ...updated[idx], pattern_type: newType, visit_groups: [defaultGroup] };
+                                            } else {
+                                              updated[idx] = { ...updated[idx], pattern_type: newType };
+                                            }
+                                            updateField('lodging_input', { periods: updated });
+                                          }}
+                                        >
+                                          <Radio.Button value="weekly">שבועי</Radio.Button>
+                                          {!isCyclicOverlap && <Radio.Button value="monthly">חודשי</Radio.Button>}
+                                          <Radio.Button value="none">ללא לינה</Radio.Button>
+                                        </Radio.Group>
+                                      );
+                                    })()}
                                   </Col>
                                 </Row>
                                 {period.pattern_type !== 'none' && (
