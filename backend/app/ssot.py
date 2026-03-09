@@ -228,6 +228,10 @@ class SSOTInput:
     is_construction_foreman: bool = False
     training_fund_tiers: list[TrainingFundTier] = field(default_factory=list)
 
+    # Travel allowance (construction)
+    travel_distance_km: Decimal | None = None  # One-way distance from home to site
+    lodging_input: 'LodgingInput | None' = None  # Lodging pattern for construction
+
     # Seniority
     seniority_input: SeniorityInput = field(default_factory=SeniorityInput)
 
@@ -887,6 +891,73 @@ class TrainingFundData:
     monthly_breakdown: list[TrainingFundMonthlyBreakdown] = field(default_factory=list)
 
 
+# -----------------------------------------------------------------------------
+# Travel Allowance Data Structures
+# -----------------------------------------------------------------------------
+
+@dataclass
+class LodgingWeek:
+    """Definition of a week within a lodging cycle."""
+    week_in_cycle: int = 1  # 1-based index within the cycle
+    pattern: str = "daily_return"  # "full_lodging" | "daily_return"
+
+
+@dataclass
+class LodgingInput:
+    """Lodging input for construction workers."""
+    has_lodging: bool = False
+    cycle_weeks: int = 1  # Length of the repeating cycle (1-4)
+    cycle: list[LodgingWeek] = field(default_factory=list)
+
+
+@dataclass
+class TravelWeekDetail:
+    """Weekly detail for travel allowance calculation."""
+    week_start: date | None = None
+    week_end: date | None = None
+    effective_period_id: str = ""
+    work_days: int = 0
+    cycle_position: int | None = None  # 1-based position within lodging cycle, null if no lodging
+    week_pattern: str = "no_lodging"  # "full_lodging" | "daily_return" | "no_lodging"
+    travel_days: int = 0
+    daily_rate: Decimal = Decimal("0")
+    week_travel_value: Decimal = Decimal("0")
+
+
+@dataclass
+class TravelMonthlyBreakdown:
+    """Monthly breakdown for limitation module."""
+    month: tuple[int, int] = (0, 0)  # (year, month)
+    travel_days: int = 0
+    claim_amount: Decimal = Decimal("0")
+
+
+@dataclass
+class TravelData:
+    """Travel allowance calculation result."""
+    # Configuration
+    industry: str = ""
+    daily_rate: Decimal = Decimal("0")  # effective rate used (22.6 / 26.4 / 39.6)
+    distance_km: Decimal | None = None  # from input, construction only
+    distance_tier: str | None = None  # "standard" | "far" | null
+
+    # Lodging Summary
+    has_lodging: bool = False
+    lodging_cycle_weeks: int | None = None
+    lodging_cycle: list[LodgingWeek] | None = None
+
+    # Weekly Detail
+    weekly_detail: list[TravelWeekDetail] = field(default_factory=list)
+
+    # Monthly Breakdown (for limitation module)
+    monthly_breakdown: list[TravelMonthlyBreakdown] = field(default_factory=list)
+
+    # Totals
+    grand_total_travel_days: int = 0
+    grand_total_value: Decimal = Decimal("0")
+    claim_before_deductions: Decimal = Decimal("0")  # = grand_total_value
+
+
 @dataclass
 class RightsResults:
     """Results for all rights (Phase 2)."""
@@ -898,7 +969,7 @@ class RightsResults:
     recreation: RecreationResult | None = None
     training_fund: TrainingFundData | None = None
     salary_completion: Any | None = None  # Not yet defined
-    travel: Any | None = None  # Not yet defined
+    travel: 'TravelData | None' = None
 
 
 # =============================================================================

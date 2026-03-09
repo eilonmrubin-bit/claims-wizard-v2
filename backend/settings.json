@@ -110,5 +110,31 @@
         "min_months": 6
       }
     }
+  },
+  "travel_config": {
+    "industries": {
+      "construction": {
+        "name": "בניין",
+        "requires_distance_input": true,
+        "distance_threshold_km": 40,
+        "rate_csv_standard": "construction_base",
+        "rate_csv_far": "construction_far"
+      },
+      "general": {
+        "name": "כללי",
+        "requires_distance_input": false,
+        "rate_csv": "general"
+      },
+      "cleaning": {
+        "name": "ניקיון",
+        "requires_distance_input": false,
+        "rate_csv": "general"
+      },
+      "agriculture": {
+        "name": "חקלאות",
+        "requires_distance_input": false,
+        "rate_csv": "general"
+      }
+    }
   }
 }

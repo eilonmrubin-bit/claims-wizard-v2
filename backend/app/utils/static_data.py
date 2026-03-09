@@ -539,6 +539,49 @@ class StaticDataLoader:
         row = lookup_by_date(table, target_date)
         return row["data"].daily_amount
 
+    def get_travel_rate(
+        self,
+        industry: str,
+        distance_km: Decimal | None,
+        target_date: date
+    ) -> Decimal:
+        """Get travel rate based on industry and distance (for construction).
+
+        Args:
+            industry: Industry identifier
+            distance_km: Distance in km (for construction only)
+            target_date: Date to look up rate
+
+        Returns:
+            Daily travel rate in NIS
+
+        Construction workers:
+            - distance_km < 40 or None: construction_base rate (26.4)
+            - distance_km >= 40: construction_far rate (39.6)
+
+        Other industries: general rate (22.6)
+        """
+        if not self._loaded:
+            self.load_all()
+
+        if industry == "construction":
+            if distance_km is not None and distance_km >= 40:
+                csv_key = "construction_far"
+            else:
+                csv_key = "construction_base"
+        else:
+            csv_key = "general"
+
+        if csv_key not in self._travel_allowance:
+            csv_key = "general"
+
+        if csv_key not in self._travel_allowance:
+            raise ValueError(f"No travel allowance data for: {csv_key}")
+
+        table = [{"effective_date": ta.effective_date, "data": ta} for ta in self._travel_allowance[csv_key]]
+        row = lookup_by_date(table, target_date)
+        return row["data"].daily_amount
+
 
 # Global instance
 _loader: StaticDataLoader | None = None
