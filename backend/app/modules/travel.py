@@ -172,6 +172,19 @@ def compute_travel(
     # Track monthly lodging periods for monthly pattern handling
     monthly_lodging_periods: dict[tuple[int, int], LodgingPeriod | None] = {}
 
+    # For monthly lodging patterns: count work days by calendar date, NOT by week attribution
+    # Build a mapping of month -> set of distinct work days (for monthly pattern only)
+    monthly_work_days_by_calendar: dict[tuple[int, int], set[date]] = defaultdict(set)
+    for week, _ in work_weeks:
+        if week.start_date is None:
+            continue
+        week_shifts = [s for s in shifts if s.assigned_week == week.id]
+        for shift in week_shifts:
+            if shift.assigned_day is not None:
+                day = shift.assigned_day
+                month_key = (day.year, day.month)
+                monthly_work_days_by_calendar[month_key].add(day)
+
     for week, work_days in work_weeks:
         if week.start_date is None:
             continue
@@ -246,7 +259,9 @@ def compute_travel(
     for month_key, period in monthly_lodging_periods.items():
         if period is None:
             continue
-        month_work_days = monthly_aggregates[month_key]["work_days"]
+        # CRITICAL: Use calendar-based work days, NOT week-attributed work days
+        # A day belongs to month M if its calendar date falls within M, regardless of week attribution
+        month_work_days = len(monthly_work_days_by_calendar.get(month_key, set()))
 
         # Apply monthly formula: travel_days = work_days + visits - nights
         nights = total_nights(period)

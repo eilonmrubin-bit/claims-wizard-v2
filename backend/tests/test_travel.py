@@ -855,6 +855,112 @@ class TestNonConstructionIgnoresLodging:
         assert result.weekly_detail[0].week_pattern == "no_lodging"
 
 
+class TestMonthlyLodgingCalendarDayCounting:
+    """Tests for monthly lodging pattern calendar-based work day counting.
+
+    Critical fix: Monthly work days must be counted by calendar date, not week attribution.
+    A day belongs to month M if its calendar date falls within M, regardless of which week
+    it belongs to in the OT pipeline.
+
+    Anti-pattern #9 from SKILL: DO NOT count monthly work_days by week attribution
+    (week.start_date). This causes months with 5 Mondays to get 25 work days instead
+    of actual ~22.
+    """
+
+    def test_january_2023_five_mondays_calendar_counting(self):
+        """January 2023 has 5 Mondays - verify calendar-based counting.
+
+        January 2023:
+        - Jan 2 (Mon) starts week 1
+        - Jan 9 (Mon) starts week 2
+        - Jan 16 (Mon) starts week 3
+        - Jan 23 (Mon) starts week 4
+        - Jan 30 (Mon) starts week 5 (continues into Feb)
+
+        Week 5 (Jan 30 - Feb 5) has:
+        - Jan 30, Jan 31: 2 days in January
+        - Feb 1-3: 3 days in February
+
+        By week attribution (WRONG): 5 weeks × 5 days = 25 work days in January
+        By calendar date (CORRECT): 22 work days in January (4 full weeks + 2 days)
+
+        With monthly lodging (20 nights, 7 visits):
+        - WRONG: 25 + 7 - 20 = 12 travel days
+        - CORRECT: 22 + 7 - 20 = 9 travel days
+        """
+        from datetime import timedelta
+
+        weeks = []
+        shifts = []
+        shift_count = 0
+
+        # Create 5 weeks starting from Jan 2, 2023 (first Monday)
+        week_starts = [
+            date(2023, 1, 2),   # Week 1
+            date(2023, 1, 9),   # Week 2
+            date(2023, 1, 16),  # Week 3
+            date(2023, 1, 23),  # Week 4
+            date(2023, 1, 30),  # Week 5 (spans Jan-Feb)
+        ]
+
+        for week_num, week_start in enumerate(week_starts):
+            week_id = f"w{week_num + 1}"
+            week_end = week_start + timedelta(days=6)
+            weeks.append(make_week(week_id, week_start, week_end))
+
+            # Add 5 shifts (Mon-Fri) for each week
+            for day_offset in range(5):
+                shift_date = week_start + timedelta(days=day_offset)
+                shift_count += 1
+                shifts.append(make_shift(f"s{shift_count}", week_id, shift_date))
+
+        # Monthly lodging: 20 nights/month, 7 visits/month
+        # (Example from skill: [{14 nights, 1 visit}, {1 night, 6 visits}])
+        lodging_input = LodgingInput(
+            periods=[
+                make_lodging_period(
+                    "LP1",
+                    date(2023, 1, 1),
+                    date(2023, 2, 28),
+                    pattern_type="monthly",
+                    total_nights=20,
+                    total_visits=7,
+                )
+            ]
+        )
+
+        result = compute_travel(
+            industry="construction",
+            travel_distance_km=Decimal("25"),
+            lodging_input=lodging_input,
+            weeks=weeks,
+            shifts=shifts,
+            get_travel_rate=mock_travel_rate,
+            right_enabled=True,
+        )
+
+        # Find January's breakdown
+        jan_breakdown = next(
+            (b for b in result.monthly_breakdown if b.month == (2023, 1)),
+            None
+        )
+        feb_breakdown = next(
+            (b for b in result.monthly_breakdown if b.month == (2023, 2)),
+            None
+        )
+
+        # January should have 22 work days by calendar (not 25 by week attribution)
+        # travel_days = 22 + 7 - 20 = 9
+        assert jan_breakdown is not None
+        assert jan_breakdown.travel_days == 9  # NOT 12 (which would be wrong)
+
+        # February has 3 work days (from week 5: Feb 1, 2, 3)
+        # travel_days = 3 + 7 - 20 = -10 → 0 (clamped)
+        # With 0 travel days and 0 value, February may be omitted from breakdown
+        if feb_breakdown is not None:
+            assert feb_breakdown.travel_days == 0  # Clamped from negative
+
+
 class TestEmptyWeeks:
     """Tests for handling weeks with no work."""
 
