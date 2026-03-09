@@ -502,6 +502,57 @@ const EXAMPLE_CONSTRUCTION_VACATION = {
   right_specific_inputs: {}
 };
 
+const EXAMPLE_CONSTRUCTION_MEAL_ALLOWANCE = {
+  case_metadata: {
+    case_name: "בדיקה: בניין — אש\"ל + נסיעות (VisitGroups)",
+    notes: "עובד בנייה, 2023 שלמה. לינה חודשית: 14 לילות ברצף (ביקור 1) + 6 לילות בנפרד (6 ביקורים). סה\"כ 20 לילות / 7 ביקורים לחודש. צפוי: אש\"ל ~34,440 ₪, ימי נסיעה ~9 לחודש."
+  },
+  personal_details: { first_name: "יוסף", last_name: "חמדאן", id_number: "123456789", birth_year: 1985 },
+  defendant_details: { name: "חברת בנייה בע\"מ", id_number: "514000001", address: "תל אביב" },
+  employment_periods: [
+    { id: "ep1", start: "2023-01-01", end: "2023-12-31" }
+  ],
+  work_patterns: [
+    {
+      id: "wp1",
+      start: "2023-01-01",
+      end: "2023-12-31",
+      work_days: [0, 1, 2, 3, 4],
+      default_shifts: [{ start_time: "07:00:00", end_time: "15:00:00" }],
+      default_breaks: [{ start_time: "11:00:00", end_time: "11:30:00" }]
+    }
+  ],
+  salary_tiers: [
+    { id: "st1", start: "2023-01-01", end: "2023-12-31", amount: "50", type: "hourly", net_or_gross: "gross" }
+  ],
+  rest_day: "saturday",
+  district: "tel_aviv",
+  industry: "construction",
+  filing_date: "2025-01-01",
+  termination_reason: "fired",
+  seniority_input: { method: "prior_plus_pattern", prior_months: 0 },
+  right_toggles: { meal_allowance: { enabled: true }, travel: { enabled: true } },
+  deductions_input: { overtime: "0", holidays: "0", severance: "0", meal_allowance: "0" },
+  travel_distance_km: 25,
+  lodging_input: {
+    periods: [
+      {
+        id: "lp1",
+        start: "2023-01-01",
+        end: "2023-12-31",
+        snap_to: null,
+        snap_ref_id: null,
+        pattern_type: "monthly",
+        visit_groups: [
+          { id: "vg1", nights_per_visit: 14, count: 1 },
+          { id: "vg2", nights_per_visit: 1, count: 6 }
+        ]
+      }
+    ]
+  },
+  right_specific_inputs: {}
+};
+
 // Format months as "X שנים ו-Y חודשים"
 const formatMonthsDisplay = (totalMonths: number): string => {
   if (totalMonths === 0) return '0 חודשים';
@@ -1255,7 +1306,7 @@ function App() {
     }
   };
 
-  const loadExample = (example: 'main' | 'rest_window' | 'cleaning_recreation' | 'general_recreation' | 'general_vacation' | 'construction_vacation' = 'main') => {
+  const loadExample = (example: 'main' | 'rest_window' | 'cleaning_recreation' | 'general_recreation' | 'general_vacation' | 'construction_vacation' | 'construction_meal_allowance' = 'main') => {
     const examples = {
       main: EXAMPLE_JSON_INPUT,
       rest_window: EXAMPLE_REST_WINDOW,
@@ -1263,6 +1314,7 @@ function App() {
       general_recreation: EXAMPLE_GENERAL_RECREATION,
       general_vacation: EXAMPLE_GENERAL_VACATION,
       construction_vacation: EXAMPLE_CONSTRUCTION_VACATION,
+      construction_meal_allowance: EXAMPLE_CONSTRUCTION_MEAL_ALLOWANCE,
     };
     setJsonInput(JSON.stringify(examples[example], null, 2));
     setJsonError(null);
