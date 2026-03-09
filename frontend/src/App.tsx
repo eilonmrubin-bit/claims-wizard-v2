@@ -502,10 +502,10 @@ const EXAMPLE_CONSTRUCTION_VACATION = {
   right_specific_inputs: {}
 };
 
-const EXAMPLE_CONSTRUCTION_MEAL_ALLOWANCE = {
+const EXAMPLE_CONSTRUCTION_LODGING_WEEKLY = {
   case_metadata: {
-    case_name: "בדיקה: בניין — אש\"ל + נסיעות (VisitGroups)",
-    notes: "לינה חודשית: שבועיים רצוף באתר (14 לילות, ביקור אחד). צפוי: אש\"ל 12×14×143.5=24,108 ₪, ימי נסיעה: work_days+1-14 (ינואר≈10, פברואר≈7)"
+    case_name: "בניין — לינה שבועית 4 לילות",
+    notes: "עובד א–ה, לן באתר 4 לילות בכל שבוע (יוצא ראשון, חוזר חמישי). צפוי: 2 ימי נסיעה לשבוע, אש\"ל ~52×4×143.5=29,848 ₪"
   },
   personal_details: { first_name: "יוסף", last_name: "חמדאן", id_number: "123456789", birth_year: 1985 },
   defendant_details: { name: "חברת בנייה בע\"מ", id_number: "514000001", address: "תל אביב" },
@@ -542,9 +542,66 @@ const EXAMPLE_CONSTRUCTION_MEAL_ALLOWANCE = {
         end: "2023-12-31",
         snap_to: null,
         snap_ref_id: null,
+        pattern_type: "weekly",
+        visit_groups: [
+          { id: "vg1", nights_per_visit: 4, count: 1 }
+        ]
+      }
+    ]
+  },
+  right_specific_inputs: {}
+};
+
+const EXAMPLE_CONSTRUCTION_LODGING_CYCLIC = {
+  case_metadata: {
+    case_name: "בניין — מחזור שבועיים עבודה + שבועיים בית",
+    notes: "מחזור 4 שבועות: שבועיים עובד ולן באתר, שבועיים בבית. ביקור חודשי אחד של 9 לילות. צפוי: 2 ימי נסיעה לחודש עבודה, אש\"ל ~9×143.5×6=7,749 ₪ (6 חודשי עבודה)"
+  },
+  personal_details: { first_name: "מוחמד", last_name: "אבו-סלאמה", id_number: "987654321", birth_year: 1980 },
+  defendant_details: { name: "קבלן בנייה בע\"מ", id_number: "514000002", address: "חיפה" },
+  employment_periods: [
+    { id: "ep1", start: "2023-01-01", end: "2023-12-31" }
+  ],
+  work_patterns: [
+    {
+      id: "wp1",
+      start: "2023-01-01",
+      end: "2023-12-31",
+      pattern_type: "cyclic",
+      cycle_weeks: [
+        { week_index: 0, work_days: [0, 1, 2, 3, 4], default_shifts: [{ start_time: "07:00:00", end_time: "15:00:00" }], default_breaks: [] },
+        { week_index: 1, work_days: [0, 1, 2, 3, 4], default_shifts: [{ start_time: "07:00:00", end_time: "15:00:00" }], default_breaks: [] },
+        { week_index: 2, work_days: [], default_shifts: [], default_breaks: [] },
+        { week_index: 3, work_days: [], default_shifts: [], default_breaks: [] }
+      ],
+      work_days: [0, 1, 2, 3, 4],
+      default_shifts: [{ start_time: "07:00:00", end_time: "15:00:00" }],
+      default_breaks: []
+    }
+  ],
+  salary_tiers: [
+    { id: "st1", start: "2023-01-01", end: "2023-12-31", amount: "55", type: "hourly", net_or_gross: "gross" }
+  ],
+  rest_day: "saturday",
+  district: "haifa",
+  industry: "construction",
+  filing_date: "2025-01-01",
+  termination_reason: "fired",
+  seniority_input: { method: "prior_plus_pattern", prior_months: 0 },
+  right_toggles: { meal_allowance: { enabled: true }, travel: { enabled: true } },
+  deductions_input: { overtime: "0", holidays: "0", severance: "0", meal_allowance: "0" },
+  travel_distance_km: 0,
+  lodging_input: {
+    periods: [
+      {
+        id: "lp1",
+        start: "2023-01-01",
+        end: "2023-12-31",
+        snap_to: null,
+        snap_ref_id: null,
         pattern_type: "monthly",
         visit_groups: [
-          { id: "vg1", nights_per_visit: 14, count: 1 }
+          { id: "vg1", nights_per_visit: 9, count: 1 }
         ]
       }
     ]
@@ -729,8 +786,51 @@ function App() {
     const period = currentPeriods[periodIndex];
     if (!period) return;
 
+    const workDaysPerUnit = getWorkDaysPerUnit(period, period.pattern_type as LodgingPatternType);
+
+    // Compute other groups' contributions (excluding current group)
+    const otherGroupsNights = period.visit_groups
+      .filter((_, i) => i !== groupIndex)
+      .reduce((sum, vg) => sum + vg.nights_per_visit * vg.count, 0);
+    const otherGroupsVisits = period.visit_groups
+      .filter((_, i) => i !== groupIndex)
+      .reduce((sum, vg) => sum + vg.count, 0);
+
+    const currentGroup = period.visit_groups[groupIndex];
+    let finalValue = value as number;
+
+    if (field === 'nights_per_visit') {
+      // Validation: total_nights + total_visits <= work_days_per_unit
+      // nights_max = work_days_per_unit - total_visits - nights_of_other_groups
+      const currentCount = currentGroup.count;
+      const totalVisitsWithThis = otherGroupsVisits + currentCount;
+      // newNights * currentCount + otherGroupsNights + totalVisitsWithThis <= workDaysPerUnit
+      // newNights * currentCount <= workDaysPerUnit - totalVisitsWithThis - otherGroupsNights
+      const maxNightsTotal = workDaysPerUnit - totalVisitsWithThis - otherGroupsNights;
+      const maxNightsPerVisit = currentCount > 0 ? Math.floor(maxNightsTotal / currentCount) : 0;
+      const clampedMax = Math.max(1, maxNightsPerVisit);
+
+      if (finalValue > clampedMax) {
+        finalValue = clampedMax;
+        message.warning(`מספר הלילות צומצם ל-${clampedMax} — לא ניתן ללון יותר ממספר ימי העבודה בניכוי יום נסיעה לכל ביקור`, 4);
+      }
+    } else if (field === 'count') {
+      // Validation: total_nights + total_visits <= work_days_per_unit
+      // count_max such that: nights_per_visit * count + otherGroupsNights + otherGroupsVisits + count <= workDaysPerUnit
+      // count * (nights_per_visit + 1) <= workDaysPerUnit - otherGroupsNights - otherGroupsVisits
+      const nightsPerVisit = currentGroup.nights_per_visit;
+      const available = workDaysPerUnit - otherGroupsNights - otherGroupsVisits;
+      const maxCount = nightsPerVisit + 1 > 0 ? Math.floor(available / (nightsPerVisit + 1)) : 0;
+      const clampedMax = Math.max(1, maxCount);
+
+      if (finalValue > clampedMax) {
+        finalValue = clampedMax;
+        message.warning(`מספר הביקורים צומצם ל-${clampedMax} — לא ניתן ללון יותר ממספר ימי העבודה בניכוי יום נסיעה לכל ביקור`, 4);
+      }
+    }
+
     const updatedGroups = [...period.visit_groups];
-    updatedGroups[groupIndex] = { ...updatedGroups[groupIndex], [field]: value };
+    updatedGroups[groupIndex] = { ...updatedGroups[groupIndex], [field]: finalValue };
     const updated = [...currentPeriods];
     updated[periodIndex] = { ...period, visit_groups: updatedGroups };
     updateField('lodging_input', { periods: updated });
@@ -752,6 +852,39 @@ function App() {
     const totalNights = groups.reduce((sum, vg) => sum + vg.nights_per_visit * vg.count, 0);
     const totalVisits = groups.reduce((sum, vg) => sum + vg.count, 0);
     return { totalNights, totalVisits };
+  };
+
+  // Helper to compute work_days_per_unit for lodging validation
+  // Returns the minimum work days from overlapping work patterns
+  const getWorkDaysPerUnit = (period: LodgingPeriod, patternType: LodgingPatternType): number => {
+    if (patternType === 'none') return 0;
+
+    const periodStart = period.start ? new Date(period.start) : null;
+    const periodEnd = period.end ? new Date(period.end) : null;
+
+    // Find overlapping work patterns
+    const overlappingPatterns = formData.work_patterns.filter(wp => {
+      if (!wp.start || !wp.end || !periodStart || !periodEnd) return true; // If dates missing, assume overlap
+      const wpStart = new Date(wp.start);
+      const wpEnd = new Date(wp.end);
+      return wpStart <= periodEnd && wpEnd >= periodStart;
+    });
+
+    if (overlappingPatterns.length === 0) {
+      // No work patterns, assume 5 days/week default
+      return patternType === 'weekly' ? 5 : Math.floor(5 * 4.33);
+    }
+
+    // Get minimum work days from overlapping patterns
+    const workDaysPerWeek = overlappingPatterns.map(wp => wp.work_days?.length || 5);
+    const minWorkDaysPerWeek = Math.min(...workDaysPerWeek);
+
+    if (patternType === 'weekly') {
+      return minWorkDaysPerWeek;
+    } else {
+      // Monthly: multiply by 4.33 and floor
+      return Math.floor(minWorkDaysPerWeek * 4.33);
+    }
   };
 
   // Default Level C data
@@ -1305,7 +1438,7 @@ function App() {
     }
   };
 
-  const loadExample = (example: 'main' | 'rest_window' | 'cleaning_recreation' | 'general_recreation' | 'general_vacation' | 'construction_vacation' | 'construction_meal_allowance' = 'main') => {
+  const loadExample = (example: 'main' | 'rest_window' | 'cleaning_recreation' | 'general_recreation' | 'general_vacation' | 'construction_vacation' | 'construction_lodging_weekly' | 'construction_lodging_cyclic' = 'main') => {
     const examples = {
       main: EXAMPLE_JSON_INPUT,
       rest_window: EXAMPLE_REST_WINDOW,
@@ -1313,7 +1446,8 @@ function App() {
       general_recreation: EXAMPLE_GENERAL_RECREATION,
       general_vacation: EXAMPLE_GENERAL_VACATION,
       construction_vacation: EXAMPLE_CONSTRUCTION_VACATION,
-      construction_meal_allowance: EXAMPLE_CONSTRUCTION_MEAL_ALLOWANCE,
+      construction_lodging_weekly: EXAMPLE_CONSTRUCTION_LODGING_WEEKLY,
+      construction_lodging_cyclic: EXAMPLE_CONSTRUCTION_LODGING_CYCLIC,
     };
     setJsonInput(JSON.stringify(examples[example], null, 2));
     setJsonError(null);
@@ -2788,9 +2922,10 @@ function App() {
                           { key: 'general_recreation', label: 'כללי — הבראה + התיישנות' },
                           { key: 'general_vacation', label: 'כללי — חופשה + התיישנות' },
                           { key: 'construction_vacation', label: 'בנייה — חופשה, שבוע מעורב, גיל 55' },
-                          { key: 'construction_meal_allowance', label: 'בניין — אש"ל + VisitGroups' },
+                          { key: 'construction_lodging_weekly', label: 'בניין — לינה שבועית 4 לילות' },
+                          { key: 'construction_lodging_cyclic', label: 'בניין — מחזור שבועיים עבודה + שבועיים בית' },
                         ],
-                        onClick: ({ key }) => loadExample(key as 'main' | 'rest_window' | 'cleaning_recreation' | 'general_recreation' | 'general_vacation' | 'construction_vacation' | 'construction_meal_allowance'),
+                        onClick: ({ key }) => loadExample(key as 'main' | 'rest_window' | 'cleaning_recreation' | 'general_recreation' | 'general_vacation' | 'construction_vacation' | 'construction_lodging_weekly' | 'construction_lodging_cyclic'),
                       }}
                     >
                       <Button>טען דוגמה ▾</Button>
