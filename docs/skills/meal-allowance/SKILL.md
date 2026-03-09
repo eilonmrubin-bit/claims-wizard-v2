@@ -265,7 +265,13 @@ for each work week W:
 ```python
 for each calendar month M:
     active = find_active_lodging_period(M, lodging_input)
-    work_days_M = sum(work_days(W) for W whose start_date falls in M)
+
+    # CRITICAL: count work days by calendar date, NOT by week attribution.
+    # A work day belongs to month M if its calendar date falls within M,
+    # regardless of which week it belongs to in the OT pipeline.
+    work_days_M = count of distinct calendar dates d where:
+                    d.month == M.month and d.year == M.year
+                    and d has at least one work shift
 
     if active is None or active.pattern_type == "none":
         travel_days_M = work_days_M
@@ -274,6 +280,10 @@ for each calendar month M:
         v = total_visits(active)
         travel_days_M = max(0, work_days_M + v - n)
 ```
+
+**Anti-pattern:** DO NOT count work_days for monthly pattern by summing
+`work_days(W)` for weeks whose `start_date` falls in M. This double-counts or
+misses days at month boundaries. Always count by calendar date.
 
 **Verification table:**
 
@@ -348,6 +358,9 @@ No changes needed — module signature and pipeline wiring are unchanged from or
 6. **DO NOT round nights before the final monthly total.**
 7. **DO NOT place the lodging UI inside the travel section.** It is a standalone section.
 8. **DO NOT store total_nights / total_visits in the dataclass.** Always compute on the fly.
+9. **DO NOT count monthly work_days by week attribution (week.start_date).** For monthly
+   lodging pattern, count work days by calendar date. A day belongs to a month if its
+   date falls within that month — period. Week attribution is for weekly pattern only.
 
 ---
 
