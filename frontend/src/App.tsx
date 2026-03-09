@@ -2279,7 +2279,7 @@ function App() {
                                       </Col>
                                     </Row>
                                     <div style={{ fontSize: 11, color: '#88D8E0', marginTop: 8 }}>
-                                      נוסחה: ימי נסיעה = ימי עבודה + ביקורים − לילות
+                                      נוסחה: ימי נסיעה = ימי עבודה + רצפים − לילות
                                     </div>
                                   </>
                                 )}
@@ -2465,7 +2465,7 @@ function App() {
                                               max={period.pattern_type === 'weekly' ? 7 : 31}
                                               style={{ width: 60 }}
                                             />
-                                            <span style={{ fontSize: 12 }}>לילות לביקור</span>
+                                            <span style={{ fontSize: 12 }}>לילות לרצף</span>
                                           </Space>
                                         </Col>
                                         <Col span={2} style={{ textAlign: 'center' }}>×</Col>
@@ -2478,7 +2478,7 @@ function App() {
                                               max={period.pattern_type === 'weekly' ? 7 : 31}
                                               style={{ width: 60 }}
                                             />
-                                            <span style={{ fontSize: 12 }}>ביקורים ל{unitLabel}</span>
+                                            <span style={{ fontSize: 12 }}>רצפים ל{unitLabel}</span>
                                           </Space>
                                         </Col>
                                         <Col span={6} style={{ textAlign: 'left' }}>
@@ -2501,12 +2501,12 @@ function App() {
                                           icon={<PlusOutlined />}
                                           onClick={() => addVisitGroup(idx)}
                                         >
-                                          הוסף סוג ביקור
+                                          הוסף רצף לינות
                                         </Button>
                                       </Col>
                                     </Row>
                                     <div style={{ fontSize: 12, color: '#88D8E0' }}>
-                                      סה״כ: {totalNights} לילות, {totalVisits} ביקורים ל{unitLabel}
+                                      סה״כ: {totalNights} לילות, {totalVisits} רצפים ל{unitLabel}
                                     </div>
                                     <div style={{ fontSize: 11, color: '#88D8E0', marginTop: 4 }}>
                                       ימי נסיעה = ימי עבודה + {totalVisits} − {totalNights}
