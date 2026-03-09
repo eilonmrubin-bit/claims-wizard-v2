@@ -2362,6 +2362,8 @@ function App() {
                             ];
                             const { totalNights, totalVisits } = computeLodgingTotals(period.visit_groups);
                             const unitLabel = period.pattern_type === 'weekly' ? 'שבוע' : 'חודש';
+                            const maxNights = period.pattern_type === 'weekly' ? 7 : 31;
+                            const isOverLimit = totalNights > maxNights;
                             return (
                               <div
                                 key={period.id}
@@ -2500,13 +2502,15 @@ function App() {
                                           size="small"
                                           icon={<PlusOutlined />}
                                           onClick={() => addVisitGroup(idx)}
+                                          disabled={totalNights >= maxNights}
                                         >
                                           הוסף רצף לינות
                                         </Button>
                                       </Col>
                                     </Row>
-                                    <div style={{ fontSize: 12, color: '#88D8E0' }}>
+                                    <div style={{ fontSize: 12, color: isOverLimit ? '#ff4d4f' : '#88D8E0' }}>
                                       סה״כ: {totalNights} לילות, {totalVisits} רצפים ל{unitLabel}
+                                      {isOverLimit && ` (מקסימום ${maxNights} לילות ל${unitLabel})`}
                                     </div>
                                     <div style={{ fontSize: 11, color: '#88D8E0', marginTop: 4 }}>
                                       ימי נסיעה = ימי עבודה + {totalVisits} − {totalNights}
