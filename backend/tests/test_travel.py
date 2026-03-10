@@ -11,7 +11,7 @@ import pytest
 from datetime import date
 from decimal import Decimal
 
-from app.modules.travel import compute_travel, compute_weekly_travel_days, get_work_days_in_week
+from app.modules.travel import compute_travel, compute_weekly_travel_days, compute_block_travel_days, get_work_days_in_week
 from app.ssot import Week, Shift, LodgingInput, LodgingPeriod, VisitGroup
 
 
@@ -52,6 +52,7 @@ def make_lodging_period(
     total_nights: int = 4,
     total_visits: int = 1,
     visit_groups: list[VisitGroup] | None = None,
+    cycle_weeks: int = 1,
 ) -> LodgingPeriod:
     """Create a LodgingPeriod with visit groups for testing.
 
@@ -59,6 +60,7 @@ def make_lodging_period(
         total_nights: Total nights per unit (week or month)
         total_visits: Total visits per unit (week or month)
         visit_groups: Explicit visit groups (overrides total_nights/total_visits)
+        cycle_weeks: Number of consecutive work weeks per cycle (for weekly pattern)
 
     Creates visit groups to match the total_nights and total_visits.
     """
@@ -87,6 +89,7 @@ def make_lodging_period(
         start=start,
         end=end,
         pattern_type=pattern_type,
+        cycle_weeks=cycle_weeks,
         visit_groups=visit_groups,
     )
 
@@ -141,10 +144,14 @@ class TestComputeWeeklyTravelDays:
         assert compute_weekly_travel_days(0, period) == 0
 
     def test_floor_is_2_times_visits(self):
-        """Travel days floor is 2 × visits (every visit has departure + return)."""
-        # 4 nights, 1 visit, 1 work day: max(2*1, 1+1-4) = max(2, -2) = 2
+        """Travel days floor is 2 × visits (every visit has departure + return).
+
+        NOTE: work_days=1 is a special case (BUG FIX) — returns 1, not floor.
+        For work_days >= 2, the floor of 2 × visits applies.
+        """
         period = make_lodging_period("LP1", date(2024, 1, 1), date(2024, 12, 31), "weekly", 4, 1)
-        assert compute_weekly_travel_days(1, period) == 2  # Floor is 2 × 1 visit
+        # BUG FIX: work_days=1 → 1 (single day = departure OR return only)
+        assert compute_weekly_travel_days(1, period) == 1
         assert compute_weekly_travel_days(2, period) == 2  # max(2, 2+1-4) = max(2, -1) = 2
         assert compute_weekly_travel_days(3, period) == 2  # max(2, 3+1-4) = max(2, 0) = 2
 
@@ -592,9 +599,10 @@ class TestCase7SingleDayLodgingWeek:
         lodging: weekly, 4 nights, 1 visit
         work_days = 1 (holiday week, only 1 day worked)
 
-    Expected:
-        travel_days = max(2*1, 1+1-4) = max(2, -2) = 2
-        Floor is 2 × visits because every visit has departure + return.
+    Expected (after BUG FIX):
+        travel_days = 1
+        Single work day = departure only OR return only, not both.
+        This is a fix to the old behavior that returned 2.
     """
 
     def test_single_day_lodging_week(self):
@@ -628,8 +636,8 @@ class TestCase7SingleDayLodgingWeek:
 
         assert len(result.weekly_detail) == 1
         assert result.weekly_detail[0].work_days == 1
-        # max(2*1, 1+1-4) = max(2, -2) = 2 (floor is 2 × visits)
-        assert result.weekly_detail[0].travel_days == 2
+        # BUG FIX: work_days=1 → 1 (not 2)
+        assert result.weekly_detail[0].travel_days == 1
 
 
 class TestCase8PeriodGap:
@@ -1302,3 +1310,362 @@ class TestCrossMonthWeekSplit:
         assert feb_breakdown.travel_days == 2
 
         assert result.grand_total_travel_days == 5
+
+
+# =============================================================================
+# cycle_weeks Tests — Multi-Week Lodging Cycles
+# =============================================================================
+
+class TestComputeBlockTravelDays:
+    """Tests for compute_block_travel_days helper function."""
+
+    def test_no_lodging(self):
+        """No lodging: all work days are travel days."""
+        assert compute_block_travel_days(5, None) == 5
+        assert compute_block_travel_days(3, None) == 3
+        assert compute_block_travel_days(0, None) == 0
+
+    def test_single_work_day_returns_1(self):
+        """BUG FIX: Single work day should return 1 (departure OR return, not both).
+
+        A single work day at start/end of employment = departure only OR return only.
+        The old formula returned 2 (floor of 2 × visits), which was incorrect.
+        """
+        period = make_lodging_period("LP1", date(2024, 1, 1), date(2024, 12, 31), "weekly", 4, 1)
+        # BUG FIX: work_days=1 → 1 (not 2)
+        assert compute_block_travel_days(1, period) == 1
+
+    def test_block_work_days_greater_than_1(self):
+        """Normal case: block_work_days > 1 uses standard formula."""
+        period = make_lodging_period("LP1", date(2024, 1, 1), date(2024, 12, 31), "weekly", 4, 1)
+        # 5 work days: max(2, 5+1-4) = max(2, 2) = 2
+        assert compute_block_travel_days(5, period) == 2
+        # 10 work days (for cycle_weeks=2): max(2, 10+1-4) = max(2, 7) = 7
+        # Note: with 10 nights for 2 weeks: max(2, 10+1-10) = max(2, 1) = 2
+        period_2wk = make_lodging_period("LP2", date(2024, 1, 1), date(2024, 12, 31), "weekly", 10, 1)
+        assert compute_block_travel_days(10, period_2wk) == 2
+
+
+class TestCaseACycleWeeks1FullWeek:
+    """Case A — cycle_weeks=1, full week (existing behavior must be preserved).
+
+    visit_groups=[{nights_per_visit:4, count:1}], cycle_weeks=1
+    work_days=5 → max(2, 5+1-4) = 2 ✓
+    """
+
+    def test_cycle_weeks_1_full_week(self):
+        from datetime import timedelta
+
+        week = make_week("w1", date(2024, 1, 1), date(2024, 1, 7))
+        shifts = [
+            make_shift(f"s{i+1}", "w1", date(2024, 1, 1) + timedelta(days=i))
+            for i in range(5)
+        ]
+
+        lodging_input = LodgingInput(
+            periods=[
+                make_lodging_period(
+                    "LP1",
+                    date(2024, 1, 1),
+                    date(2024, 12, 31),
+                    pattern_type="weekly",
+                    total_nights=4,
+                    total_visits=1,
+                    cycle_weeks=1,  # Standard weekly
+                )
+            ]
+        )
+
+        result = compute_travel(
+            industry="construction",
+            travel_distance_km=Decimal("25"),
+            lodging_input=lodging_input,
+            weeks=[week],
+            shifts=shifts,
+            get_travel_rate=mock_travel_rate,
+            right_enabled=True,
+        )
+
+        assert len(result.weekly_detail) == 1
+        assert result.weekly_detail[0].work_days == 5
+        # max(2, 5+1-4) = 2
+        assert result.weekly_detail[0].travel_days == 2
+        assert result.grand_total_travel_days == 2
+
+
+class TestCaseBCycleWeeks1SingleWorkDay:
+    """Case B — cycle_weeks=1, single work day (BUG FIX).
+
+    visit_groups=[{nights_per_visit:4, count:1}], cycle_weeks=1
+    work_days=1 → 1 ✓ (was: 2 — incorrect)
+    """
+
+    def test_cycle_weeks_1_single_work_day_bug_fix(self):
+        week = make_week("w1", date(2024, 1, 1), date(2024, 1, 7))
+        shifts = [make_shift("s1", "w1", date(2024, 1, 1))]  # Single work day
+
+        lodging_input = LodgingInput(
+            periods=[
+                make_lodging_period(
+                    "LP1",
+                    date(2024, 1, 1),
+                    date(2024, 12, 31),
+                    pattern_type="weekly",
+                    total_nights=4,
+                    total_visits=1,
+                    cycle_weeks=1,
+                )
+            ]
+        )
+
+        result = compute_travel(
+            industry="construction",
+            travel_distance_km=Decimal("25"),
+            lodging_input=lodging_input,
+            weeks=[week],
+            shifts=shifts,
+            get_travel_rate=mock_travel_rate,
+            right_enabled=True,
+        )
+
+        assert len(result.weekly_detail) == 1
+        assert result.weekly_detail[0].work_days == 1
+        # BUG FIX: Single work day = 1 (not 2)
+        assert result.weekly_detail[0].travel_days == 1
+        assert result.grand_total_travel_days == 1
+
+
+class TestCaseCCycleWeeks2FullBlock:
+    """Case C — cycle_weeks=2, full block (2 consecutive work weeks).
+
+    visit_groups=[{nights_per_visit:10, count:1}], cycle_weeks=2
+    week1=5 days, week2=5 days → block_work_days=10
+    max(2, 10+1-10) = 2 → each week gets 1 travel day ✓
+    """
+
+    def test_cycle_weeks_2_full_block(self):
+        from datetime import timedelta
+
+        weeks = [
+            make_week("w1", date(2024, 1, 1), date(2024, 1, 7)),
+            make_week("w2", date(2024, 1, 8), date(2024, 1, 14)),
+        ]
+        shifts = []
+        shift_count = 0
+        for week_idx, week in enumerate(weeks):
+            for day_offset in range(5):
+                shift_count += 1
+                shift_date = week.start_date + timedelta(days=day_offset)
+                shifts.append(make_shift(f"s{shift_count}", week.id, shift_date))
+
+        lodging_input = LodgingInput(
+            periods=[
+                make_lodging_period(
+                    "LP1",
+                    date(2024, 1, 1),
+                    date(2024, 12, 31),
+                    pattern_type="weekly",
+                    total_nights=10,  # 10 nights per 2-week cycle
+                    total_visits=1,
+                    cycle_weeks=2,  # 2-week cycle
+                )
+            ]
+        )
+
+        result = compute_travel(
+            industry="construction",
+            travel_distance_km=Decimal("25"),
+            lodging_input=lodging_input,
+            weeks=weeks,
+            shifts=shifts,
+            get_travel_rate=mock_travel_rate,
+            right_enabled=True,
+        )
+
+        assert len(result.weekly_detail) == 2
+        # Block: 10 work days, max(2, 10+1-10) = 2
+        # Each week gets proportional share: 5/10 × 2 = 1
+        assert result.weekly_detail[0].travel_days == 1
+        assert result.weekly_detail[1].travel_days == 1
+        assert result.grand_total_travel_days == 2
+
+
+class TestCaseDCycleWeeks2PartialBlock:
+    """Case D — cycle_weeks=2, partial block (single week at end of employment).
+
+    cycle_weeks=2, but last block contains only 1 week
+    work_days=5 → block_work_days=5
+    max(2, 5+1-10) = max(2,-4) = 2
+    → The partial block gets 2 travel days (departure + return — still a complete visit) ✓
+    """
+
+    def test_cycle_weeks_2_partial_block(self):
+        from datetime import timedelta
+
+        # Two full blocks of 2 weeks, then one partial block with 1 week
+        weeks = [
+            make_week("w1", date(2024, 1, 1), date(2024, 1, 7)),
+            make_week("w2", date(2024, 1, 8), date(2024, 1, 14)),
+            make_week("w3", date(2024, 1, 15), date(2024, 1, 21)),
+            make_week("w4", date(2024, 1, 22), date(2024, 1, 28)),
+            make_week("w5", date(2024, 1, 29), date(2024, 2, 4)),  # Partial block (only 1 week)
+        ]
+        shifts = []
+        shift_count = 0
+        for week in weeks:
+            for day_offset in range(5):
+                shift_count += 1
+                shift_date = week.start_date + timedelta(days=day_offset)
+                shifts.append(make_shift(f"s{shift_count}", week.id, shift_date))
+
+        lodging_input = LodgingInput(
+            periods=[
+                make_lodging_period(
+                    "LP1",
+                    date(2024, 1, 1),
+                    date(2024, 2, 28),
+                    pattern_type="weekly",
+                    total_nights=10,
+                    total_visits=1,
+                    cycle_weeks=2,
+                )
+            ]
+        )
+
+        result = compute_travel(
+            industry="construction",
+            travel_distance_km=Decimal("25"),
+            lodging_input=lodging_input,
+            weeks=weeks,
+            shifts=shifts,
+            get_travel_rate=mock_travel_rate,
+            right_enabled=True,
+        )
+
+        assert len(result.weekly_detail) == 5
+
+        # Block 1 (w1, w2): 10 work days → max(2, 10+1-10) = 2, each gets 1
+        assert result.weekly_detail[0].travel_days == 1
+        assert result.weekly_detail[1].travel_days == 1
+
+        # Block 2 (w3, w4): 10 work days → max(2, 10+1-10) = 2, each gets 1
+        assert result.weekly_detail[2].travel_days == 1
+        assert result.weekly_detail[3].travel_days == 1
+
+        # Block 3 (w5 only — partial): 5 work days → max(2, 5+1-10) = max(2, -4) = 2
+        assert result.weekly_detail[4].travel_days == 2
+
+        # Total: 1+1 + 1+1 + 2 = 6
+        assert result.grand_total_travel_days == 6
+
+
+class TestCaseECycleWeeks2SingleWorkDayInBlock:
+    """Case E — cycle_weeks=2, single week in block with only 1 work day.
+
+    cycle_weeks=2, block contains only 1 week with work_days=1
+    → travel_days = 1 ✓ (BUG FIX applies to blocks too)
+    """
+
+    def test_cycle_weeks_2_single_work_day_block(self):
+        week = make_week("w1", date(2024, 1, 1), date(2024, 1, 7))
+        shifts = [make_shift("s1", "w1", date(2024, 1, 1))]  # Single work day
+
+        lodging_input = LodgingInput(
+            periods=[
+                make_lodging_period(
+                    "LP1",
+                    date(2024, 1, 1),
+                    date(2024, 12, 31),
+                    pattern_type="weekly",
+                    total_nights=10,
+                    total_visits=1,
+                    cycle_weeks=2,
+                )
+            ]
+        )
+
+        result = compute_travel(
+            industry="construction",
+            travel_distance_km=Decimal("25"),
+            lodging_input=lodging_input,
+            weeks=[week],
+            shifts=shifts,
+            get_travel_rate=mock_travel_rate,
+            right_enabled=True,
+        )
+
+        assert len(result.weekly_detail) == 1
+        assert result.weekly_detail[0].work_days == 1
+        # BUG FIX: Single work day in block = 1 (not 2)
+        assert result.weekly_detail[0].travel_days == 1
+        assert result.grand_total_travel_days == 1
+
+
+class TestCycleWeeksWithDifferentPeriods:
+    """Test cycle_weeks transitions when moving between different lodging periods."""
+
+    def test_different_cycle_weeks_in_different_periods(self):
+        """Period 1: cycle_weeks=1, Period 2: cycle_weeks=2"""
+        from datetime import timedelta
+
+        weeks = [
+            make_week("w1", date(2024, 1, 1), date(2024, 1, 7)),   # Period 1 (cycle=1)
+            make_week("w2", date(2024, 1, 8), date(2024, 1, 14)),  # Period 1 (cycle=1)
+            make_week("w3", date(2024, 1, 15), date(2024, 1, 21)), # Period 2 (cycle=2)
+            make_week("w4", date(2024, 1, 22), date(2024, 1, 28)), # Period 2 (cycle=2)
+        ]
+        shifts = []
+        shift_count = 0
+        for week in weeks:
+            for day_offset in range(5):
+                shift_count += 1
+                shift_date = week.start_date + timedelta(days=day_offset)
+                shifts.append(make_shift(f"s{shift_count}", week.id, shift_date))
+
+        lodging_input = LodgingInput(
+            periods=[
+                make_lodging_period(
+                    "LP1",
+                    date(2024, 1, 1),
+                    date(2024, 1, 14),
+                    pattern_type="weekly",
+                    total_nights=4,
+                    total_visits=1,
+                    cycle_weeks=1,  # Weekly
+                ),
+                make_lodging_period(
+                    "LP2",
+                    date(2024, 1, 15),
+                    date(2024, 1, 31),
+                    pattern_type="weekly",
+                    total_nights=10,
+                    total_visits=1,
+                    cycle_weeks=2,  # Bi-weekly
+                ),
+            ]
+        )
+
+        result = compute_travel(
+            industry="construction",
+            travel_distance_km=Decimal("25"),
+            lodging_input=lodging_input,
+            weeks=weeks,
+            shifts=shifts,
+            get_travel_rate=mock_travel_rate,
+            right_enabled=True,
+        )
+
+        assert len(result.weekly_detail) == 4
+
+        # Period 1 (w1, w2): cycle_weeks=1, each week computed separately
+        # 5 work days: max(2, 5+1-4) = 2
+        assert result.weekly_detail[0].travel_days == 2
+        assert result.weekly_detail[1].travel_days == 2
+
+        # Period 2 (w3, w4): cycle_weeks=2, computed as a block
+        # Block: 10 work days, max(2, 10+1-10) = 2, each gets 1
+        assert result.weekly_detail[2].travel_days == 1
+        assert result.weekly_detail[3].travel_days == 1
+
+        # Total: 2+2 + 1+1 = 6
+        assert result.grand_total_travel_days == 6

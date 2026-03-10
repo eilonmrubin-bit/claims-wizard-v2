@@ -74,6 +74,13 @@ travel_distance_km: decimal | null
 lodging_input: LodgingInput | null
   // See meal-allowance/SKILL.md §3 for full LodgingInput / LodgingPeriod / VisitGroup schema.
   // null = no lodging, all work days are travel days.
+
+LodgingPeriod.cycle_weeks: int = 1
+  // Relevant only when pattern_type == "weekly".
+  // cycle_weeks = 1 (default): formula applied per week (standard behavior).
+  // cycle_weeks = N (N > 1): formula applied once per block of N consecutive work weeks.
+  //   Travel days are then distributed proportionally among weeks in the block.
+  // Example: 2-weeks-on/2-weeks-off → cycle_weeks=2, nights_per_visit=10.
 ```
 
 UI rules:
@@ -115,18 +122,48 @@ def total_visits(p: LodgingPeriod) -> int:
 
 ---
 
-## Step 5 — Travel Days
+## Step 5 — Travel Days (Block-Based)
 
 ```python
-def compute_travel_days(work_days: int, lodging_period: LodgingPeriod | None) -> int:
+def compute_block_travel_days(block_work_days: int, lodging_period: LodgingPeriod | None) -> int:
+    """Compute travel days for a block (one or more weeks).
+
+    When cycle_weeks=1, block = single week.
+    When cycle_weeks=N, block = N consecutive work weeks.
+    """
     if lodging_period is None or lodging_period.pattern_type == "none":
-        return work_days
+        return block_work_days
+
+    # BUG FIX: Single work day = departure OR return only, not both.
+    # This handles employment start/end edge case.
+    if block_work_days == 1:
+        return 1
 
     n = total_nights(lodging_period)
     v = total_visits(lodging_period)
 
     # Floor: every visit has departure + return = 2 travel days minimum
-    return max(2 * v, work_days + v - n)
+    return max(2 * v, block_work_days + v - n)
+```
+
+### Block-based computation (cycle_weeks > 1)
+
+When `cycle_weeks > 1`, group consecutive work weeks into blocks:
+
+```python
+for each lodging period:
+    cycle_weeks = period.cycle_weeks  # 1 or N
+    work_weeks_in_period = [...]
+
+    for block_start in range(0, len(work_weeks_in_period), cycle_weeks):
+        block = work_weeks_in_period[block_start : block_start + cycle_weeks]
+        block_work_days = sum(work_days(w) for w in block)
+        block_travel_days = compute_block_travel_days(block_work_days, period)
+
+        # Distribute proportionally among weeks in block
+        for week in block:
+            week_fraction = week.work_days / block_work_days
+            week.travel_days = block_travel_days * week_fraction
 ```
 
 ### Formula derivation
@@ -136,18 +173,22 @@ Non-visit work days: 1 travel day each.
 Total non-visit work days = work_days - nights - visits (can be negative when lodging is dense).
 Net = 2×visits + max(0, work_days - nights - visits) = max(2×visits, work_days + visits - nights).
 
+**Exception:** A single work day (e.g., at employment boundaries) represents only departure
+OR return, not both → returns 1, not the floor of 2×visits.
+
 ### Verification table
 
-| work_days | visits | nights | travel_days              |
-|-----------|--------|--------|--------------------------|
-| 5         | 0      | 0      | 5                        |
-| 5         | 1      | 4      | max(2, 2) = 2            |
-| 4         | 1      | 1      | max(2, 4) = 4            |
-| 4         | 2      | 2      | max(4, 4) = 4            |
-| 5         | 2      | 4      | max(4, 3) = 4            |
-| 23        | 7      | 20     | max(14, 10) = 14         |
-| 20        | 7      | 20     | max(14, 7) = 14          |
-| 1         | 1      | 0      | max(2, 2) = 2 — edge     |
+| block_work_days | visits | nights | travel_days              |
+|-----------------|--------|--------|--------------------------|
+| 5               | 0      | 0      | 5                        |
+| 5               | 1      | 4      | max(2, 2) = 2            |
+| 4               | 1      | 1      | max(2, 4) = 4            |
+| 4               | 2      | 2      | max(4, 4) = 4            |
+| 5               | 2      | 4      | max(4, 3) = 4            |
+| 23              | 7      | 20     | max(14, 10) = 14         |
+| 20              | 7      | 20     | max(14, 7) = 14          |
+| 10              | 1      | 10     | max(2, 1) = 2 (2 weeks)  |
+| 1               | 1      | 4      | 1 (BUG FIX)              |
 
 ---
 
@@ -244,7 +285,8 @@ def compute_travel(
 
 1. **DO NOT use 22.6 for construction workers.** Floor is 26.4.
 2. **DO NOT give travel for lodging days.** Only departure and return days.
-3. **DO NOT use max(0, ...) as the formula floor.** Use max(2 × visits, ...).
+3. **DO NOT use max(0, ...) as the formula floor.** Use max(2 × visits, ...) — except for
+   single work day which returns 1.
 4. **DO NOT hardcode rates.** Always look up from CSV.
 5. **DO NOT compute אש"ל here.**
 6. **DO NOT count monthly work_days by week attribution.** Use calendar dates.
@@ -253,6 +295,9 @@ def compute_travel(
 9. **DO NOT use monthly lodging pattern_type with cyclic work patterns.**
    Cross-month visits cause double-counting. Cyclic work patterns must
    use weekly lodging only — enforced by frontend validation.
+10. **DO NOT apply the lodging formula per week when `cycle_weeks > 1`.**
+    Group work weeks into blocks of `cycle_weeks` first, then apply the formula
+    to the entire block. Distribute travel days proportionally among weeks in the block.
 
 ---
 
@@ -260,10 +305,13 @@ def compute_travel(
 
 1. **No lodging:** travel_days = work_days for all weeks.
 2. **Dense lodging (visits × nights > work_days):** formula gives negative intermediate value — floor kicks in: travel_days = 2 × visits.
-3. **Single work day in a lodging week:** work_days=1, visits=1, nights=0 → max(2, 2) = 2.
+3. **Single work day in a lodging week/block:** work_days=1 → travel_days=1.
+   (BUG FIX: Single day = departure OR return only, not both.)
 4. **Rate change mid-employment:** each week/month uses rate at its start_date.
 5. **Non-construction with lodging_input set:** ignore lodging_input, treat as no lodging. Log warning.
 6. **right_toggles["travel"] = false:** return empty result, grand_total_value = 0.
+7. **Partial block at end of period:** When employment ends mid-cycle (cycle_weeks=2 but only
+   1 week remains), process that single week as its own block. Formula still applies normally.
 
 ---
 
@@ -307,4 +355,38 @@ work_days=5: max(2, 5+1-4) = max(2, 2) = 2
 weekly, visit_groups: [{nights:1, count:2}]
 total_nights=2, total_visits=2
 work_days=5: max(4, 5+2-2) = max(4, 5) = 5
+```
+
+### Case 6 — Single work day (BUG FIX)
+
+```
+weekly, visit_groups: [{nights:4, count:1}], cycle_weeks=1
+work_days=1 → travel_days = 1 (not 2)
+A single work day at employment start/end = departure only OR return only.
+```
+
+### Case 7 — cycle_weeks=2, full block
+
+```
+weekly, visit_groups: [{nights:10, count:1}], cycle_weeks=2
+Block: week1 work_days=5, week2 work_days=5 → block_work_days=10
+travel_days = max(2, 10+1-10) = 2
+Distribution: each week gets 5/10 × 2 = 1 travel day
+```
+
+### Case 8 — cycle_weeks=2, partial block at end
+
+```
+weekly, visit_groups: [{nights:10, count:1}], cycle_weeks=2
+Last block contains only 1 week: work_days=5 → block_work_days=5
+travel_days = max(2, 5+1-10) = max(2, -4) = 2
+(Partial block still counts as a complete visit with departure + return)
+```
+
+### Case 9 — cycle_weeks=2, single work day in block
+
+```
+weekly, visit_groups: [{nights:10, count:1}], cycle_weeks=2
+Block contains 1 week with work_days=1
+travel_days = 1 (BUG FIX applies to blocks too)
 ```

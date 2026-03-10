@@ -938,6 +938,9 @@ class LodgingPeriod:
 
     Defines lodging pattern for a date range.
     pattern_type: 'none' | 'weekly' | 'monthly'
+    cycle_weeks: Number of consecutive work weeks per cycle (only for weekly pattern).
+                 Default is 1 (standard weekly). When > 1, the travel formula is applied
+                 once per block of cycle_weeks, not per individual week.
     visit_groups: list of VisitGroup defining the lodging pattern
     """
     id: str = ""
@@ -946,6 +949,7 @@ class LodgingPeriod:
     snap_to: str | None = None  # "employment_period" | "work_pattern" | None
     snap_ref_id: str | None = None  # id of the snapped EP or WP, if any
     pattern_type: str = "none"  # "none" | "weekly" | "monthly"
+    cycle_weeks: int = 1  # relevant only when pattern_type == "weekly"
     visit_groups: list[VisitGroup] = field(default_factory=list)
 
 

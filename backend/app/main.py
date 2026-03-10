@@ -341,6 +341,7 @@ def _reconstruct_ssot_input(data: dict[str, Any]) -> SSOTInput:
                 snap_to=p.get("snap_to"),
                 snap_ref_id=p.get("snap_ref_id"),
                 pattern_type=p.get("pattern_type", "none"),
+                cycle_weeks=int(p.get("cycle_weeks", 1)),
                 visit_groups=visit_groups,
             ))
 

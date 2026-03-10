@@ -95,12 +95,24 @@ class LodgingPeriod:
     # "weekly"  -> visit_groups define visits per week
     # "monthly" -> visit_groups define visits per month
 
+    cycle_weeks: int = 1               # relevant only when pattern_type == "weekly"
+    # cycle_weeks = 1 (default): standard weekly pattern — formula applied per week.
+    # cycle_weeks = N (N > 1): multi-week cycle — formula applied once per block of
+    #   N consecutive work weeks, then distributed proportionally.
+    # Ignored when pattern_type == "monthly".
+    # Example: 2-weeks-on/2-weeks-off pattern → cycle_weeks=2, nights=10 per block.
+
     visit_groups: list[VisitGroup]     # empty if pattern_type == "none"
     # Derived totals (computed, not stored):
     #   total_nights_per_unit = sum(vg.nights_per_visit * vg.count)
     #   total_visits_per_unit = sum(vg.count)
     # Constraint: total_nights_per_unit >= total_visits_per_unit >= 1
 ```
+
+**Note on cycle_weeks:** When `cycle_weeks > 1`, the travel formula is applied to the
+entire block of `cycle_weeks` work weeks at once. The meal allowance (אש"ל) logic is
+**not affected** — nights are still counted directly from `visit_groups` and pro-rated
+to calendar months. Only the travel module uses `cycle_weeks`.
 
 ### LodgingInput
 
