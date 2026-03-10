@@ -2688,16 +2688,37 @@ function App() {
                                           min={1}
                                           max={8}
                                           value={period.cycle_weeks ?? 1}
-                                          onChange={(v) => updateLodgingPeriod(idx, 'cycle_weeks', v ?? 1)}
+                                          onChange={(v) => {
+                                            const newCycleWeeks = v ?? 1;
+                                            const oldCycleWeeks = period.cycle_weeks ?? 1;
+                                            if (newCycleWeeks === oldCycleWeeks) return;
+
+                                            // Scale nights_per_visit proportionally for all visit groups
+                                            const scale = newCycleWeeks / oldCycleWeeks;
+                                            const scaledVisitGroups = period.visit_groups.map(vg => ({
+                                              ...vg,
+                                              nights_per_visit: Math.max(1, Math.round(vg.nights_per_visit * scale)),
+                                            }));
+
+                                            const currentPeriods = formData.lodging_input?.periods || [];
+                                            const updated = [...currentPeriods];
+                                            updated[idx] = {
+                                              ...updated[idx],
+                                              cycle_weeks: newCycleWeeks,
+                                              visit_groups: scaledVisitGroups,
+                                            };
+                                            updateField('lodging_input', { periods: updated });
+                                          }}
                                           style={{ width: 80 }}
                                         />
                                       </Form.Item>
                                     </Col>
-                                    {(period.cycle_weeks ?? 1) > 1 && (
-                                      <Col style={{ paddingTop: 22, color: '#88D8E0', fontSize: 12 }}>
-                                        מחזור של {period.cycle_weeks} שבועות עבודה רצופים — ביקור אחד
-                                      </Col>
-                                    )}
+                                    <Col style={{ paddingTop: 22, color: '#88D8E0', fontSize: 12 }}>
+                                      {(period.cycle_weeks ?? 1) === 1
+                                        ? 'דפוס רגיל — חישוב נסיעות לכל שבוע בנפרד'
+                                        : `דפוס ${period.cycle_weeks} שבועות עבודה רצופים — לילות הלינה מתייחסים לכל המחזור`
+                                      }
+                                    </Col>
                                   </Row>
                                 )}
                                 {period.pattern_type !== 'none' && (
