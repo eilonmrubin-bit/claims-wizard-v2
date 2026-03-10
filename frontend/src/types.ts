@@ -161,6 +161,7 @@ export interface LodgingPeriod {
   snap_to: 'employment_period' | 'work_pattern' | null;
   snap_ref_id: string | null;
   pattern_type: LodgingPatternType;
+  cycle_weeks: number;       // relevant only when pattern_type === 'weekly'. Default: 1
   visit_groups: VisitGroup[];
 }
 

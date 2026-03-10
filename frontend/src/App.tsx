@@ -555,7 +555,7 @@ const EXAMPLE_CONSTRUCTION_LODGING_WEEKLY = {
 const EXAMPLE_CONSTRUCTION_LODGING_CYCLIC = {
   case_metadata: {
     case_name: "בניין — מחזור שבועיים עבודה + שבועיים בית",
-    notes: "מחזור 4 שבועות: שבועיים עובד (4 לילות/שבוע), שבועיים בבית. צפוי: 2 ימי נסיעה לכל שבוע עבודה, ~26 שבועות עבודה בשנה. אש\"ל: ~26×4×143.5 = 14,924 ₪"
+    notes: "מחזור 4 שבועות: שבועיים עובד (10 לילות/מחזור), שבועיים בבית. צפוי: 2 ימי נסיעה לכל מחזור (2 שבועות), ~26 שבועות עבודה בשנה. אש\"ל: ~26×5×143.5 = 18,655 ₪"
   },
   personal_details: { first_name: "מוחמד", last_name: "אבו-סלאמה", id_number: "987654321", birth_year: 1980 },
   defendant_details: { name: "קבלן בנייה בע\"מ", id_number: "514000002", address: "חיפה" },
@@ -603,8 +603,9 @@ const EXAMPLE_CONSTRUCTION_LODGING_CYCLIC = {
         snap_to: null,
         snap_ref_id: null,
         pattern_type: "weekly",
+        cycle_weeks: 2,
         visit_groups: [
-          { id: "vg1", nights_per_visit: 4, count: 1 }
+          { id: "vg1", nights_per_visit: 10, count: 1 }
         ]
       }
     ]
@@ -733,6 +734,7 @@ function App() {
       snap_to: null,
       snap_ref_id: null,
       pattern_type: 'weekly',
+      cycle_weeks: 1,
       visit_groups: [{ id: generateId(), nights_per_visit: 4, count: 1 }],
     };
     const currentPeriods = formData.lodging_input?.periods || [];
@@ -859,11 +861,13 @@ function App() {
 
   // Helper to compute work_days_per_unit for lodging validation
   // Returns the minimum work days from overlapping work patterns
+  // When cycle_weeks > 1, multiplies by cycle_weeks to get days per cycle
   const getWorkDaysPerUnit = (period: LodgingPeriod, patternType: LodgingPatternType): number => {
     if (patternType === 'none') return 0;
 
     const periodStart = period.start ? new Date(period.start) : null;
     const periodEnd = period.end ? new Date(period.end) : null;
+    const cw = period.cycle_weeks ?? 1;
 
     // Find overlapping work patterns
     const overlappingPatterns = formData.work_patterns.filter(wp => {
@@ -875,7 +879,7 @@ function App() {
 
     if (overlappingPatterns.length === 0) {
       // No work patterns, assume 5 days/week default
-      return patternType === 'weekly' ? 5 : Math.floor(5 * 4.33);
+      return patternType === 'weekly' ? 5 * cw : Math.floor(5 * 4.33);
     }
 
     // Get minimum work days from overlapping patterns
@@ -883,7 +887,7 @@ function App() {
     const minWorkDaysPerWeek = Math.min(...workDaysPerWeek);
 
     if (patternType === 'weekly') {
-      return minWorkDaysPerWeek;
+      return minWorkDaysPerWeek * cw;
     } else {
       // Monthly: multiply by 4.33 and floor
       return Math.floor(minWorkDaysPerWeek * 4.33);
@@ -2569,8 +2573,11 @@ function App() {
                               })),
                             ];
                             const { totalNights, totalVisits } = computeLodgingTotals(period.visit_groups);
-                            const unitLabel = period.pattern_type === 'weekly' ? 'שבוע' : 'חודש';
-                            const maxNights = period.pattern_type === 'weekly' ? 7 : 28;
+                            const cw = period.pattern_type === 'weekly' ? (period.cycle_weeks ?? 1) : 1;
+                            const unitLabel = period.pattern_type === 'weekly'
+                              ? (cw > 1 ? `${cw} שבועות` : 'שבוע')
+                              : 'חודש';
+                            const maxNights = period.pattern_type === 'weekly' ? 7 * cw : 28;
                             const isOverLimit = totalNights > maxNights;
                             return (
                               <div
@@ -2648,7 +2655,7 @@ function App() {
                                             const currentPeriods = formData.lodging_input?.periods || [];
                                             const updated = [...currentPeriods];
                                             if (newType === 'none') {
-                                              updated[idx] = { ...updated[idx], pattern_type: newType, visit_groups: [] };
+                                              updated[idx] = { ...updated[idx], pattern_type: newType, cycle_weeks: 1, visit_groups: [] };
                                             } else if (period.visit_groups.length === 0) {
                                               // Add default visit group when switching from none
                                               const defaultGroup: VisitGroup = {
@@ -2656,9 +2663,11 @@ function App() {
                                                 nights_per_visit: newType === 'weekly' ? 4 : 15,
                                                 count: 1,
                                               };
-                                              updated[idx] = { ...updated[idx], pattern_type: newType, visit_groups: [defaultGroup] };
+                                              updated[idx] = { ...updated[idx], pattern_type: newType, cycle_weeks: newType === 'weekly' ? (period.cycle_weeks ?? 1) : 1, visit_groups: [defaultGroup] };
                                             } else {
-                                              updated[idx] = { ...updated[idx], pattern_type: newType };
+                                              // Reset cycle_weeks to 1 when switching to non-weekly
+                                              const newCycleWeeks = newType === 'weekly' ? (period.cycle_weeks ?? 1) : 1;
+                                              updated[idx] = { ...updated[idx], pattern_type: newType, cycle_weeks: newCycleWeeks };
                                             }
                                             updateField('lodging_input', { periods: updated });
                                           }}
@@ -2671,6 +2680,26 @@ function App() {
                                     })()}
                                   </Col>
                                 </Row>
+                                {period.pattern_type === 'weekly' && (
+                                  <Row gutter={8} align="middle" style={{ marginBottom: 8 }}>
+                                    <Col>
+                                      <Form.Item label="שבועות במחזור" style={{ marginBottom: 0 }}>
+                                        <InputNumber
+                                          min={1}
+                                          max={8}
+                                          value={period.cycle_weeks ?? 1}
+                                          onChange={(v) => updateLodgingPeriod(idx, 'cycle_weeks', v ?? 1)}
+                                          style={{ width: 80 }}
+                                        />
+                                      </Form.Item>
+                                    </Col>
+                                    {(period.cycle_weeks ?? 1) > 1 && (
+                                      <Col style={{ paddingTop: 22, color: '#88D8E0', fontSize: 12 }}>
+                                        מחזור של {period.cycle_weeks} שבועות עבודה רצופים — ביקור אחד
+                                      </Col>
+                                    )}
+                                  </Row>
+                                )}
                                 {period.pattern_type !== 'none' && (
                                   <>
                                     {/* Visit Groups */}
