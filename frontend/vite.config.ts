@@ -18,6 +18,10 @@ export default defineConfig({
         target: 'http://localhost:8000',
         changeOrigin: true,
       },
+      '/cases': {
+        target: 'http://localhost:8000',
+        changeOrigin: true,
+      },
     },
   },
 })
