@@ -2147,9 +2147,22 @@ const HolidaysBreakdown: React.FC<HolidaysBreakdownProps> = ({ holidays, limitat
 
   // Calculate total excluded amount for the drawer header
   const totalExcludedAmount = excludedYears.reduce((sum, y) => sum + y.total_claim, 0);
-  const excludedYearsRange = excludedYears.length > 0
-    ? `${excludedYears[0].year}–${excludedYears[excludedYears.length - 1].year}`
-    : '';
+
+  // Format the excluded years range nicely
+  const formatExcludedYearsRange = (): string => {
+    if (excludedYears.length === 0) return '';
+    if (excludedYears.length === 1) {
+      // Just one year - show only the year number
+      return `${excludedYears[0].year}`;
+    }
+    const firstYear = excludedYears[0].year;
+    const lastYear = excludedYears[excludedYears.length - 1].year;
+    if (firstYear === lastYear) {
+      return `${firstYear}`;
+    }
+    return `${firstYear}–${lastYear}`;
+  };
+  const excludedYearsRange = formatExcludedYearsRange();
 
   const createYearItem = (year: HolidayYearResult, excluded: boolean) => {
     // Check if all employed holidays in this year are before_seniority
