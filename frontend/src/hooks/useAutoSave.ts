@@ -186,20 +186,21 @@ export function useAutoSave(
     };
   }, [enabled, caseId, hasUnsavedChanges, debounceMs, save, formData]);
 
-  // Keyboard shortcut (Ctrl+S)
+  // Keyboard shortcut (Ctrl+S) - always prevent browser save dialog
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
         e.preventDefault();
-        if (caseId && hasUnsavedChanges) {
+        e.stopPropagation();
+        if (caseId) {
           save(formDataRef.current);
         }
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [caseId, hasUnsavedChanges, save]);
+    window.addEventListener('keydown', handleKeyDown, { capture: true });
+    return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
+  }, [caseId, save]);
 
   // beforeunload warning
   useEffect(() => {
