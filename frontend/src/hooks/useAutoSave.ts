@@ -47,6 +47,8 @@ interface UseAutoSaveReturn {
   load: (caseId: string) => Promise<LoadResult>;
   createNewCase: () => string;
   markDirty: () => void;
+  markClean: () => void;
+  cancelPendingSave: () => void;
 }
 
 const generateCaseId = (): string => {
@@ -163,6 +165,20 @@ export function useAutoSave(
     }
   }, [hasUnsavedChanges]);
 
+  // Mark as clean (called after loading new data)
+  const markClean = useCallback(() => {
+    setHasUnsavedChanges(false);
+    setSaveStatus('saved');
+  }, []);
+
+  // Cancel any pending auto-save (call before loading new data)
+  const cancelPendingSave = useCallback(() => {
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+  }, []);
+
   // Auto-save effect with debouncing
   useEffect(() => {
     if (!enabled || !caseId || !hasUnsavedChanges) {
@@ -218,5 +234,7 @@ export function useAutoSave(
     load,
     createNewCase,
     markDirty,
+    markClean,
+    cancelPendingSave,
   };
 }

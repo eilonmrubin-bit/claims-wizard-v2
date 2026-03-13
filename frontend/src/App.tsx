@@ -685,17 +685,30 @@ function App() {
     load,
     createNewCase,
     markDirty,
+    markClean,
+    cancelPendingSave,
   } = useAutoSave(formData, { debounceMs: 3000, enabled: viewMode === 'editor' });
 
   // Handle loading a case
   const handleLoadCase = async (loadCaseId: string) => {
+    // 1. Cancel any pending auto-save to prevent overwriting
+    cancelPendingSave();
+
     const result = await load(loadCaseId);
     if (result.success && result.input) {
-      // Cast the input to SSOTInput type
+      // 2. Reset undo/redo history
+      resetHistory();
+
+      // 3. Update form state with loaded data
       setFormData(result.input as unknown as SSOTInput);
       setResult(result.cache?.ssot as Record<string, unknown> | null);
+
+      // 4. Mark as clean (this is the new baseline)
+      markClean();
+
+      // 5. Switch to editor view
       setViewMode('editor');
-      resetHistory();
+
       if (result.version_warning) {
         message.warning(result.version_warning);
       }
@@ -709,12 +722,22 @@ function App() {
 
   // Handle creating a new case
   const handleNewCase = () => {
+    // 1. Cancel any pending auto-save
+    cancelPendingSave();
+
+    // 2. Reset undo/redo history
+    resetHistory();
+
+    // 3. Create new case ID
     createNewCase();
+
+    // 4. Reset form to empty state
     setFormData(createEmptyInput());
     setResult(null);
     setError(null);
+
+    // 5. Switch to editor view
     setViewMode('editor');
-    resetHistory();
   };
 
   // Handle going back to list
@@ -1603,6 +1626,40 @@ function App() {
     };
     setJsonInput(JSON.stringify(examples[example], null, 2));
     setJsonError(null);
+  };
+
+  // Load JSON into the form
+  const loadJsonToForm = () => {
+    if (!jsonInput) {
+      setJsonError('אין JSON לטעון');
+      return;
+    }
+
+    let parsed;
+    try {
+      parsed = JSON.parse(jsonInput);
+    } catch (e) {
+      setJsonError(`שגיאת פרסור JSON: ${e instanceof Error ? e.message : 'לא ידוע'}`);
+      return;
+    }
+
+    // 1. Cancel any pending auto-save
+    cancelPendingSave();
+
+    // 2. Reset undo/redo history
+    resetHistory();
+
+    // 3. Create new case ID for this loaded data
+    createNewCase();
+
+    // 4. Load the parsed JSON into the form
+    setFormData(parsed as SSOTInput);
+    setResult(null);
+    setError(null);
+    setJsonError(null);
+
+    // 5. Switch to form tab would be nice but Tabs doesn't expose this easily
+    message.success('הנתונים נטענו לטופס בהצלחה');
   };
 
   const saveJsonToFile = () => {
@@ -3210,6 +3267,9 @@ function App() {
                   <div style={{ marginTop: 16, display: 'flex', gap: 12, justifyContent: 'center' }}>
                     <Button type="primary" onClick={handleJsonCalculate} loading={loading}>
                       חשב מ-JSON
+                    </Button>
+                    <Button onClick={loadJsonToForm} disabled={!jsonInput}>
+                      טען לטופס
                     </Button>
                     <Dropdown
                       menu={{
