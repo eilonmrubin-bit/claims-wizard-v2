@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import {
   ConfigProvider,
   Form,
@@ -23,6 +23,7 @@ import {
   Dropdown,
   Tabs,
   Switch,
+  Modal,
 } from 'antd';
 import {
   PlusOutlined,
@@ -30,6 +31,13 @@ import {
   CalculatorOutlined,
   LinkOutlined,
   CodeOutlined,
+  SaveOutlined,
+  CheckCircleOutlined,
+  LoadingOutlined,
+  ExclamationCircleOutlined,
+  UnorderedListOutlined,
+  UndoOutlined,
+  RedoOutlined,
 } from '@ant-design/icons';
 import heIL from 'antd/locale/he_IL';
 
@@ -54,6 +62,9 @@ import 'dayjs/locale/he';
 import ResultsView from './ResultsView';
 import DateInput from './components/DateInput';
 import WeekPanel from './components/WeekPanel';
+import CaseList from './components/CaseList';
+import { useAutoSave } from './hooks/useAutoSave';
+import { useUndoRedo } from './hooks/useUndoRedo';
 import type {
   SSOTInput,
   EmploymentPeriod,
@@ -635,7 +646,16 @@ const formatMonthsDisplay = (totalMonths: number): string => {
 };
 
 function App() {
-  const [formData, setFormData] = useState<SSOTInput>(createEmptyInput());
+  // Form state with undo/redo support
+  const {
+    state: formData,
+    setState: setFormData,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+    resetHistory,
+  } = useUndoRedo<SSOTInput>(createEmptyInput(), { maxHistory: 50, debounceMs: 500 });
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -651,6 +671,67 @@ function App() {
     workDays: number[];
     perDay: Record<number, PerDayShifts>;
   } | null>(null);
+
+  // View mode: 'list' shows case list, 'editor' shows the form
+  const [viewMode, setViewMode] = useState<'list' | 'editor'>('list');
+
+  // Auto-save hook
+  const {
+    caseId,
+    saveStatus,
+    lastSavedAt,
+    hasUnsavedChanges,
+    save,
+    load,
+    createNewCase,
+    markDirty,
+  } = useAutoSave(formData, { debounceMs: 3000, enabled: viewMode === 'editor' });
+
+  // Handle loading a case
+  const handleLoadCase = async (loadCaseId: string) => {
+    const result = await load(loadCaseId);
+    if (result.success && result.input) {
+      // Cast the input to SSOTInput type
+      setFormData(result.input as unknown as SSOTInput);
+      setResult(result.cache?.ssot as Record<string, unknown> | null);
+      setViewMode('editor');
+      resetHistory();
+      if (result.version_warning) {
+        message.warning(result.version_warning);
+      }
+      if (result.needs_recalculation && result.cache) {
+        message.info('התוצאות עשויות להיות לא עדכניות - מומלץ לחשב מחדש');
+      }
+    } else {
+      message.error(result.error || 'שגיאה בטעינת התיק');
+    }
+  };
+
+  // Handle creating a new case
+  const handleNewCase = () => {
+    createNewCase();
+    setFormData(createEmptyInput());
+    setResult(null);
+    setError(null);
+    setViewMode('editor');
+    resetHistory();
+  };
+
+  // Handle going back to list
+  const handleBackToList = () => {
+    if (hasUnsavedChanges) {
+      Modal.confirm({
+        title: 'שינויים לא שמורים',
+        content: 'יש שינויים שלא נשמרו. האם להמשיך בכל זאת?',
+        okText: 'המשך',
+        cancelText: 'ביטול',
+        okType: 'danger',
+        onOk: () => setViewMode('list'),
+      });
+    } else {
+      setViewMode('list');
+    }
+  };
 
   // Helper: toggle period selection for SNAP
   const toggleSnapSelection = (id: string, periodIndex: number) => {
@@ -683,14 +764,15 @@ function App() {
   };
 
   // Update nested fields
-  const updateField = <K extends keyof SSOTInput>(
+  const updateField = useCallback(<K extends keyof SSOTInput>(
     key: K,
     value: SSOTInput[K]
   ) => {
     setFormData((prev) => ({ ...prev, [key]: value }));
-  };
+    markDirty();
+  }, [markDirty]);
 
-  const updateNestedField = <K extends keyof SSOTInput>(
+  const updateNestedField = useCallback(<K extends keyof SSOTInput>(
     parentKey: K,
     childKey: string,
     value: unknown
@@ -702,7 +784,8 @@ function App() {
         [childKey]: value,
       },
     }));
-  };
+    markDirty();
+  }, [markDirty]);
 
   // Employment periods handlers
   const addEmploymentPeriod = () => {
@@ -1418,6 +1501,15 @@ function App() {
       } else {
         setResult(data.ssot);
         message.success('החישוב הושלם בהצלחה');
+
+        // Auto-save with computed results as cache
+        if (caseId) {
+          await save(formData, {
+            input_hash: '', // Will be computed by backend
+            computed_at: new Date().toISOString(),
+            ssot: data.ssot,
+          });
+        }
       }
     } catch (err) {
       setError(`שגיאת תקשורת: ${err instanceof Error ? err.message : 'לא ידוע'}`);
@@ -1502,9 +1594,89 @@ function App() {
         )}
 
         {/* Header */}
-        <h1 className="main-title">אשף התביעות</h1>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            {viewMode === 'editor' && (
+              <Button
+                icon={<UnorderedListOutlined />}
+                onClick={handleBackToList}
+              >
+                חזרה לרשימה
+              </Button>
+            )}
+            <h1 className="main-title" style={{ margin: 0 }}>אשף התביעות</h1>
+          </div>
+          {viewMode === 'editor' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {saveStatus === 'saving' && (
+                <span style={{ color: '#FFD93D', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <LoadingOutlined spin />
+                  שומר...
+                </span>
+              )}
+              {saveStatus === 'saved' && (
+                <Tooltip title={lastSavedAt ? `נשמר ב-${new Date(lastSavedAt).toLocaleTimeString('he-IL')}` : ''}>
+                  <span style={{ color: '#4ECDC4', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <CheckCircleOutlined />
+                    נשמר
+                  </span>
+                </Tooltip>
+              )}
+              {saveStatus === 'unsaved' && (
+                <span style={{ color: '#FF6B6B', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <ExclamationCircleOutlined />
+                  שינויים לא שמורים
+                </span>
+              )}
+              {saveStatus === 'error' && (
+                <Tooltip title="שגיאה בשמירה - לחץ Ctrl+S לנסות שוב">
+                  <span style={{ color: '#FF6B6B', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <ExclamationCircleOutlined />
+                    שגיאה בשמירה
+                  </span>
+                </Tooltip>
+              )}
+              <Tooltip title="בטל (Ctrl+Z)">
+                <Button
+                  size="small"
+                  icon={<UndoOutlined />}
+                  onClick={undo}
+                  disabled={!canUndo}
+                />
+              </Tooltip>
+              <Tooltip title="בצע שוב (Ctrl+Shift+Z)">
+                <Button
+                  size="small"
+                  icon={<RedoOutlined />}
+                  onClick={redo}
+                  disabled={!canRedo}
+                />
+              </Tooltip>
+              <Button
+                size="small"
+                icon={<SaveOutlined />}
+                onClick={() => save(formData)}
+                disabled={!hasUnsavedChanges || saveStatus === 'saving'}
+              >
+                שמור
+              </Button>
+            </div>
+          )}
+        </div>
         <p className="main-subtitle">מחשבון זכויות עובדים בדיני עבודה ישראליים</p>
 
+        {/* Case list view */}
+        {viewMode === 'list' && (
+          <CaseList
+            onSelectCase={handleLoadCase}
+            onNewCase={handleNewCase}
+            hasUnsavedChanges={hasUnsavedChanges}
+          />
+        )}
+
+        {/* Editor view */}
+        {viewMode === 'editor' && (
+        <>
         <Tabs
           defaultActiveKey="form"
           items={[
@@ -3033,6 +3205,8 @@ function App() {
 
         {/* Results display */}
         {result && <ResultsView ssot={result} input={{ lodging_input: formData.lodging_input, employment_periods: formData.employment_periods, work_patterns: formData.work_patterns }} />}
+        </>
+        )}
       </div>
     </ConfigProvider>
   );

@@ -859,6 +859,7 @@ def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
                 effective_vac_window_start = vac_window_start - timedelta(days=total_freeze_days)
 
                 claimable_amount = Decimal("0")
+                claimable_total_days = Decimal("0")
                 for year_data in vac.years:
                     if not year_data.year_end or not year_data.year_start:
                         year_data.claimable_fraction = None
@@ -874,6 +875,7 @@ def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
                     if year_start_d >= effective_vac_window_start:
                         year_data.claimable_fraction = Decimal("1")
                         claimable_amount += year_data.year_value
+                        claimable_total_days += Decimal(str(year_data.entitled_days))
                     # Year is split by the limitation boundary - proportional fraction
                     else:
                         total_days = (year_end_d - year_start_d).days + 1
@@ -881,7 +883,10 @@ def run_full_pipeline(ssot_input: SSOTInput) -> PipelineResult:
                         fraction = Decimal(claimable_days) / Decimal(total_days)
                         year_data.claimable_fraction = fraction
                         claimable_amount += year_data.year_value * fraction
+                        claimable_total_days += Decimal(str(year_data.entitled_days)) * fraction
 
+                # Update vacation result with claimable days
+                vac.claimable_total_days = claimable_total_days
                 excluded_amount = full_amount - claimable_amount
 
                 # vacation claimable duration: effective_vac_window_start → min(filing_date, employment_end)

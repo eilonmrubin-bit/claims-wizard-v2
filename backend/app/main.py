@@ -10,7 +10,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from .ssot import SSOT, SSOTInput
@@ -20,6 +20,16 @@ from .utils.snapshots import (
     get_day_snapshot,
     get_week_snapshot,
     get_month_snapshot,
+)
+from .cases import (
+    save_case,
+    load_case,
+    list_cases,
+    delete_case,
+    search_cases,
+    CaseMetaInfo,
+    SaveResult,
+    LoadResult,
 )
 
 
@@ -101,6 +111,62 @@ class SnapshotResponse(BaseModel):
     """Response for snapshot endpoints."""
     success: bool
     snapshot: dict[str, Any] | None = None
+    error: str | None = None
+
+
+# =============================================================================
+# Case management models
+# =============================================================================
+
+
+class CaseSaveRequest(BaseModel):
+    """Request for /cases/save endpoint."""
+    case_id: str = Field(..., description="Unique case identifier (UUID)")
+    input: dict[str, Any] = Field(..., description="SSOT input data")
+    cache: dict[str, Any] | None = Field(None, description="Optional cached computation results")
+
+
+class CaseSaveResponse(BaseModel):
+    """Response for /cases/save endpoint."""
+    success: bool
+    saved_at: str | None = None
+    error: str | None = None
+
+
+class CaseLoadRequest(BaseModel):
+    """Request for /cases/load endpoint."""
+    case_id: str = Field(..., description="Case identifier to load")
+
+
+class CaseLoadResponse(BaseModel):
+    """Response for /cases/load endpoint."""
+    success: bool
+    input: dict[str, Any] | None = None
+    cache: dict[str, Any] | None = None
+    needs_recalculation: bool = True
+    error: str | None = None
+    version_warning: str | None = None
+
+
+class CaseListItem(BaseModel):
+    """Single case item in list response."""
+    case_id: str
+    case_name: str
+    worker_name: str | None = None
+    defendant_name: str | None = None
+    last_modified: str
+    created_at: str
+    has_results: bool
+
+
+class CaseListResponse(BaseModel):
+    """Response for /cases/list endpoint."""
+    cases: list[CaseListItem]
+
+
+class CaseDeleteResponse(BaseModel):
+    """Response for DELETE /cases/{case_id}."""
+    success: bool
     error: str | None = None
 
 
@@ -963,3 +1029,106 @@ async def snapshot_month(request: MonthSnapshotRequest) -> SnapshotResponse:
 async def health() -> dict[str, str]:
     """Health check endpoint."""
     return {"status": "ok"}
+
+
+# =============================================================================
+# Case management endpoints
+# =============================================================================
+
+
+@app.post("/cases/save", response_model=CaseSaveResponse)
+async def save_case_endpoint(request: CaseSaveRequest) -> CaseSaveResponse:
+    """Save a case to disk.
+
+    Saves the input data and optional cache (computed results).
+    If cache is provided with valid input_hash, loading will skip recalculation.
+    """
+    result = save_case(
+        case_id=request.case_id,
+        input_data=request.input,
+        cache=request.cache,
+    )
+    return CaseSaveResponse(
+        success=result.success,
+        saved_at=result.saved_at if result.success else None,
+        error=result.error,
+    )
+
+
+@app.post("/cases/load", response_model=CaseLoadResponse)
+async def load_case_endpoint(request: CaseLoadRequest) -> CaseLoadResponse:
+    """Load a case from disk.
+
+    Returns input data and optionally cached results.
+    If needs_recalculation is True, the frontend should trigger /calculate.
+    """
+    result = load_case(request.case_id)
+    return CaseLoadResponse(
+        success=result.success,
+        input=result.input,
+        cache=result.cache,
+        needs_recalculation=result.needs_recalculation,
+        error=result.error,
+        version_warning=result.version_warning,
+    )
+
+
+@app.get("/cases/list", response_model=CaseListResponse)
+async def list_cases_endpoint() -> CaseListResponse:
+    """List all cases with metadata.
+
+    Returns cases sorted by last_modified (newest first).
+    """
+    cases = list_cases()
+    return CaseListResponse(
+        cases=[
+            CaseListItem(
+                case_id=c.case_id,
+                case_name=c.case_name,
+                worker_name=c.worker_name,
+                defendant_name=c.defendant_name,
+                last_modified=c.last_modified,
+                created_at=c.created_at,
+                has_results=c.has_results,
+            )
+            for c in cases
+        ]
+    )
+
+
+@app.delete("/cases/{case_id}", response_model=CaseDeleteResponse)
+async def delete_case_endpoint(case_id: str) -> CaseDeleteResponse:
+    """Delete a case.
+
+    Permanently removes the case file from disk.
+    """
+    success = delete_case(case_id)
+    if success:
+        return CaseDeleteResponse(success=True)
+    else:
+        return CaseDeleteResponse(success=False, error=f"Case not found: {case_id}")
+
+
+@app.get("/cases/search", response_model=CaseListResponse)
+async def search_cases_endpoint(
+    q: str = Query(..., min_length=1, description="Search query")
+) -> CaseListResponse:
+    """Search cases by name, worker name, or defendant name.
+
+    Returns matching cases sorted by last_modified.
+    """
+    cases = search_cases(q)
+    return CaseListResponse(
+        cases=[
+            CaseListItem(
+                case_id=c.case_id,
+                case_name=c.case_name,
+                worker_name=c.worker_name,
+                defendant_name=c.defendant_name,
+                last_modified=c.last_modified,
+                created_at=c.created_at,
+                has_results=c.has_results,
+            )
+            for c in cases
+        ]
+    )

@@ -37,8 +37,9 @@ import {
   DownloadOutlined,
   SafetyOutlined,
   CarOutlined,
+  HourglassOutlined,
 } from '@ant-design/icons';
-import type { LodgingInput, LodgingPeriod, EmploymentPeriod, WorkPattern } from './types';
+import type { LodgingInput, EmploymentPeriod, WorkPattern } from './types';
 
 const { Title, Text } = Typography;
 
@@ -339,6 +340,7 @@ interface VacationResult {
   years: VacationYearData[];
   grand_total_days: number;
   grand_total_value: number;
+  claimable_total_days?: number;  // Days after limitation (computed by backend)
 }
 
 interface PensionMonthData {
@@ -476,6 +478,13 @@ interface TimelineSummary {
   total_freeze_days: number;
 }
 
+interface PartialMonth {
+  month: [number, number];  // (year, month)
+  full_amount: number;
+  fraction: number;
+  claimable_amount: number;
+}
+
 interface LimitationRightResult {
   limitation_type_id?: string;
   full_amount?: number;
@@ -483,6 +492,7 @@ interface LimitationRightResult {
   excluded_amount?: number;
   claimable_duration?: { display: string; days?: number; years_whole?: number; months_remainder?: number };
   excluded_duration?: { display: string; days?: number; years_whole?: number; months_remainder?: number } | null;
+  partial_months?: PartialMonth[] | null;
 }
 
 interface LimitationResults {
@@ -2131,13 +2141,22 @@ const HolidaysBreakdown: React.FC<HolidaysBreakdownProps> = ({ holidays, limitat
     },
   ];
 
-  const yearItems = holidays.per_year.map((year) => {
+  // Separate years into excluded (expired) and claimable
+  const excludedYears = holidays.per_year.filter((year) => !isYearClaimable(year.year));
+  const claimableYears = holidays.per_year.filter((year) => isYearClaimable(year.year));
+
+  // Calculate total excluded amount for the drawer header
+  const totalExcludedAmount = excludedYears.reduce((sum, y) => sum + y.total_claim, 0);
+  const excludedYearsRange = excludedYears.length > 0
+    ? `${excludedYears[0].year}–${excludedYears[excludedYears.length - 1].year}`
+    : '';
+
+  const createYearItem = (year: HolidayYearResult, excluded: boolean) => {
     // Check if all employed holidays in this year are before_seniority
     const employedHolidays = year.holidays.filter((h) => h.employed_on_date);
     const allBeforeSeniority = employedHolidays.length > 0 &&
       employedHolidays.every((h) => h.before_seniority);
     const hasEntitledDays = year.total_entitled_days > 0;
-    const excluded = !isYearClaimable(year.year);
 
     return {
       key: String(year.year),
@@ -2206,7 +2225,11 @@ const HolidaysBreakdown: React.FC<HolidaysBreakdownProps> = ({ holidays, limitat
         </div>
       ),
     };
-  });
+  };
+
+  // Create items for excluded and claimable years
+  const excludedYearItems = excludedYears.map((y) => createYearItem(y, true));
+  const claimableYearItems = claimableYears.map((y) => createYearItem(y, false));
 
   return (
     <Card
@@ -2220,7 +2243,33 @@ const HolidaysBreakdown: React.FC<HolidaysBreakdownProps> = ({ holidays, limitat
       }
       className="results-card"
     >
-      <Collapse items={yearItems} />
+      {/* Expired years section - collapsed by default */}
+      {excludedYearItems.length > 0 && (
+        <Collapse
+          style={{ marginBottom: 16 }}
+          items={[{
+            key: 'excluded-years',
+            label: (
+              <Space>
+                <ClockCircleOutlined style={{ color: '#FF6B6B' }} />
+                <span style={{ color: '#888' }}>תקופה שהתיישנה: {excludedYearsRange}</span>
+                <Tag color="default">{excludedYears.reduce((s, y) => s + y.total_entitled_days, 0)} ימים</Tag>
+                <span className="ltr-number" style={{ color: '#888', textDecoration: 'line-through' }}>
+                  {formatCurrency(totalExcludedAmount)}
+                </span>
+              </Space>
+            ),
+            children: (
+              <div style={{ opacity: 0.7 }}>
+                <Collapse items={excludedYearItems} />
+              </div>
+            ),
+          }]}
+        />
+      )}
+
+      {/* Claimable years section */}
+      <Collapse items={claimableYearItems} />
     </Card>
   );
 };
@@ -4261,8 +4310,8 @@ const VacationBreakdown: React.FC<VacationBreakdownProps> = ({ vacation, limitat
       <Row gutter={16} style={{ marginBottom: 16 }}>
         <Col span={8}>
           <Statistic
-            title="סה״כ ימים"
-            value={vacation.years.reduce((sum, y) => sum + y.entitled_days * (y.claimable_fraction ?? 1), 0).toFixed(2)}
+            title="סה״כ ימים (אחרי התיישנות)"
+            value={vacation.claimable_total_days ?? vacation.grand_total_days}
             precision={2}
           />
         </Col>
@@ -4558,6 +4607,49 @@ const LimitationTimeline: React.FC<{ limitation: LimitationResults }> = ({ limit
           )}
         </div>
       ); })}
+
+      {/* Partial months - months that are partially affected by limitation */}
+      {per_right && Object.entries(per_right).some(([, rightData]) => (rightData.partial_months?.length ?? 0) > 0) && (
+        <div style={{ marginTop: 24 }}>
+          <Title level={5} style={{ color: '#FFD93D', marginBottom: 12 }}>
+            <HourglassOutlined style={{ marginLeft: 8 }} />
+            חודשים חלקיים
+          </Title>
+          <Text type="secondary" style={{ display: 'block', marginBottom: 12 }}>
+            חודשים שחלקם נכלל בתקופה שהתיישנה
+          </Text>
+          {Object.entries(per_right).map(([rightId, rightData]) => {
+            if (!rightData.partial_months?.length) return null;
+            return (
+              <div key={rightId} style={{ marginBottom: 16 }}>
+                {Object.keys(per_right).length > 1 && (
+                  <Text strong style={{ display: 'block', marginBottom: 8 }}>{rightId === 'general' ? 'כללי' : rightId}</Text>
+                )}
+                {rightData.partial_months.map((pm: PartialMonth, idx: number) => (
+                  <Tooltip
+                    key={idx}
+                    title={
+                      <div>
+                        <div>סה"כ חודשי (לפני התיישנות): ₪{pm.full_amount.toLocaleString()}</div>
+                        <div>סכום שנכלל בתביעה: ₪{pm.claimable_amount.toLocaleString()}</div>
+                        <div>חלק יחסי: {(pm.fraction * 100).toFixed(0)}%</div>
+                      </div>
+                    }
+                  >
+                    <Tag
+                      color="orange"
+                      style={{ marginBottom: 4, cursor: 'help' }}
+                      icon={<HourglassOutlined />}
+                    >
+                      {pm.month[1]}/{pm.month[0]}: ₪{pm.claimable_amount.toLocaleString()} מתוך ₪{pm.full_amount.toLocaleString()} ({(pm.fraction * 100).toFixed(0)}%)
+                    </Tag>
+                  </Tooltip>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </Card>
   );
 };
@@ -4650,7 +4742,7 @@ const EmploymentDetails: React.FC<{
 // Main Component
 // ============================================================================
 
-const ResultsView: React.FC<ResultsViewProps> = ({ ssot, input }) => {
+const ResultsView: React.FC<ResultsViewProps> = ({ ssot, input: _input }) => {
   const {
     claim_summary,
     rights_results,

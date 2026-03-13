@@ -841,6 +841,8 @@ class VacationResult:
 
     grand_total_days: Decimal = Decimal("0")
     grand_total_value: Decimal = Decimal("0")
+    # Claimable days after limitation (computed by pipeline after limitation)
+    claimable_total_days: Decimal = Decimal("0")
 
 
 @dataclass
