@@ -1672,7 +1672,7 @@ function App() {
               </div>
             )}
           </div>
-          <p className="main-subtitle" style={{ margin: 0 }}>מחשבון זכויות עובדים בדיני עבודה ישראליים</p>
+          <p className="main-subtitle" style={{ margin: 0, textAlign: 'right' }}>מחשבון זכויות עובדים בדיני עבודה ישראליים</p>
         </div>
 
         {/* Case list view */}
