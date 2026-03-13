@@ -1593,77 +1593,87 @@ function App() {
           </div>
         )}
 
-        {/* Header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+        {/* Sticky Header Bar */}
+        <div style={{
+          position: 'sticky',
+          top: 0,
+          zIndex: 100,
+          backgroundColor: '#060D19',
+          padding: '12px 0',
+          marginBottom: 16,
+          borderBottom: '1px solid rgba(78, 205, 196, 0.2)',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+              {viewMode === 'editor' && (
+                <Button
+                  icon={<UnorderedListOutlined />}
+                  onClick={handleBackToList}
+                >
+                  חזרה לרשימה
+                </Button>
+              )}
+              <h1 className="main-title" style={{ margin: 0 }}>אשף התביעות</h1>
+            </div>
             {viewMode === 'editor' && (
-              <Button
-                icon={<UnorderedListOutlined />}
-                onClick={handleBackToList}
-              >
-                חזרה לרשימה
-              </Button>
-            )}
-            <h1 className="main-title" style={{ margin: 0 }}>אשף התביעות</h1>
-          </div>
-          {viewMode === 'editor' && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              {saveStatus === 'saving' && (
-                <span style={{ color: '#FFD93D', display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <LoadingOutlined spin />
-                  שומר...
-                </span>
-              )}
-              {saveStatus === 'saved' && (
-                <Tooltip title={lastSavedAt ? `נשמר ב-${new Date(lastSavedAt).toLocaleTimeString('he-IL')}` : ''}>
-                  <span style={{ color: '#4ECDC4', display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <CheckCircleOutlined />
-                    נשמר
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                {saveStatus === 'saving' && (
+                  <span style={{ color: '#FFD93D', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <LoadingOutlined spin />
+                    שומר...
                   </span>
-                </Tooltip>
-              )}
-              {saveStatus === 'unsaved' && (
-                <span style={{ color: '#FF6B6B', display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <ExclamationCircleOutlined />
-                  שינויים לא שמורים
-                </span>
-              )}
-              {saveStatus === 'error' && (
-                <Tooltip title="שגיאה בשמירה - לחץ Ctrl+S לנסות שוב">
+                )}
+                {saveStatus === 'saved' && (
+                  <Tooltip title={lastSavedAt ? `נשמר ב-${new Date(lastSavedAt).toLocaleTimeString('he-IL')}` : ''}>
+                    <span style={{ color: '#4ECDC4', display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <CheckCircleOutlined />
+                      נשמר
+                    </span>
+                  </Tooltip>
+                )}
+                {saveStatus === 'unsaved' && (
                   <span style={{ color: '#FF6B6B', display: 'flex', alignItems: 'center', gap: 4 }}>
                     <ExclamationCircleOutlined />
-                    שגיאה בשמירה
+                    שינויים לא שמורים
                   </span>
+                )}
+                {saveStatus === 'error' && (
+                  <Tooltip title="שגיאה בשמירה - לחץ Ctrl+S לנסות שוב">
+                    <span style={{ color: '#FF6B6B', display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <ExclamationCircleOutlined />
+                      שגיאה בשמירה
+                    </span>
+                  </Tooltip>
+                )}
+                <Tooltip title="בטל (Ctrl+Z)">
+                  <Button
+                    size="small"
+                    icon={<UndoOutlined />}
+                    onClick={undo}
+                    disabled={!canUndo}
+                  />
                 </Tooltip>
-              )}
-              <Tooltip title="בטל (Ctrl+Z)">
+                <Tooltip title="בצע שוב (Ctrl+Shift+Z)">
+                  <Button
+                    size="small"
+                    icon={<RedoOutlined />}
+                    onClick={redo}
+                    disabled={!canRedo}
+                  />
+                </Tooltip>
                 <Button
                   size="small"
-                  icon={<UndoOutlined />}
-                  onClick={undo}
-                  disabled={!canUndo}
-                />
-              </Tooltip>
-              <Tooltip title="בצע שוב (Ctrl+Shift+Z)">
-                <Button
-                  size="small"
-                  icon={<RedoOutlined />}
-                  onClick={redo}
-                  disabled={!canRedo}
-                />
-              </Tooltip>
-              <Button
-                size="small"
-                icon={<SaveOutlined />}
-                onClick={() => save(formData)}
-                disabled={!hasUnsavedChanges || saveStatus === 'saving'}
-              >
-                שמור
-              </Button>
-            </div>
-          )}
+                  icon={<SaveOutlined />}
+                  onClick={() => save(formData)}
+                  disabled={!hasUnsavedChanges || saveStatus === 'saving'}
+                >
+                  שמור
+                </Button>
+              </div>
+            )}
+          </div>
+          <p className="main-subtitle" style={{ margin: 0 }}>מחשבון זכויות עובדים בדיני עבודה ישראליים</p>
         </div>
-        <p className="main-subtitle">מחשבון זכויות עובדים בדיני עבודה ישראליים</p>
 
         {/* Case list view */}
         {viewMode === 'list' && (
