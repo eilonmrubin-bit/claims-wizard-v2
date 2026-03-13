@@ -186,21 +186,7 @@ export function useAutoSave(
     };
   }, [enabled, caseId, hasUnsavedChanges, debounceMs, save, formData]);
 
-  // Keyboard shortcut (Ctrl+S) - always prevent browser save dialog
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
-        e.preventDefault();
-        e.stopPropagation();
-        if (caseId) {
-          save(formDataRef.current);
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown, { capture: true });
-    return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
-  }, [caseId, save]);
+  // Note: Ctrl+S keyboard shortcut is handled in App.tsx
 
   // beforeunload warning
   useEffect(() => {

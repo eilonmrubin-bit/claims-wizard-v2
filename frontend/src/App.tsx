@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import {
   ConfigProvider,
   Form,
@@ -732,6 +732,39 @@ function App() {
       setViewMode('list');
     }
   };
+
+  // Global keyboard shortcuts - prevent browser defaults
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      // Ctrl+S - Save
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (caseId) {
+          save(formData);
+        }
+        return false;
+      }
+      // Ctrl+Z - Undo
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        e.stopPropagation();
+        undo();
+        return false;
+      }
+      // Ctrl+Shift+Z or Ctrl+Y - Redo
+      if ((e.ctrlKey || e.metaKey) && ((e.shiftKey && e.key.toLowerCase() === 'z') || e.key.toLowerCase() === 'y')) {
+        e.preventDefault();
+        e.stopPropagation();
+        redo();
+        return false;
+      }
+    };
+
+    // Use capture phase to intercept before browser
+    document.addEventListener('keydown', handleGlobalKeyDown, true);
+    return () => document.removeEventListener('keydown', handleGlobalKeyDown, true);
+  }, [caseId, formData, save, undo, redo]);
 
   // Helper: toggle period selection for SNAP
   const toggleSnapSelection = (id: string, periodIndex: number) => {

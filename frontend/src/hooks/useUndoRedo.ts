@@ -160,30 +160,7 @@ export function useUndoRedo<T>(
     }
   }, [state]);
 
-  // Keyboard shortcuts
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
-        if (e.shiftKey) {
-          // Ctrl+Shift+Z = Redo
-          e.preventDefault();
-          redo();
-        } else {
-          // Ctrl+Z = Undo
-          e.preventDefault();
-          undo();
-        }
-      }
-      // Also support Ctrl+Y for Redo (Windows style)
-      if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
-        e.preventDefault();
-        redo();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [undo, redo]);
+  // Note: Ctrl+Z/Ctrl+Y keyboard shortcuts are handled in App.tsx
 
   // Cleanup on unmount
   useEffect(() => {
